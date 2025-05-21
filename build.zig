@@ -1,5 +1,15 @@
 const std = @import("std");
 
+fn addEngineSources(c: *std.Build.Step.Compile) void {
+    c.linkLibC(); // we need a libc
+
+    c.addCSourceFiles(.{
+        .files = &[_][]const u8{
+            "src/universe.c",
+        },
+    });
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
 
@@ -7,10 +17,12 @@ pub fn build(b: *std.Build) void {
 
     const engineStatic = b.addStaticLibrary(.{
         .name = "neonucleus",
-        .root_source_file = b.path("src/engine.zig"),
+        //.root_source_file = b.path("src/engine.zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    addEngineSources(engineStatic);
 
     const install = b.getInstallStep();
 
@@ -18,10 +30,12 @@ pub fn build(b: *std.Build) void {
     
     const engineShared = b.addSharedLibrary(.{
         .name = "neonucleus",
-        .root_source_file = b.path("src/engine.zig"),
+        //.root_source_file = b.path("src/engine.zig"),
         .target = target,
         .optimize = optimize,
     });
+    
+    addEngineSources(engineShared);
 
     b.installArtifact(engineShared);
 
