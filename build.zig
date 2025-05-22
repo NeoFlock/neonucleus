@@ -5,6 +5,7 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
 
     c.addCSourceFiles(.{
         .files = &[_][]const u8{
+            "src/utils.c",
             "src/universe.c",
         },
     });

@@ -10,14 +10,16 @@
 // Magic limits
 // If your component needs more than these, redesign your API.
 
-#define NN_MAX_ARGS 256
-#define NN_MAX_RETS 256
-#define NN_MAX_METHODS 256
-#define NN_MAX_USERS 256
+#define NN_MAX_ARGS 32
+#define NN_MAX_RETS 32
+#define NN_MAX_METHODS 128
+#define NN_MAX_USERS 128
 #define NN_MAX_ARCHITECTURES 16
+#define NN_MAX_SIGNALS 128
+#define NN_MAX_SIGNAL_VALS 63
+#define NN_MAX_USERDATA 1024
 
-// Utilities, both internal and external
-
+typedef struct nn_guard nn_guard;
 typedef struct nn_universe nn_universe;
 typedef struct nn_computer nn_computer;
 typedef struct nn_component nn_component;
@@ -32,15 +34,71 @@ typedef struct nn_architecture {
 } nn_architecture;
 typedef const char *nn_address;
 
-// we expose the allocator because of addresses
+// Values for architectures
+
+#define NN_VALUE_INT 0
+#define NN_VALUE_NUMBER 1
+#define NN_VALUE_BOOL 2
+#define NN_VALUE_CSTR 3
+#define NN_VALUE_STR 4
+#define NN_VALUE_ARRAY 5
+#define NN_VALUE_TABLE 6
+#define NN_VALUE_NIL 7
+
+typedef struct nn_string {
+    const char *data;
+    size_t len;
+    size_t refc;
+} nn_string;
+
+typedef struct nn_array {
+    struct nn_value *values;
+    size_t len;
+    size_t refc;
+} nn_array;
+
+typedef struct nn_object {
+    struct nn_pair *pairs;
+    size_t len;
+    size_t refc;
+} nn_table;
+
+typedef struct nn_value {
+    size_t tag;
+    union {
+        intptr_t integer;
+        double number;
+        bool boolean;
+        const char *cstring;
+        nn_string *string;
+        nn_array *array;
+        nn_table *table;
+    };
+} nn_value;
+
+typedef struct nn_pair {
+    nn_value key;
+    nn_value val;
+} nn_pair;
+
+// we expose the allocator because of some utilities
 void *nn_malloc(size_t size);
 void *nn_realloc(void *memory, size_t newSize);
 void nn_free(void *memory);
 
-nn_address nn_copyAddress(nn_address address);
+// Utilities, both internal and external
+char *nn_strdup(const char *s);
+void *nn_memdup(const void *buf, size_t len);
+
+nn_guard *nn_newGuard();
+void nn_lock(nn_guard *lock);
+void nn_unlock(nn_guard *lock);
+void nn_deleteGuard(nn_guard *lock);
 
 nn_universe *nn_newUniverse();
 void nn_unsafeDeleteUniverse(nn_universe *universe);
+void *nn_queryUserdata(nn_universe *universe, const char *name);
+void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit);
 void nn_tickComputer(nn_computer *computer);
@@ -54,7 +112,7 @@ nn_architecture *nn_getArchitecture(nn_computer *computer);
 nn_architecture *nn_getNextArchitecture(nn_computer *computer);
 void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch);
 void nn_deleteComputer(nn_computer *computer);
-void nn_pushSignal(nn_computer *computer, struct nn_value *values, size_t len);
+void nn_pushSignal(nn_computer *computer, nn_value *values, size_t len);
 nn_value nn_fetchSignalValue(nn_computer *computer, size_t index);
 void nn_popSignal(nn_computer *computer);
 void nn_addUser(nn_computer *computer, const char *name);
@@ -148,52 +206,7 @@ nn_value nn_getReturn(nn_computer *computer, size_t idx);
 size_t nn_getArgumentCount(nn_computer *computer);
 size_t nn_getReturnCount(nn_computer *computer);
 
-// Values for architectures
-
-#define NN_VALUE_INT 0
-#define NN_VALUE_NUMBER 1
-#define NN_VALUE_BOOL 2
-#define NN_VALUE_CSTR 3
-#define NN_VALUE_STR 4
-#define NN_VALUE_ARRAY 5
-#define NN_VALUE_TABLE 6
-#define NN_VALUE_NIL 7
-
-typedef struct nn_string {
-    const char *data;
-    size_t len;
-    size_t refc;
-} nn_string;
-
-typedef struct nn_array {
-    struct nn_value *values;
-    size_t len;
-    size_t refc;
-} nn_array;
-
-typedef struct nn_object {
-    struct nn_pair *pairs;
-    size_t len;
-    size_t refc;
-} nn_table;
-
-typedef struct nn_value {
-    size_t tag;
-    union {
-        intptr_t integer;
-        double number;
-        bool boolean;
-        const char *cstring;
-        nn_string *string;
-        nn_array *array;
-        nn_table *table;
-    };
-} nn_value;
-
-typedef struct nn_pair {
-    nn_value key;
-    nn_value val;
-} nn_pair;
+// Value stuff
 
 nn_value nn_values_retain(nn_value val);
 void nn_values_drop(nn_value val);
