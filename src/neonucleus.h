@@ -31,6 +31,9 @@ typedef struct nn_architecture {
     void (*teardown)(nn_computer *computer, void *state, void *userdata);
     size_t (*getMemoryUsage)(nn_computer *computer, void *state, void *userdata);
     void (*tick)(nn_computer *computer, void *state, void *userdata);
+    /* Pointer returned should be allocated with nn_malloc or nn_realloc, so it can be freed with nn_free */
+    char *(*serialize)(nn_computer *computer, void *state, void *userdata);
+    void (*deserialize)(nn_computer *computer, const char *data, void *state, void *userdata);
 } nn_architecture;
 typedef const char *nn_address;
 

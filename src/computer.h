@@ -11,6 +11,10 @@ typedef struct nn_computer {
     size_t argc;
     nn_value rets[NN_MAX_RETS];
     size_t retc;
+    nn_architecture *arch;
+    nn_architecture *nextArch;
+    nn_architecture supportedArch[NN_MAX_ARCHITECTURES];
+    size_t supportedArchCount;
 } nn_computer;
 
 #endif
