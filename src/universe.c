@@ -7,6 +7,8 @@ nn_universe *nn_newUniverse() {
     if(u == NULL) return u;
     // we leave udata uninitialized because it does not matter
     u->udataLen = 0;
+    u->clockUserdata = NULL;
+    u->currentClock = nn_realTimeClock;
     return u;
 }
 
@@ -35,4 +37,8 @@ void nn_storeUserdata(nn_universe *universe, const char *name, void *data) {
     universe->udata[idx].name = allocName;
     universe->udata[idx].userdata = data;
     universe->udataLen++;
+}
+
+double nn_getTime(nn_universe *universe) {
+    return universe->currentClock(universe->clockUserdata);
 }

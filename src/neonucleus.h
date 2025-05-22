@@ -145,6 +145,7 @@ void nn_unsafeDeleteUniverse(nn_universe *universe);
 void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
 void nn_setClock(nn_universe *universe, nn_clock_t *clock, void *userdata);
+double nn_getTime(nn_universe *universe);
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
 void nn_tickComputer(nn_computer *computer);
