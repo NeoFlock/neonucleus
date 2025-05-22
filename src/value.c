@@ -154,3 +154,28 @@ nn_pair nn_values_getPair(nn_value obj, size_t idx) {
     if(idx >= obj.table->len) return badPair;
     return obj.table->pairs[idx];
 }
+
+size_t nn_measurePacketSize(nn_value *vals, size_t len) {
+    size_t size = 0;
+    for(size_t i = 0; i < len; i++) {
+        nn_value val = vals[i];
+        size += 2;
+        if(val.tag == NN_VALUE_INT || val.tag == NN_VALUE_NUMBER) {
+            size += 8;
+        } else if(val.tag == NN_VALUE_STR) {
+            size_t len = val.string->len;
+            if(len == 0) len = 1; // ask OC
+            size += len;
+        } else if(val.tag == NN_VALUE_CSTR) {
+            size_t len = strlen(val.cstring);
+            if(len == 0) len = 1; // ask OC
+            size += len;
+        } else if(val.tag == NN_VALUE_BOOL || val.tag == NN_VALUE_NIL) {
+            size += 4;
+        } else {
+            // yeah no fuck off
+            return SIZE_MAX;
+        }
+    }
+    return size;
+}

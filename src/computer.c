@@ -14,13 +14,78 @@ nn_architecture *nn_getArchitecture(nn_computer *computer);
 nn_architecture *nn_getNextArchitecture(nn_computer *computer);
 void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch);
 void nn_deleteComputer(nn_computer *computer);
-void nn_pushSignal(nn_computer *computer, nn_value *values, size_t len);
-nn_value nn_fetchSignalValue(nn_computer *computer, size_t index);
-void nn_popSignal(nn_computer *computer);
-void nn_addUser(nn_computer *computer, const char *name);
-void nn_deleteUser(nn_computer *computer, const char *name);
-const char *nn_indexUser(nn_computer *computer, size_t idx);
-bool nn_isUser(nn_computer *computer, const char *name);
+
+const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len) {
+    if(len > NN_MAX_SIGNAL_VALS) return "too many values";
+    if(len == 0) return "missing event";
+    // no OOM for you hehe
+    if(nn_measurePacketSize(values, len) > NN_MAX_SIGNAL_SIZE) {
+        return "too big";
+    }
+    if(computer->signalCount == NN_MAX_SIGNALS) return "too many signals";
+    computer->signals[computer->signalCount].len = len;
+    for(size_t i = 0; i < len; i++) {
+        computer->signals[computer->signalCount].values[i] = values[i];
+    }
+    computer->signalCount++;
+    return NULL;
+}
+
+nn_value nn_fetchSignalValue(nn_computer *computer, size_t index) {
+    nn_signal *p = computer->signals + computer->signalCount - 1;
+    if(index >= p->len) return nn_values_nil();
+    return p->values[index];
+}
+
+size_t nn_signalSize(nn_computer *computer) {
+    if(computer->signalCount == 0) return 0;
+    return computer->signals[computer->signalCount-1].len;
+}
+
+void nn_popSignal(nn_computer *computer) {
+    if(computer->signalCount == 0) return;
+    nn_signal *p = computer->signals + computer->signalCount - 1;
+    for(size_t i = 0; i < p->len; i++) {
+        nn_values_drop(p->values[i]);
+    }
+    computer->signalCount--;
+}
+
+const char *nn_addUser(nn_computer *computer, const char *name) {
+    if(computer->userCount == NN_MAX_USERS) return "too many users";
+    char *user = nn_strdup(name);
+    if(user == NULL) return "out of memory";
+    computer->users[computer->userCount] = user;
+    computer->userCount++;
+    return NULL;
+}
+
+void nn_deleteUser(nn_computer *computer, const char *name) {
+    size_t j = 0;
+    for(size_t i = 0; i < computer->userCount; i++) {
+        char *user = computer->users[i];
+        if(strcmp(user, name) == 0) {
+            nn_free(user);
+        } else {
+            computer->users[j] = user;
+            j++;
+        }
+    }
+    computer->userCount = j;
+}
+
+const char *nn_indexUser(nn_computer *computer, size_t idx) {
+    if(idx >= computer->userCount) return NULL;
+    return computer->users[idx];
+}
+
+bool nn_isUser(nn_computer *computer, const char *name) {
+    if(computer->userCount == 0) return true;
+    for(size_t i = 0; i < computer->userCount; i++) {
+        if(strcmp(computer->users[i], name) == 0) return true;
+    }
+    return false;
+}
 
 int nn_getState(nn_computer *computer) {
     return computer->state;

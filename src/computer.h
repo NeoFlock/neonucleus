@@ -3,6 +3,11 @@
 
 #include "neonucleus.h"
 
+typedef struct nn_signal {
+    size_t len;
+    nn_value values[NN_MAX_SIGNAL_VALS];
+} nn_signal;
+
 typedef struct nn_computer {
     char state;
     bool allocatedError;
@@ -25,6 +30,8 @@ typedef struct nn_computer {
     size_t userCount;
     size_t energy;
     size_t maxEnergy;
+    nn_signal signals[NN_MAX_SIGNALS];
+    size_t signalCount;
 } nn_computer;
 
 #endif

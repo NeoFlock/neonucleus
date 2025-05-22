@@ -55,6 +55,8 @@
 #define NN_MAX_SIGNALS 32
 #define NN_MAX_SIGNAL_VALS 32
 #define NN_MAX_USERDATA 1024
+#define NN_MAX_USER_SIZE 128
+#define NN_MAX_SIGNAL_SIZE 8192
 
 typedef struct nn_guard nn_guard;
 typedef struct nn_universe nn_universe;
@@ -158,10 +160,11 @@ nn_architecture *nn_getArchitecture(nn_computer *computer);
 nn_architecture *nn_getNextArchitecture(nn_computer *computer);
 void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch);
 void nn_deleteComputer(nn_computer *computer);
-void nn_pushSignal(nn_computer *computer, nn_value *values, size_t len);
+const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len);
 nn_value nn_fetchSignalValue(nn_computer *computer, size_t index);
+size_t nn_signalSize(nn_computer *computer);
 void nn_popSignal(nn_computer *computer);
-void nn_addUser(nn_computer *computer, const char *name);
+const char *nn_addUser(nn_computer *computer, const char *name);
 void nn_deleteUser(nn_computer *computer, const char *name);
 const char *nn_indexUser(nn_computer *computer, size_t idx);
 bool nn_isUser(nn_computer *computer, const char *name);
@@ -281,5 +284,11 @@ double nn_toNumber(nn_value val);
 bool nn_toBoolean(nn_value val);
 const char *nn_toCString(nn_value val);
 const char *nn_toString(nn_value val, size_t *len);
+
+/*
+ * Computes the "packet size" of the values, using the same algorithm as OC.
+ * This is used by pushSignal to check the size
+ */
+size_t nn_measurePacketSize(nn_value *vals, size_t len);
 
 #endif
