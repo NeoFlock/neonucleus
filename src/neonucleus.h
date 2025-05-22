@@ -12,11 +12,11 @@
 
 #define NN_MAX_ARGS 32
 #define NN_MAX_RETS 32
-#define NN_MAX_METHODS 128
+#define NN_MAX_METHODS 32
 #define NN_MAX_USERS 128
 #define NN_MAX_ARCHITECTURES 16
-#define NN_MAX_SIGNALS 128
-#define NN_MAX_SIGNAL_VALS 63
+#define NN_MAX_SIGNALS 32
+#define NN_MAX_SIGNAL_VALS 32
 #define NN_MAX_USERDATA 1024
 
 typedef struct nn_guard nn_guard;
@@ -46,7 +46,7 @@ typedef const char *nn_address;
 #define NN_VALUE_NIL 7
 
 typedef struct nn_string {
-    const char *data;
+    char *data;
     size_t len;
     size_t refc;
 } nn_string;
@@ -100,7 +100,7 @@ void nn_unsafeDeleteUniverse(nn_universe *universe);
 void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
 
-nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit);
+nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
 void nn_tickComputer(nn_computer *computer);
 void nn_setUptime(nn_computer *computer, double uptime);
 double nn_getUptime(nn_computer *computer);
@@ -155,6 +155,12 @@ const char *nn_indexUser(nn_computer *computer, size_t idx);
 int nn_getState(nn_computer *computer);
 void nn_setState(nn_computer *computer, int state);
 
+size_t nn_countUsers(nn_computer *computer);
+bool nn_isUser(nn_computer *computer, const char *user);
+void nn_addUser(nn_computer *computer, const char *user);
+void nn_removeUser(nn_computer *computer, const char *user);
+const char *nn_getUser(nn_computer *computer, size_t idx);
+
 void nn_setEnergyInfo(nn_computer *computer, size_t energy, size_t capacity);
 size_t nn_getEnergy(nn_computer *computer);
 void nn_removeEnergy(nn_computer *computer, size_t energy);
@@ -189,7 +195,7 @@ typedef void *nn_componentConstructor(void *userdata);
 typedef void *nn_componentDestructor(void *tableUserdata, void *componentUserdata);
 typedef void nn_componentMethod(void *componentUserdata, void *methodUserdata, nn_component *component, nn_computer *computer);
 
-nn_componentTable *nn_newComponentTable(const char *typeName, void *userdata, nn_componentConstructor, nn_componentDestructor);
+nn_componentTable *nn_newComponentTable(const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
 void nn_destroyComponentTable(nn_componentTable *table);
 void nn_defineMethod(nn_componentTable *table, const char *methodName, bool direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc);
 const char *nn_getTableMethod(nn_componentTable *table, size_t idx, bool *outDirect);
@@ -224,7 +230,7 @@ void nn_values_drop(nn_value val);
 void nn_values_set(nn_value arr, size_t idx, nn_value val);
 nn_value nn_values_get(nn_value arr, size_t idx);
 
-void nn_values_setPair(nn_value obj, nn_value key, nn_value val);
+void nn_values_setPair(nn_value obj, size_t idx, nn_value key, nn_value val);
 nn_pair nn_values_getPair(nn_value obj, size_t idx);
 
 intptr_t nn_toInt(nn_value val);

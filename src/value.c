@@ -85,3 +85,72 @@ nn_value nn_values_table(size_t pairCount) {
 size_t nn_values_getType(nn_value val) {
     return val.tag;
 }
+
+nn_value nn_values_retain(nn_value val) {
+    if(val.tag == NN_VALUE_STR) {
+        val.string->refc++;
+    } else if(val.tag == NN_VALUE_ARRAY) {
+        val.array->refc++;
+    } else if(val.tag == NN_VALUE_TABLE) {
+        val.table->refc++;
+    }
+    return val;
+}
+
+void nn_values_drop(nn_value val) {
+    if(val.tag == NN_VALUE_STR) {
+        val.string->refc--;
+        if(val.string->refc == 0) {
+            nn_free(val.string->data);
+            nn_free(val.string);
+        }
+    } else if(val.tag == NN_VALUE_ARRAY) {
+        val.array->refc--;
+        if(val.array->refc == 0) {
+            for(size_t i = 0; i < val.array->len; i++) {
+                nn_values_drop(val.array->values[i]);
+            }
+            nn_free(val.array->values);
+            nn_free(val.array);
+        }
+    } else if(val.tag == NN_VALUE_TABLE) {
+        val.table->refc--;
+        if(val.table->refc == 0) {
+            for(size_t i = 0; i < val.table->len; i++) {
+                nn_values_drop(val.table->pairs[i].key);
+                nn_values_drop(val.table->pairs[i].val);
+            }
+            nn_free(val.table->pairs);
+            nn_free(val.table);
+        }
+    }
+}
+
+void nn_values_set(nn_value arr, size_t idx, nn_value val) {
+    if(arr.tag != NN_VALUE_ARRAY) return;
+    if(idx >= arr.array->len) return;
+    nn_values_drop(arr.array->values[idx]);
+    arr.array->values[idx] = val;
+}
+
+nn_value nn_values_get(nn_value arr, size_t idx) {
+    if(arr.tag != NN_VALUE_ARRAY) return nn_values_nil();
+    if(idx >= arr.array->len) return nn_values_nil();
+    return arr.array->values[idx];
+}
+
+void nn_values_setPair(nn_value obj, size_t idx, nn_value key, nn_value val) {
+    if(obj.tag != NN_VALUE_TABLE) return;
+    if(idx >= obj.table->len) return;
+    nn_values_drop(obj.table->pairs[idx].key);
+    nn_values_drop(obj.table->pairs[idx].val);
+    obj.table->pairs[idx].key = key;
+    obj.table->pairs[idx].val = val;
+}
+
+nn_pair nn_values_getPair(nn_value obj, size_t idx) {
+    nn_pair badPair = {.key = nn_values_nil(), .val = nn_values_nil()};
+    if(obj.tag != NN_VALUE_TABLE) return badPair;
+    if(idx >= obj.table->len) return badPair;
+    return obj.table->pairs[idx];
+}

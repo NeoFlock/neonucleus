@@ -9,6 +9,8 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
             "src/lock.c",
             "src/utils.c",
             "src/value.c",
+            "src/component.c",
+            "src/computer.c",
             "src/universe.c",
         },
     });
