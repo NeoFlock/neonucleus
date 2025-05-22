@@ -12,6 +12,7 @@ typedef struct nn_computer {
     char state;
     bool allocatedError;
     char *err;
+    void *userdata;
     nn_guard *lock;
     nn_component *components;
     size_t componentLen;
@@ -21,8 +22,9 @@ typedef struct nn_computer {
     nn_value rets[NN_MAX_RETS];
     size_t retc;
     nn_architecture *arch;
+    void *archState;
     nn_architecture *nextArch;
-    nn_architecture supportedArch[NN_MAX_ARCHITECTURES];
+    nn_architecture *supportedArch[NN_MAX_ARCHITECTURES];
     size_t supportedArchCount;
     double timeOffset;
     nn_universe *universe;
@@ -32,6 +34,9 @@ typedef struct nn_computer {
     size_t maxEnergy;
     nn_signal signals[NN_MAX_SIGNALS];
     size_t signalCount;
+    size_t memoryTotal;
+    nn_address address;
+    nn_address tmpAddress;
 } nn_computer;
 
 #endif

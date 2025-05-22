@@ -4,16 +4,72 @@
 #include <string.h>
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
-void nn_tickComputer(nn_computer *computer);
-double nn_getUptime(nn_computer *computer);
-size_t nn_getComputerMemoryUsed(nn_computer *computer);
-size_t nn_getComputerMemoryTotal(nn_computer *computer);
-void *nn_getComputerUserData(nn_computer *computer);
-void nn_addSupportedArchitecture(nn_computer *computer, nn_architecture *arch);
-nn_architecture *nn_getArchitecture(nn_computer *computer);
-nn_architecture *nn_getNextArchitecture(nn_computer *computer);
-void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch);
-void nn_deleteComputer(nn_computer *computer);
+
+void nn_setTmpAddress(nn_computer *computer, nn_address tmp) {
+    nn_free(computer->tmpAddress);
+    computer->tmpAddress = nn_strdup(tmp);
+}
+
+nn_address nn_getComputerAddress(nn_computer *computer) {
+    return computer->tmpAddress;
+}
+
+int nn_tickComputer(nn_computer *computer) {
+    nn_clearError(computer);
+    computer->arch->tick(computer, computer->archState, computer->arch->userdata);
+    return nn_getState(computer);
+}
+
+double nn_getUptime(nn_computer *computer) {
+    return nn_getTime(computer->universe) - computer->timeOffset;
+}
+
+size_t nn_getComputerMemoryUsed(nn_computer *computer) {
+    return computer->arch->getMemoryUsage(computer, computer->archState, computer->arch->userdata);
+}
+
+size_t nn_getComputerMemoryTotal(nn_computer *computer) {
+    return computer->memoryTotal;
+}
+
+void *nn_getComputerUserData(nn_computer *computer) {
+    return computer->userdata;
+}
+
+void nn_addSupportedArchitecture(nn_computer *computer, nn_architecture *arch) {
+    if(computer->supportedArchCount == NN_MAX_ARCHITECTURES) return;
+    computer->supportedArch[computer->supportedArchCount] = arch;
+    computer->supportedArchCount++;
+}
+
+nn_architecture *nn_getArchitecture(nn_computer *computer) {
+    return computer->arch;
+}
+
+nn_architecture *nn_getNextArchitecture(nn_computer *computer) {
+    return computer->nextArch;
+}
+
+void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch) {
+    computer->nextArch = arch;
+}
+
+void nn_deleteComputer(nn_computer *computer) {
+    nn_clearError(computer);
+    nn_resetCall(computer);
+    while(computer->signalCount > 0) {
+        nn_popSignal(computer);
+    }
+    for(size_t i = 0; i < computer->userCount; i++) {
+        nn_free(computer->users[i]);
+    }
+    computer->arch->teardown(computer, computer->archState, computer->arch->userdata);
+    nn_deleteGuard(computer->lock);
+    nn_free(computer->components);
+    nn_free(computer->address);
+    nn_free(computer->tmpAddress);
+    nn_free(computer);
+}
 
 const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len) {
     if(len > NN_MAX_SIGNAL_VALS) return "too many values";
@@ -220,4 +276,20 @@ size_t nn_getArgumentCount(nn_computer *computer) {
 
 size_t nn_getReturnCount(nn_computer *computer) {
     return computer->retc;
+}
+
+char *nn_serializeProgram(nn_computer *computer) {
+    return computer->arch->serialize(computer, computer->archState, computer->arch->userdata);
+}
+
+void nn_deserializeProgram(nn_computer *computer, char *memory) {
+    computer->arch->deserialize(computer, memory, computer->archState, computer->arch->userdata);
+}
+
+void nn_lockComputer(nn_computer *computer) {
+    nn_lock(computer->lock);
+}
+
+void nn_unlockComputer(nn_computer *computer) {
+    nn_unlock(computer->lock);
 }

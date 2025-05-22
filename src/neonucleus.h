@@ -150,7 +150,7 @@ void nn_setClock(nn_universe *universe, nn_clock_t *clock, void *userdata);
 double nn_getTime(nn_universe *universe);
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
-void nn_tickComputer(nn_computer *computer);
+int nn_tickComputer(nn_computer *computer);
 double nn_getUptime(nn_computer *computer);
 size_t nn_getComputerMemoryUsed(nn_computer *computer);
 size_t nn_getComputerMemoryTotal(nn_computer *computer);
@@ -168,6 +168,13 @@ const char *nn_addUser(nn_computer *computer, const char *name);
 void nn_deleteUser(nn_computer *computer, const char *name);
 const char *nn_indexUser(nn_computer *computer, size_t idx);
 bool nn_isUser(nn_computer *computer, const char *name);
+
+/* The memory returned can be freed with nn_free() */
+char *nn_serializeProgram(nn_computer *computer);
+void nn_deserializeProgram(nn_computer *computer, char *memory);
+
+void nn_lockComputer(nn_computer *computer);
+void nn_unlockComputer(nn_computer *computer);
 
 /// This means the computer has not yet started.
 /// This is used to determine whether newComponent and removeComponent should emit signals.
@@ -225,6 +232,8 @@ void nn_setCError(nn_computer *computer, const char *err);
 // Component stuff
 
 nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slot, nn_componentTable *table, void *userdata);
+void nn_setTmpAddress(nn_computer *computer, nn_address tmp);
+nn_address nn_getComputerAddress(nn_computer *computer);
 void nn_removeComponent(nn_computer *computer, nn_address address);
 void nn_destroyComponent(nn_component *component);
 nn_computer *nn_getComputerOfComponent(nn_component *component);
