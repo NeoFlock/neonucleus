@@ -36,7 +36,6 @@ pub fn build(b: *std.Build) void {
     
     const engineShared = b.addSharedLibrary(.{
         .name = "neonucleus",
-        //.root_source_file = b.path("src/engine.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -55,9 +54,14 @@ pub fn build(b: *std.Build) void {
 
     const emulator = b.addExecutable(.{
         .name = "neunucleus",
-        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+    });
+    emulator.linkLibC();
+    emulator.addCSourceFiles(.{
+        .files = &.{
+            "src/emulator.c",
+        },
     });
 
     // forces us to link in everything too
