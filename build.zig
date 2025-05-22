@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) void {
     sharedStep.dependOn(install);
 
     const emulator = b.addExecutable(.{
-        .name = "neunucleus",
+        .name = "neonucleus",
         .target = target,
         .optimize = optimize,
     });
