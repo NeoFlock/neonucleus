@@ -91,9 +91,9 @@ char *nn_strdup(const char *s);
 void *nn_memdup(const void *buf, size_t len);
 
 nn_guard *nn_newGuard();
-void nn_lock(nn_guard *lock);
-void nn_unlock(nn_guard *lock);
-void nn_deleteGuard(nn_guard *lock);
+void nn_lock(nn_guard *guard);
+void nn_unlock(nn_guard *guard);
+void nn_deleteGuard(nn_guard *guard);
 
 nn_universe *nn_newUniverse();
 void nn_unsafeDeleteUniverse(nn_universe *universe);
