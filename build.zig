@@ -8,6 +8,7 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
             "src/tinycthread.c",
             "src/lock.c",
             "src/utils.c",
+            "src/value.c",
             "src/universe.c",
         },
     });

@@ -208,17 +208,29 @@ size_t nn_getReturnCount(nn_computer *computer);
 
 // Value stuff
 
-nn_value nn_values_retain(nn_value val);
-void nn_values_drop(nn_value val);
-
 nn_value nn_values_nil();
+nn_value nn_values_integer(intptr_t integer);
+nn_value nn_values_number(double num);
+nn_value nn_values_boolean(bool boolean);
 nn_value nn_values_cstring(const char *string);
 nn_value nn_values_string(const char *string, size_t len);
 nn_value nn_values_array(size_t len);
-void nn_values_set(nn_value *arr, size_t idx, nn_value val);
-nn_value nn_values_get(nn_value *arr, size_t idx);
 nn_value nn_values_table(size_t pairCount);
-void nn_values_setPair(nn_value *obj, nn_value key, nn_value val);
-nn_pair nn_values_getPair(nn_value *obj, size_t idx);
+
+size_t nn_values_getType(nn_value val);
+nn_value nn_values_retain(nn_value val);
+void nn_values_drop(nn_value val);
+
+void nn_values_set(nn_value arr, size_t idx, nn_value val);
+nn_value nn_values_get(nn_value arr, size_t idx);
+
+void nn_values_setPair(nn_value obj, nn_value key, nn_value val);
+nn_pair nn_values_getPair(nn_value obj, size_t idx);
+
+intptr_t nn_toInt(nn_value val);
+double nn_toNumber(nn_value val);
+bool nn_toBoolean(nn_value val);
+const char *nn_toCString(nn_value val);
+const char *nn_toString(nn_value val, size_t *len);
 
 #endif
