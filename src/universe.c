@@ -1,15 +1,6 @@
 #include "neonucleus.h"
+#include "universe.h"
 #include <string.h>
-
-typedef struct nn_universe_udata {
-    char *name;
-    void *userdata;
-} nn_universe_udata;
-
-typedef struct nn_universe {
-    nn_universe_udata udata[NN_MAX_USERDATA];
-    size_t udataLen;
-} nn_universe;
 
 nn_universe *nn_newUniverse() {
     nn_universe *u = nn_malloc(sizeof(nn_universe));

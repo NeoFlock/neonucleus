@@ -4,6 +4,7 @@
 #include "neonucleus.h"
 
 typedef struct nn_computer {
+    char state;
     nn_component *components;
     size_t componentLen;
     size_t componentCap;
@@ -15,6 +16,8 @@ typedef struct nn_computer {
     nn_architecture *nextArch;
     nn_architecture supportedArch[NN_MAX_ARCHITECTURES];
     size_t supportedArchCount;
+    double timeOffset;
+    nn_universe *universe;
 } nn_computer;
 
 #endif

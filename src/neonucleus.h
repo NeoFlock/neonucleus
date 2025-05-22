@@ -5,6 +5,43 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+   //define something for Windows (32-bit and 64-bit, this part is common)
+   #ifdef _WIN64
+        #define NN_WINDOWS
+   #else
+        #error "Windows 32-bit is not supported"
+   #endif
+#elif __APPLE__
+    #include <TargetConditionals.h>
+    #if TARGET_IPHONE_SIMULATOR
+        #error "iPhone Emulators are not supported"
+    #elif TARGET_OS_MACCATALYST
+        // I guess?
+        #define NN_MACOS
+    #elif TARGET_OS_IPHONE
+        #error "iPhone are not supported"
+    #elif TARGET_OS_MAC
+        #define NN_MACOS
+    #else
+        #error "Unknown Apple platform"
+    #endif
+#elif __ANDROID__
+    #error "Android is not supported"
+#elif __linux__
+    #define NN_LINUX
+#endif
+
+#if __unix__ // all unices not caught above
+    // Unix
+    #define NN_UNIX
+    #define NN_POSIX
+#elif defined(_POSIX_VERSION)
+    // POSIX
+    #define NN_POSIX
+#endif
+
 // The entire C API, in one header
 
 // Magic limits
@@ -98,14 +135,19 @@ void nn_lock(nn_guard *guard);
 void nn_unlock(nn_guard *guard);
 void nn_deleteGuard(nn_guard *guard);
 
+double nn_realTime();
+double nn_realTimeClock(void *_);
+
+typedef double nn_clock_t(void *_);
+
 nn_universe *nn_newUniverse();
 void nn_unsafeDeleteUniverse(nn_universe *universe);
 void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
+void nn_setClock(nn_universe *universe, nn_clock_t *clock, void *userdata);
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
 void nn_tickComputer(nn_computer *computer);
-void nn_setUptime(nn_computer *computer, double uptime);
 double nn_getUptime(nn_computer *computer);
 size_t nn_getComputerMemoryUsed(nn_computer *computer);
 size_t nn_getComputerMemoryTotal(nn_computer *computer);
@@ -121,6 +163,7 @@ void nn_popSignal(nn_computer *computer);
 void nn_addUser(nn_computer *computer, const char *name);
 void nn_deleteUser(nn_computer *computer, const char *name);
 const char *nn_indexUser(nn_computer *computer, size_t idx);
+bool nn_isUser(nn_computer *computer, const char *name);
 
 /// This means the computer has not yet started.
 /// This is used to determine whether newComponent and removeComponent should emit signals.
@@ -157,12 +200,6 @@ const char *nn_indexUser(nn_computer *computer, size_t idx);
 
 int nn_getState(nn_computer *computer);
 void nn_setState(nn_computer *computer, int state);
-
-size_t nn_countUsers(nn_computer *computer);
-bool nn_isUser(nn_computer *computer, const char *user);
-void nn_addUser(nn_computer *computer, const char *user);
-void nn_removeUser(nn_computer *computer, const char *user);
-const char *nn_getUser(nn_computer *computer, size_t idx);
 
 void nn_setEnergyInfo(nn_computer *computer, size_t energy, size_t capacity);
 size_t nn_getEnergy(nn_computer *computer);
