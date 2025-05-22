@@ -19,6 +19,8 @@ typedef struct nn_computer {
     size_t supportedArchCount;
     double timeOffset;
     nn_universe *universe;
+    char *users[NN_MAX_USERS];
+    size_t userCount;
 } nn_computer;
 
 #endif
