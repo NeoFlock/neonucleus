@@ -5,6 +5,7 @@
 
 typedef struct nn_computer {
     char state;
+    nn_guard *lock;
     nn_component *components;
     size_t componentLen;
     size_t componentCap;
