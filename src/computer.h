@@ -5,6 +5,8 @@
 
 typedef struct nn_computer {
     char state;
+    bool allocatedError;
+    char *err;
     nn_guard *lock;
     nn_component *components;
     size_t componentLen;
@@ -21,6 +23,8 @@ typedef struct nn_computer {
     nn_universe *universe;
     char *users[NN_MAX_USERS];
     size_t userCount;
+    size_t energy;
+    size_t maxEnergy;
 } nn_computer;
 
 #endif

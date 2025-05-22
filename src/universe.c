@@ -16,6 +16,7 @@ void nn_unsafeDeleteUniverse(nn_universe *universe) {
     for(size_t i = 0; i < universe->udataLen; i++) {
         nn_free(universe->udata[i].name);
     }
+    nn_free(universe);
 }
 
 void *nn_queryUserdata(nn_universe *universe, const char *name) {

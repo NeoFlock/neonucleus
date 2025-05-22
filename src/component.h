@@ -5,18 +5,18 @@
 #include "computer.h"
 
 typedef struct nn_method {
-    const char *name;
+    char *name;
     nn_componentMethod *method;
     void *userdata;
-    const char *doc;
+    char *doc;
     bool direct;
 } nn_method;
 
 typedef struct nn_componentTable {
-    const char *name;
+    char *name;
     void *userdata;
     nn_componentConstructor *constructor;
-    nn_componentConstructor *destructor;
+    nn_componentDestructor *destructor;
     nn_method methods[NN_MAX_METHODS];
     size_t methodCount;
 } nn_componentTable;
