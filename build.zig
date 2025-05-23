@@ -58,8 +58,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     emulator.linkLibC();
+    emulator.linkSystemLibrary("lua");
     emulator.addCSourceFiles(.{
         .files = &.{
+            "src/testLuaArch.c",
             "src/emulator.c",
         },
     });

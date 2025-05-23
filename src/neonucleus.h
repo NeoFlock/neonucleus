@@ -71,8 +71,8 @@ typedef struct nn_architecture {
     size_t (*getMemoryUsage)(nn_computer *computer, void *state, void *userdata);
     void (*tick)(nn_computer *computer, void *state, void *userdata);
     /* Pointer returned should be allocated with nn_malloc or nn_realloc, so it can be freed with nn_free */
-    char *(*serialize)(nn_computer *computer, void *state, void *userdata);
-    void (*deserialize)(nn_computer *computer, const char *data, void *state, void *userdata);
+    char *(*serialize)(nn_computer *computer, void *state, void *userdata, size_t *len);
+    void (*deserialize)(nn_computer *computer, const char *data, size_t len, void *state, void *userdata);
 } nn_architecture;
 typedef char *nn_address;
 
@@ -170,8 +170,8 @@ const char *nn_indexUser(nn_computer *computer, size_t idx);
 bool nn_isUser(nn_computer *computer, const char *name);
 
 /* The memory returned can be freed with nn_free() */
-char *nn_serializeProgram(nn_computer *computer);
-void nn_deserializeProgram(nn_computer *computer, char *memory);
+char *nn_serializeProgram(nn_computer *computer, size_t *len);
+void nn_deserializeProgram(nn_computer *computer, const char *memory, size_t len);
 
 void nn_lockComputer(nn_computer *computer);
 void nn_unlockComputer(nn_computer *computer);
@@ -234,6 +234,7 @@ void nn_setCError(nn_computer *computer, const char *err);
 nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slot, nn_componentTable *table, void *userdata);
 void nn_setTmpAddress(nn_computer *computer, nn_address tmp);
 nn_address nn_getComputerAddress(nn_computer *computer);
+nn_address nn_getTmpAddress(nn_computer *computer);
 void nn_removeComponent(nn_computer *computer, nn_address address);
 void nn_destroyComponent(nn_component *component);
 nn_computer *nn_getComputerOfComponent(nn_component *component);

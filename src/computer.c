@@ -61,6 +61,10 @@ void nn_setTmpAddress(nn_computer *computer, nn_address tmp) {
 }
 
 nn_address nn_getComputerAddress(nn_computer *computer) {
+    return computer->address;
+}
+
+nn_address nn_getTmpAddress(nn_computer *computer) {
     return computer->tmpAddress;
 }
 
@@ -329,12 +333,12 @@ size_t nn_getReturnCount(nn_computer *computer) {
     return computer->retc;
 }
 
-char *nn_serializeProgram(nn_computer *computer) {
-    return computer->arch->serialize(computer, computer->archState, computer->arch->userdata);
+char *nn_serializeProgram(nn_computer *computer, size_t *len) {
+    return computer->arch->serialize(computer, computer->archState, computer->arch->userdata, len);
 }
 
-void nn_deserializeProgram(nn_computer *computer, char *memory) {
-    computer->arch->deserialize(computer, memory, computer->archState, computer->arch->userdata);
+void nn_deserializeProgram(nn_computer *computer, const char *memory, size_t len) {
+    computer->arch->deserialize(computer, memory, len, computer->archState, computer->arch->userdata);
 }
 
 void nn_lockComputer(nn_computer *computer) {
