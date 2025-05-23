@@ -3,7 +3,57 @@
 #include "neonucleus.h"
 #include <string.h>
 
-nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
+nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit) {
+    nn_computer *c = nn_malloc(sizeof(nn_computer));
+    c->components = nn_malloc(sizeof(nn_component) * componentLimit);
+    if(c->components == NULL) {
+        nn_free(c);
+        return NULL;
+    }
+    c->address = nn_strdup(address);
+    if(c->address == NULL) {
+        nn_free(c->components);
+        nn_free(c);
+        return NULL;
+    }
+    c->lock = nn_newGuard();
+    if(c->lock == NULL) {
+        nn_free(c->address);
+        nn_free(c->components);
+        nn_free(c);
+        return NULL;
+    }
+    c->timeOffset = nn_getTime(universe);
+    c->supportedArchCount = 0;
+    c->argc = 0;
+    c->retc = 0;
+    c->err = NULL;
+    c->allocatedError = false;
+    c->state = NN_STATE_SETUP;
+    c->componentLen = 0;
+    c->componentCap = componentLimit;
+    c->userCount = 0;
+    c->maxEnergy = 5000;
+    c->signalCount = 0;
+    c->universe = universe;
+    c->arch = arch;
+    c->nextArch = arch;
+    c->userdata = userdata;
+    c->memoryTotal = memoryLimit;
+    c->tmpAddress = NULL;
+
+    // Setup Architecture
+    c->archState = c->arch->setup(c, c->arch->userdata);
+    if(c->archState == NULL) {
+        nn_deleteGuard(c->lock);
+        nn_free(c->address);
+        nn_free(c->components);
+        nn_free(c);
+        return NULL;
+    }
+
+    return c;
+}
 
 void nn_setTmpAddress(nn_computer *computer, nn_address tmp) {
     nn_free(computer->tmpAddress);
@@ -15,6 +65,7 @@ nn_address nn_getComputerAddress(nn_computer *computer) {
 }
 
 int nn_tickComputer(nn_computer *computer) {
+    computer->state = NN_STATE_RUNNING;
     nn_clearError(computer);
     computer->arch->tick(computer, computer->archState, computer->arch->userdata);
     return nn_getState(computer);

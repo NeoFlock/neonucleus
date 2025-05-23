@@ -7,6 +7,7 @@ typedef struct nn_guard {
 
 nn_guard *nn_newGuard() {
     nn_guard *g = nn_malloc(sizeof(nn_guard));
+    if(g == NULL) return NULL;
     mtx_init(&g->m, mtx_recursive);
     return g;
 }
