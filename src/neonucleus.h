@@ -156,6 +156,7 @@ size_t nn_getComputerMemoryUsed(nn_computer *computer);
 size_t nn_getComputerMemoryTotal(nn_computer *computer);
 void *nn_getComputerUserData(nn_computer *computer);
 void nn_addSupportedArchitecture(nn_computer *computer, nn_architecture *arch);
+nn_architecture *nn_getSupportedArchitecture(nn_computer *computer, size_t idx);
 nn_architecture *nn_getArchitecture(nn_computer *computer);
 nn_architecture *nn_getNextArchitecture(nn_computer *computer);
 void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch);
@@ -214,6 +215,7 @@ void nn_setState(nn_computer *computer, int state);
 
 void nn_setEnergyInfo(nn_computer *computer, size_t energy, size_t capacity);
 size_t nn_getEnergy(nn_computer *computer);
+size_t nn_getMaxEnergy(nn_computer *computer);
 void nn_removeEnergy(nn_computer *computer, size_t energy);
 void nn_addEnergy(nn_computer *computer, size_t amount);
 

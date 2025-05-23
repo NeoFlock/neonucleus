@@ -73,6 +73,66 @@ static int testLuaArch_computer_tmpAddress(lua_State *L) {
     return 1;
 }
 
+static int testLuaArch_computer_uptime(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    lua_pushnumber(L, nn_getUptime(c));
+    return 1;
+}
+
+// TODO: beep
+static int testLuaArch_computer_beep(lua_State *L) {
+    return 0;
+}
+
+static int testLuaArch_computer_energy(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    lua_pushinteger(L, nn_getEnergy(c));
+    return 1;
+}
+
+static int testLuaArch_computer_maxEnergy(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    lua_pushinteger(L, nn_getEnergy(c));
+    return 1;
+}
+
+static int testLuaArch_computer_getArchitecture(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    lua_pushstring(L, nn_getArchitecture(c)->archName);
+    return 1;
+}
+
+static int testLuaArch_computer_getArchitectures(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    lua_createtable(L, 3, 0);
+    int arr = lua_gettop(L);
+    size_t i = 0;
+    while(true) {
+        nn_architecture *arch = nn_getSupportedArchitecture(c, i);
+        if(arch == NULL) break;
+        i++;
+        lua_pushstring(L, arch->archName);
+        lua_seti(L, arr, i);
+    }
+    return 1;
+}
+
+static int testLuaArch_computer_setArchitecture(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    const char *requested = luaL_checkstring(L, 1);
+    for(size_t i = 0;; i++) {
+        nn_architecture *arch = nn_getSupportedArchitecture(c, i);
+        if(arch == NULL) break;
+        if(strcmp(arch->archName, requested) == 0) {
+            nn_setState(c, NN_STATE_SWITCH);
+            nn_setNextArchitecture(c, arch);
+            return 0;
+        }
+    }
+    luaL_error(L, "unsupported architecture: %s", requested);
+    return 0;
+}
+
 void testLuaArch_loadEnv(lua_State *L) {
     lua_createtable(L, 0, 10);
     int computer = lua_gettop(L);
@@ -86,6 +146,18 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, computer, "address");
     lua_pushcfunction(L, testLuaArch_computer_tmpAddress);
     lua_setfield(L, computer, "tmpAddress");
+    lua_pushcfunction(L, testLuaArch_computer_uptime);
+    lua_setfield(L, computer, "uptime");
+    lua_pushcfunction(L, testLuaArch_computer_energy);
+    lua_setfield(L, computer, "energy");
+    lua_pushcfunction(L, testLuaArch_computer_maxEnergy);
+    lua_setfield(L, computer, "maxEnergy");
+    lua_pushcfunction(L, testLuaArch_computer_getArchitecture);
+    lua_setfield(L, computer, "getArchitecture");
+    lua_pushcfunction(L, testLuaArch_computer_getArchitectures);
+    lua_setfield(L, computer, "getArchitectures");
+    lua_pushcfunction(L, testLuaArch_computer_setArchitecture);
+    lua_setfield(L, computer, "setArchitecture");
     lua_setglobal(L, "computer");
 }
 

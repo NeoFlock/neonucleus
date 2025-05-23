@@ -97,6 +97,11 @@ void nn_addSupportedArchitecture(nn_computer *computer, nn_architecture *arch) {
     computer->supportedArchCount++;
 }
 
+nn_architecture *nn_getSupportedArchitecture(nn_computer *computer, size_t idx) {
+    if(idx >= computer->supportedArchCount) return NULL;
+    return computer->supportedArch[idx];
+}
+
 nn_architecture *nn_getArchitecture(nn_computer *computer) {
     return computer->arch;
 }
@@ -213,6 +218,10 @@ void nn_setEnergyInfo(nn_computer *computer, size_t energy, size_t capacity) {
 
 size_t nn_getEnergy(nn_computer *computer) {
     return computer->energy;
+}
+
+size_t nn_getMaxEnergy(nn_computer *computer) {
+    return computer->maxEnergy;
 }
 
 void nn_removeEnergy(nn_computer *computer, size_t energy) {
