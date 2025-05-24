@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "neonucleus.h"
 #include "testLuaArch.h"
 
@@ -8,9 +9,7 @@ void emulator_debugPrint(void *componentUserdata, void *methodUserdata, nn_compo
     nn_value msg = nn_getArgument(computer, 0);
     const char *m = nn_toCString(msg);
     printf("[DEBUG] %s\n", m);
-    nn_return(computer, nn_values_cstring(m));
-    nn_return(computer, nn_values_cstring(m));
-    nn_return(computer, nn_values_cstring(m));
+    nn_return(computer, nn_values_integer(strlen(m)));
 }
 
 int main() {

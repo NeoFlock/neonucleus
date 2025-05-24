@@ -355,6 +355,10 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, computer, "getTemperature");
     lua_pushcfunction(L, testLuaArch_computer_addHeat);
     lua_setfield(L, computer, "addHeat");
+    lua_pushcfunction(L, testLuaArch_computer_pushSignal);
+    lua_setfield(L, computer, "pushSignal");
+    lua_pushcfunction(L, testLuaArch_computer_popSignal);
+    lua_setfield(L, computer, "popSignal");
     lua_setglobal(L, "computer");
 
     lua_createtable(L, 0, 10);
