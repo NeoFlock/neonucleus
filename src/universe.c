@@ -43,3 +43,7 @@ void nn_storeUserdata(nn_universe *universe, const char *name, void *data) {
 double nn_getTime(nn_universe *universe) {
     return universe->currentClock(universe->clockUserdata);
 }
+
+void nn_loadCoreComponentTables(nn_universe *universe) {
+    nn_loadEepromTable(universe);
+}

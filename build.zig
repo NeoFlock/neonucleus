@@ -12,6 +12,8 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
             "src/component.c",
             "src/computer.c",
             "src/universe.c",
+            // components
+            "src/components/eeprom.c",
         },
     });
 }

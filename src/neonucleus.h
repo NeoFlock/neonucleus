@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -58,6 +59,9 @@
 #define NN_MAX_USER_SIZE 128
 #define NN_MAX_SIGNAL_SIZE 8192
 #define NN_OVERHEAT_MIN 100
+#define NN_CALL_HEAT 0.05
+#define NN_CALL_COST 1
+#define NN_LABEL_SIZE 128
 
 typedef struct nn_guard nn_guard;
 typedef struct nn_universe nn_universe;
@@ -151,6 +155,7 @@ void nn_setClock(nn_universe *universe, nn_clock_t *clock, void *userdata);
 double nn_getTime(nn_universe *universe);
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
+nn_universe *nn_getUniverse(nn_computer *computer);
 int nn_tickComputer(nn_computer *computer);
 double nn_getUptime(nn_computer *computer);
 size_t nn_getComputerMemoryUsed(nn_computer *computer);
@@ -170,6 +175,11 @@ const char *nn_addUser(nn_computer *computer, const char *name);
 void nn_deleteUser(nn_computer *computer, const char *name);
 const char *nn_indexUser(nn_computer *computer, size_t idx);
 bool nn_isUser(nn_computer *computer, const char *name);
+void nn_setCallBudget(nn_computer *computer, size_t callBudget);
+size_t nn_getCallBudget(nn_computer *computer);
+void nn_callCost(nn_computer *computer, size_t cost);
+size_t nn_getCallCost(nn_computer *computer);
+bool nn_isOverworked(nn_computer *computer);
 
 /* The memory returned can be freed with nn_free() */
 char *nn_serializeProgram(nn_computer *computer, size_t *len);
@@ -259,8 +269,8 @@ nn_component **nn_listComponent(nn_computer *computer, size_t *len);
 
 // Component VTable stuff
 
-typedef void *nn_componentConstructor(void *userdata);
-typedef void *nn_componentDestructor(void *tableUserdata, void *componentUserdata);
+typedef void *nn_componentConstructor(void *tableUserdata, void *componentUserdata);
+typedef void *nn_componentDestructor(void *tableUserdata, nn_component *component, void *componentUserdata);
 typedef void nn_componentMethod(void *componentUserdata, void *methodUserdata, nn_component *component, nn_computer *computer);
 
 nn_componentTable *nn_newComponentTable(const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
@@ -313,5 +323,35 @@ const char *nn_toString(nn_value val, size_t *len);
  * This is used by pushSignal to check the size
  */
 size_t nn_measurePacketSize(nn_value *vals, size_t len);
+
+// COMPONENTS
+
+/* Loads the vtables for the default implementations of those components */
+void nn_loadCoreComponentTables(nn_universe *universe);
+
+// loading each component
+void nn_loadEepromTable(nn_universe *universe);
+
+// the helpers
+
+// EEPROM
+typedef struct nn_eeprom {
+    void *userdata;
+    atomic_size_t refc;
+    void (*deinit)(nn_component *component, void *userdata);
+
+    // methods
+    size_t (*getSize)(nn_component *component, void *userdata);
+    size_t (*getDataSize)(nn_component *component, void *userdata);
+    void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
+    size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
+    size_t (*get)(nn_component *component, void *userdata, char *buf);
+    void (*set)(nn_component *component, void *userdata, const char *buf, size_t len);
+    int (*getData)(nn_component *component, void *userdata, char *buf);
+    void (*setData)(nn_component *component, void *userdata, const char *buf, size_t len);
+    bool (*isReadonly)(nn_component *component, void *userdata);
+    void (*makeReadonly)(nn_component *component, void *userdata);
+} nn_eeprom;
+nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom);
 
 #endif

@@ -44,6 +44,8 @@ nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_archit
     c->temperature = 30;
     c->roomTemperature = 30;
     c->temperatureCoefficient = 1;
+    c->callCost = 0;
+    c->callBudget = 256;
 
     // Setup Architecture
     c->archState = c->arch->setup(c, c->arch->userdata);
@@ -56,6 +58,10 @@ nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_archit
     }
 
     return c;
+}
+
+nn_universe *nn_getUniverse(nn_computer *computer) {
+    return computer->universe;
 }
 
 void nn_setTmpAddress(nn_computer *computer, nn_address tmp) {
@@ -72,6 +78,7 @@ nn_address nn_getTmpAddress(nn_computer *computer) {
 }
 
 int nn_tickComputer(nn_computer *computer) {
+    computer->callCost = 0;
     computer->state = NN_STATE_RUNNING;
     nn_clearError(computer);
     computer->arch->tick(computer, computer->archState, computer->arch->userdata);
@@ -206,6 +213,26 @@ bool nn_isUser(nn_computer *computer, const char *name) {
     return false;
 }
 
+void nn_setCallBudget(nn_computer *computer, size_t callBudget) {
+    computer->callBudget = callBudget;
+}
+
+size_t nn_getCallBudget(nn_computer *computer) {
+    return computer->callBudget;
+}
+
+void nn_callCost(nn_computer *computer, size_t cost) {
+    computer->callCost += cost;
+}
+
+size_t nn_getCallCost(nn_computer *computer) {
+    return computer->callCost;
+}
+
+bool nn_isOverworked(nn_computer *computer) {
+    return computer->callCost >= computer->callBudget;
+}
+
 int nn_getState(nn_computer *computer) {
     return computer->state;
 }
@@ -335,9 +362,9 @@ nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slo
     c->slot = slot;
     c->computer = computer;
     if(table->constructor == NULL) {
-        c->statePtr = NULL;
+        c->statePtr = userdata;
     } else {
-        c->statePtr = table->constructor(table->userdata);
+        c->statePtr = table->constructor(table->userdata, userdata);
     }
     return c;
 }
@@ -353,7 +380,7 @@ void nn_removeComponent(nn_computer *computer, nn_address address) {
 void nn_destroyComponent(nn_component *component) {
     nn_free(component->address);
     if(component->table->destructor != NULL) {
-        component->table->destructor(component->table->userdata, component->statePtr);
+        component->table->destructor(component->table->userdata, component, component->statePtr);
     }
     component->address = NULL; // marks component as freed
 }

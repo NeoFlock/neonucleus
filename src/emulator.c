@@ -4,17 +4,61 @@
 #include <string.h>
 #include "neonucleus.h"
 #include "testLuaArch.h"
-
-void emulator_debugPrint(void *componentUserdata, void *methodUserdata, nn_component *component, nn_computer *computer) {
-    nn_value msg = nn_getArgument(computer, 0);
-    const char *m = nn_toCString(msg);
-    printf("[DEBUG] %s\n", m);
-    nn_return(computer, nn_values_integer(strlen(m)));
+    
+size_t ne_eeprom_getSize(nn_component *component, void *_) {
+    return 4096;
 }
+
+size_t ne_eeprom_getDataSize(nn_component *component, void *_) {
+    return 1024;
+}
+
+void ne_eeprom_getLabel(nn_component *component, void *_, char *buf, size_t *buflen) {
+    *buflen = 0;
+}
+
+size_t ne_eeprom_setLabel(nn_component *component, void *_, const char *buf, size_t buflen) {
+    return 0;
+}
+
+const char *ne_eeprom_location(nn_address address) {
+    static char buffer[256];
+    snprintf(buffer, 256, "data/%s", address);
+    return buffer;
+}
+
+size_t ne_eeprom_get(nn_component *component, void *_, char *buf) {
+    FILE *f = fopen(ne_eeprom_location(nn_getComponentAddress(component)), "rb");
+    fseek(f, 0, SEEK_END);
+    size_t len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    fread(buf, sizeof(char), len, f);
+    fclose(f);
+    return len;
+}
+
+void ne_eeprom_set(nn_component *component, void *_, const char *buf, size_t len) {
+    FILE *f = fopen(ne_eeprom_location(nn_getComponentAddress(component)), "wb");
+    fwrite(buf, sizeof(char), len, f);
+    fclose(f);
+}
+
+int ne_eeprom_getData(nn_component *component, void *_, char *buf) {
+    return -1;
+}
+
+void ne_eeprom_setData(nn_component *component, void *_, const char *buf, size_t len) {}
+    
+bool ne_eeprom_isReadonly(nn_component *component, void *userdata) {
+    return false;
+}
+
+void ne_eeprom_makeReadonly(nn_component *component, void *userdata) {}
 
 int main() {
     printf("Setting up universe\n");
     nn_universe *universe = nn_newUniverse();
+    nn_loadCoreComponentTables(universe);
 
     nn_architecture *arch = testLuaArch_getArchitecture("src/sandbox.lua");
     assert(arch != NULL && "Loading architecture failed");
@@ -24,10 +68,23 @@ int main() {
     nn_setEnergyInfo(computer, 5000, 5000);
     nn_addSupportedArchitecture(computer, arch);
 
-    nn_componentTable *t = nn_newComponentTable("debugPrint", NULL, NULL, NULL);
-    nn_defineMethod(t, "log", false, emulator_debugPrint, NULL, "logs stuff");
+    nn_eeprom genericEEPROM = {
+        .userdata = NULL,
+        .refc = 1,
+        .deinit = NULL,
+        .getSize = ne_eeprom_getSize,
+        .getDataSize = ne_eeprom_getDataSize,
+        .getLabel = ne_eeprom_getLabel,
+        .setLabel = ne_eeprom_setLabel,
+        .get = ne_eeprom_get,
+        .set = ne_eeprom_set,
+        .getData = ne_eeprom_getData,
+        .setData = ne_eeprom_setData,
+        .isReadonly = ne_eeprom_isReadonly,
+        .makeReadonly = ne_eeprom_makeReadonly,
+    };
 
-    nn_newComponent(computer, "debugPrint", -1, t, NULL);
+    nn_addEeprom(computer, "luaBios.lua", 0, &genericEEPROM);
 
     double lastTime = nn_realTime();
     while(true) {

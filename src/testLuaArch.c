@@ -254,10 +254,27 @@ static int testLuaArch_computer_popSignal(lua_State *L) {
     return retc;
 }
 
+static int testLuaArch_computer_users(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    size_t i = 0;
+    while(true) {
+        const char *name = nn_indexUser(c, i);
+        if(name == NULL) break;
+        lua_pushstring(L, name);
+        i++;
+    }
+    return i;
+}
+
 static int testLuaArch_component_list(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
     size_t len = 0;
     nn_component **components = nn_listComponent(c, &len);
+    if(components == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "out of memory");
+        return 2;
+    }
     lua_createtable(L, 0, len);
     int list = lua_gettop(L);
     for(size_t i = 0; i < len; i++) {
@@ -292,6 +309,62 @@ static int testLuaArch_component_doc(lua_State *L) {
     return 1;
 }
 
+static int testLuaArch_component_fields(lua_State *L) {
+    lua_createtable(L, 0, 0);
+    return 1;
+}
+
+static int testLuaArch_component_methods(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    const char *addr = luaL_checkstring(L, 1);
+    nn_component *component = nn_findComponent(c, (char *)addr);
+    if(component == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no such component");
+        return 2;
+    }
+    nn_componentTable *table = nn_getComponentTable(component);
+    lua_createtable(L, 0, 0);
+    int methods = lua_gettop(L);
+
+    size_t i = 0;
+    while(true) {
+        bool direct = false;
+        const char *name = nn_getTableMethod(table, i, &direct);
+        if(name == NULL) break;
+        i++;
+        lua_pushboolean(L, direct);
+        lua_setfield(L, methods, name);
+    }
+
+    return 1;
+}
+
+static int testLuaArch_component_slot(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    const char *addr = luaL_checkstring(L, 1);
+    nn_component *component = nn_findComponent(c, (char *)addr);
+    if(component == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no such component");
+        return 2;
+    }
+    lua_pushinteger(L, nn_getComponentSlot(component));
+    return 1;
+}
+
+static int testLuaArch_component_type(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    const char *addr = luaL_checkstring(L, 1);
+    nn_component *component = nn_findComponent(c, (char *)addr);
+    if(component == NULL) {
+        lua_pushnil(L);
+        lua_pushstring(L, "no such component");
+        return 2;
+    }
+    lua_pushstring(L, nn_getComponentType(nn_getComponentTable(component)));
+    return 1;
+}
 
 static int testLuaArch_component_invoke(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
@@ -313,6 +386,10 @@ static int testLuaArch_component_invoke(lua_State *L) {
         lua_pushnil(L);
         lua_pushstring(L, "no such method");
         return 2;
+    }
+    if(nn_getError(c) != NULL) {
+        nn_resetCall(c);
+        luaL_error(L, "%s", nn_getError(c));
     }
     size_t retc = nn_getReturnCount(c);
     for(size_t i = 0; i < retc; i++) {
@@ -359,6 +436,8 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, computer, "pushSignal");
     lua_pushcfunction(L, testLuaArch_computer_popSignal);
     lua_setfield(L, computer, "popSignal");
+    lua_pushcfunction(L, testLuaArch_computer_users);
+    lua_setfield(L, computer, "users");
     lua_setglobal(L, "computer");
 
     lua_createtable(L, 0, 10);
@@ -367,8 +446,16 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, component, "list");
     lua_pushcfunction(L, testLuaArch_component_doc);
     lua_setfield(L, component, "doc");
+    lua_pushcfunction(L, testLuaArch_component_fields);
+    lua_setfield(L, component, "fields");
+    lua_pushcfunction(L, testLuaArch_component_methods);
+    lua_setfield(L, component, "methods");
     lua_pushcfunction(L, testLuaArch_component_invoke);
     lua_setfield(L, component, "invoke");
+    lua_pushcfunction(L, testLuaArch_component_slot);
+    lua_setfield(L, component, "slot");
+    lua_pushcfunction(L, testLuaArch_component_type);
+    lua_setfield(L, component, "type");
     lua_setglobal(L, "component");
 }
 

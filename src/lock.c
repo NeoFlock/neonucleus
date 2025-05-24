@@ -13,13 +13,16 @@ nn_guard *nn_newGuard() {
 }
 
 void nn_lock(nn_guard *guard) {
+    if(guard == NULL) return;
     mtx_lock(&guard->m);
 }
 
 void nn_unlock(nn_guard *guard) {
+    if(guard == NULL) return;
     mtx_unlock(&guard->m);
 }
 
 void nn_deleteGuard(nn_guard *guard) {
+    if(guard == NULL) return;
     mtx_destroy(&guard->m);
 }
