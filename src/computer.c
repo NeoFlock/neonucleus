@@ -277,7 +277,7 @@ void nn_addHeat(nn_computer *computer, double heat) {
 }
 
 void nn_removeHeat(nn_computer *computer, double heat) {
-    computer->temperature -= heat * computer->temperatureCoefficient;
+    computer->temperature -= heat;
     if(computer->temperature < computer->roomTemperature) computer->temperature = computer->roomTemperature;
 }
 
