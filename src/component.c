@@ -71,6 +71,10 @@ nn_componentTable *nn_getComponentTable(nn_component *component) {
     return component->table;
 }
 
+const char *nn_getComponentType(nn_componentTable *table) {
+    return table->name;
+}
+
 void *nn_getComponentUserdata(nn_component *component) {
     return component->statePtr;
 }

@@ -57,6 +57,7 @@
 #define NN_MAX_USERDATA 1024
 #define NN_MAX_USER_SIZE 128
 #define NN_MAX_SIGNAL_SIZE 8192
+#define NN_OVERHEAT_MIN 100
 
 typedef struct nn_guard nn_guard;
 typedef struct nn_universe nn_universe;
@@ -178,37 +179,33 @@ void nn_lockComputer(nn_computer *computer);
 void nn_unlockComputer(nn_computer *computer);
 
 /// This means the computer has not yet started.
-/// This is used to determine whether newComponent and removeComponent should emit signals.
 #define NN_STATE_SETUP 0
 
 /// This means the computer is running. There is no matching off-state, as the computer is
 /// only off when it is deleted.
 #define NN_STATE_RUNNING 1
 
-/// This means a call budget exceeded, and the sandbox should make the computer yield.
-#define NN_STATE_OVERUSED 2
-
 /// This means a component's invocation could not be done due to a crucial resource being busy.
 /// The sandbox should yield, then *invoke the component method again.*
-#define NN_STATE_BUSY 3
+#define NN_STATE_BUSY 2
 
 /// This state occurs when a call to removeEnergy has consumed all the energy left.
 /// The sandbox should yield, and the runner should shut down the computer.
 /// No error is set, the sandbox can set it if it wanted to.
-#define NN_STATE_BLACKOUT 4
+#define NN_STATE_BLACKOUT 3
 
 /// This state only indicates that the runner should turn off the computer, but not due to a blackout.
 /// The runner need not bring it back.
-#define NN_STATE_CLOSING 5
+#define NN_STATE_CLOSING 4
 
 /// This state indicates that the runner should turn off the computer, but not due to a blackout.
 /// The runner should bring it back.
 /// By "bring it back", we mean delete the computer, then recreate the entire state.
-#define NN_STATE_REPEAT 6
+#define NN_STATE_REPEAT 5
 
 /// This state indciates that the runner should turn off the computer, to switch architectures.
 /// The architecture is returned by getNextArchitecture.
-#define NN_STATE_SWITCH 7
+#define NN_STATE_SWITCH 6
 
 int nn_getState(nn_computer *computer);
 void nn_setState(nn_computer *computer, int state);
@@ -218,6 +215,17 @@ size_t nn_getEnergy(nn_computer *computer);
 size_t nn_getMaxEnergy(nn_computer *computer);
 void nn_removeEnergy(nn_computer *computer, size_t energy);
 void nn_addEnergy(nn_computer *computer, size_t amount);
+
+double nn_getTemperature(nn_computer *computer);
+double nn_getThermalCoefficient(nn_computer *computer);
+double nn_getRoomTemperature(nn_computer *computer);
+void nn_setTemperature(nn_computer *computer, double temperature);
+void nn_setTemperatureCoefficient(nn_computer *computer, double coefficient);
+void nn_setRoomTemperature(nn_computer *computer, double roomTemperature);
+void nn_addHeat(nn_computer *computer, double heat);
+void nn_removeHeat(nn_computer *computer, double heat);
+/* Checks against NN_OVERHEAT_MIN */
+bool nn_isOverheating(nn_computer *computer);
 
 // NULL if there is no error.
 const char *nn_getError(nn_computer *computer);
@@ -243,8 +251,11 @@ nn_computer *nn_getComputerOfComponent(nn_component *component);
 nn_address nn_getComponentAddress(nn_component *component);
 int nn_getComponentSlot(nn_component *component);
 nn_componentTable *nn_getComponentTable(nn_component *component);
+const char *nn_getComponentType(nn_componentTable *table);
 void *nn_getComponentUserdata(nn_component *component);
 nn_component *nn_findComponent(nn_computer *computer, nn_address address);
+/* RESULT SHOULD BE NN_FREE()'D OR ELSE MEMORY IS LEAKED */
+nn_component **nn_listComponent(nn_computer *computer, size_t *len);
 
 // Component VTable stuff
 

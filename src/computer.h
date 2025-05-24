@@ -37,6 +37,9 @@ typedef struct nn_computer {
     size_t memoryTotal;
     nn_address address;
     nn_address tmpAddress;
+    double temperature;
+    double temperatureCoefficient;
+    double roomTemperature;
 } nn_computer;
 
 #endif

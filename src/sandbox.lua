@@ -1,5 +1,7 @@
-print(string.format("%d / %d", computer.usedMemory(), computer.totalMemory()))
-print(string.format("Computer Address: %q, Tmp Address: %q", computer.address(), computer.tmpAddress()))
+print(component.doc("debugPrint", "log"))
+local a, b, c = component.invoke("debugPrint", "log", "Absolute cinema")
+print(a, b, c)
 
-print(computer.getArchitecture())
-print(table.unpack(computer.getArchitectures()))
+computer.pushSignal("stuff", 123, "b", false, nil)
+
+print(computer.popSignal())

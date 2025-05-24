@@ -155,6 +155,47 @@ nn_pair nn_values_getPair(nn_value obj, size_t idx) {
     return obj.table->pairs[idx];
 }
 
+intptr_t nn_toInt(nn_value val) {
+    if(val.tag == NN_VALUE_INT) return val.integer;
+    if(val.tag == NN_VALUE_NUMBER) return val.number;
+    return 0;
+}
+
+double nn_toNumber(nn_value val) {
+    if(val.tag == NN_VALUE_INT) return val.integer;
+    if(val.tag == NN_VALUE_NUMBER) return val.number;
+    return 0;
+}
+
+bool nn_toBoolean(nn_value val) {
+    if(val.tag == NN_VALUE_NIL) return false;
+    if(val.tag == NN_VALUE_BOOL) return val.boolean;
+    return true;
+}
+
+const char *nn_toCString(nn_value val) {
+    if(val.tag == NN_VALUE_CSTR) return val.cstring;
+    if(val.tag == NN_VALUE_STR) return val.string->data;
+    return NULL;
+}
+
+const char *nn_toString(nn_value val, size_t *len) {
+    size_t l = 0;
+    const char *c = NULL;
+
+    if(val.tag == NN_VALUE_CSTR) {
+        c = val.cstring;
+        l = strlen(c);
+    }
+    if(val.tag == NN_VALUE_STR) {
+        c = val.string->data;
+        l = val.string->len;
+    }
+
+    if(len == NULL) *len = l;
+    return c;
+}
+
 size_t nn_measurePacketSize(nn_value *vals, size_t len) {
     size_t size = 0;
     for(size_t i = 0; i < len; i++) {

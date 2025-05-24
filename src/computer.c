@@ -41,6 +41,9 @@ nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_archit
     c->userdata = userdata;
     c->memoryTotal = memoryLimit;
     c->tmpAddress = NULL;
+    c->temperature = 30;
+    c->roomTemperature = 30;
+    c->temperatureCoefficient = 1;
 
     // Setup Architecture
     c->archState = c->arch->setup(c, c->arch->userdata);
@@ -242,6 +245,46 @@ void nn_addEnergy(nn_computer *computer, size_t amount) {
     computer->energy += amount;
 }
 
+double nn_getTemperature(nn_computer *computer) {
+    return computer->temperature;
+}
+
+double nn_getThermalCoefficient(nn_computer *computer) {
+    return computer->temperatureCoefficient;
+}
+
+double nn_getRoomTemperature(nn_computer *computer) {
+    return computer->roomTemperature;
+}
+
+void nn_setTemperature(nn_computer *computer, double temperature) {
+    computer->temperature = temperature;
+    if(computer->temperature < computer->roomTemperature) computer->temperature = computer->roomTemperature;
+}
+
+void nn_setTemperatureCoefficient(nn_computer *computer, double coefficient) {
+    computer->temperatureCoefficient = coefficient;
+}
+
+void nn_setRoomTemperature(nn_computer *computer, double roomTemperature) {
+    computer->roomTemperature = roomTemperature;
+    if(computer->temperature < computer->roomTemperature) computer->temperature = computer->roomTemperature;
+}
+
+void nn_addHeat(nn_computer *computer, double heat) {
+    computer->temperature += heat * computer->temperatureCoefficient;
+    if(computer->temperature < computer->roomTemperature) computer->temperature = computer->roomTemperature;
+}
+
+void nn_removeHeat(nn_computer *computer, double heat) {
+    computer->temperature -= heat * computer->temperatureCoefficient;
+    if(computer->temperature < computer->roomTemperature) computer->temperature = computer->roomTemperature;
+}
+
+bool nn_isOverheating(nn_computer *computer) {
+    return computer->temperature > NN_OVERHEAT_MIN;
+}
+
 const char *nn_getError(nn_computer *computer) {
     return computer->err;
 }
@@ -272,7 +315,32 @@ void nn_setCError(nn_computer *computer, const char *err) {
     computer->allocatedError = false;
 }
 
-nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slot, nn_componentTable *table, void *userdata);
+nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slot, nn_componentTable *table, void *userdata) {
+    nn_component *c = NULL;
+    for(size_t i = 0; i < computer->componentLen; i++) {
+        if(computer->components[i].address == NULL) {
+            c = computer->components + i;
+            break;
+        }
+    }
+    if(c == NULL) {
+        if(computer->componentLen == computer->componentCap) return NULL; // too many
+        c = computer->components + computer->componentLen;
+        computer->componentLen++;
+    }
+
+    c->address = nn_strdup(address);
+    if(c->address == NULL) return NULL;
+    c->table = table;
+    c->slot = slot;
+    c->computer = computer;
+    if(table->constructor == NULL) {
+        c->statePtr = NULL;
+    } else {
+        c->statePtr = table->constructor(table->userdata);
+    }
+    return c;
+}
 
 void nn_removeComponent(nn_computer *computer, nn_address address) {
     for(size_t i = 0; i < computer->componentLen; i++) {
@@ -297,6 +365,21 @@ nn_component *nn_findComponent(nn_computer *computer, nn_address address) {
         }
     }
     return NULL;
+}
+
+nn_component **nn_listComponent(nn_computer *computer, size_t *len) {
+    nn_component **c = nn_malloc(sizeof(nn_component *) * computer->componentLen);
+    if(c == NULL) return NULL;
+    size_t j = 0;
+    for(size_t i = 0; i < computer->componentLen; i++) {
+        nn_component *component = computer->components + i;
+        if(component->address != NULL) {
+            c[j] = component;
+            j++;
+        }
+    }
+    *len = j;
+    return c;
 }
 
 void nn_resetCall(nn_computer *computer) {

@@ -44,7 +44,6 @@ double nn_realTime() {
 
 #else
 
-
 double nn_realTime() {
     LARGE_INTEGER frequency = {0};
     if(!QueryPerformanceFrequency(&frequency)) return 0;
