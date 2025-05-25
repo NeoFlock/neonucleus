@@ -62,6 +62,7 @@
 #define NN_CALL_HEAT 0.05
 #define NN_CALL_COST 1
 #define NN_LABEL_SIZE 128
+#define NN_INDIRECT_CALL_LATENCY 0.05
 
 typedef struct nn_guard nn_guard;
 typedef struct nn_universe nn_universe;
@@ -144,6 +145,8 @@ void nn_deleteGuard(nn_guard *guard);
 
 double nn_realTime();
 double nn_realTimeClock(void *_);
+/* Will busy-loop until the time passes. This is meant for computed latencies in components. */
+void nn_busySleep(double t);
 
 typedef double nn_clock_t(void *_);
 

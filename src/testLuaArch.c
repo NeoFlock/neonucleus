@@ -205,6 +205,12 @@ static int testLuaArch_computer_setArchitecture(lua_State *L) {
     return 0;
 }
 
+static int testLuaArch_computer_isOverworked(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    lua_pushboolean(L, nn_isOverworked(c));
+    return 1;
+}
+
 static int testLuaArch_computer_isOverheating(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
     lua_pushboolean(L, nn_isOverheating(c));
@@ -426,6 +432,8 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, computer, "getArchitectures");
     lua_pushcfunction(L, testLuaArch_computer_setArchitecture);
     lua_setfield(L, computer, "setArchitecture");
+    lua_pushcfunction(L, testLuaArch_computer_isOverworked);
+    lua_setfield(L, computer, "isOverworked");
     lua_pushcfunction(L, testLuaArch_computer_isOverheating);
     lua_setfield(L, computer, "isOverheating");
     lua_pushcfunction(L, testLuaArch_computer_getTemperature);

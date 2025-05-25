@@ -84,6 +84,10 @@ bool nn_invokeComponentMethod(nn_component *component, const char *name) {
     for(size_t i = 0; i < table->methodCount; i++) {
         nn_method method = table->methods[i];
         if(strcmp(method.name, name) == 0) {
+            nn_callCost(component->computer, NN_CALL_COST);
+            if(!method.direct) {
+                nn_busySleep(NN_INDIRECT_CALL_LATENCY);
+            }
             method.method(component->statePtr, method.userdata, component, component->computer);
             return true;
         }

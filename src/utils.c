@@ -59,3 +59,8 @@ double nn_realTime() {
 double nn_realTimeClock(void *_) {
     return nn_realTime();
 }
+
+void nn_busySleep(double t) {
+    double deadline = nn_realTime() + t;
+    while(nn_realTime() < deadline) {}
+}
