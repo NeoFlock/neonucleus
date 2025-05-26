@@ -272,6 +272,19 @@ static int testLuaArch_computer_users(lua_State *L) {
     return i;
 }
 
+static int testLuaArch_computer_getState(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    lua_pushinteger(L, nn_getState(c));
+    return 1;
+}
+
+static int testLuaArch_computer_setState(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+    int s = luaL_checkinteger(L, 1);
+    nn_setState(c, s);
+    return 1;
+}
+
 static int testLuaArch_component_list(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
     size_t len = 0;
@@ -446,6 +459,10 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, computer, "popSignal");
     lua_pushcfunction(L, testLuaArch_computer_users);
     lua_setfield(L, computer, "users");
+    lua_pushcfunction(L, testLuaArch_computer_getState);
+    lua_setfield(L, computer, "getState");
+    lua_pushcfunction(L, testLuaArch_computer_setState);
+    lua_setfield(L, computer, "setState");
     lua_setglobal(L, "computer");
 
     lua_createtable(L, 0, 10);
@@ -465,6 +482,24 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_pushcfunction(L, testLuaArch_component_type);
     lua_setfield(L, component, "type");
     lua_setglobal(L, "component");
+
+    lua_createtable(L, 0, 7);
+    int states = lua_gettop(L);
+    lua_pushinteger(L, NN_STATE_SETUP);
+    lua_setfield(L, states, "setup");
+    lua_pushinteger(L, NN_STATE_RUNNING);
+    lua_setfield(L, states, "running");
+    lua_pushinteger(L, NN_STATE_BUSY);
+    lua_setfield(L, states, "busy");
+    lua_pushinteger(L, NN_STATE_BLACKOUT);
+    lua_setfield(L, states, "blackout");
+    lua_pushinteger(L, NN_STATE_CLOSING);
+    lua_setfield(L, states, "closing");
+    lua_pushinteger(L, NN_STATE_REPEAT);
+    lua_setfield(L, states, "REPEAT");
+    lua_pushinteger(L, NN_STATE_SWITCH);
+    lua_setfield(L, states, "switch");
+    lua_setglobal(L, "states");
 }
 
 testLuaArch *testLuaArch_setup(nn_computer *computer, void *_) {
