@@ -26,3 +26,20 @@ void nn_deleteGuard(nn_guard *guard) {
     if(guard == NULL) return;
     mtx_destroy(&guard->m);
 }
+
+void nn_addRef(nn_refc *refc, size_t count) {
+    atomic_fetch_add(refc, count);
+}
+
+void nn_incRef(nn_refc *refc) {
+    nn_addRef(refc, 1);
+}
+
+bool nn_removeRef(nn_refc *refc, size_t count) {
+    size_t old = atomic_fetch_sub(refc, count);
+    return old == count;
+}
+
+bool nn_decRef(nn_refc *refc) {
+    return nn_removeRef(refc, 1);
+}

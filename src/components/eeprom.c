@@ -1,7 +1,7 @@
 #include "../neonucleus.h"
 
 void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
-    if(atomic_fetch_sub(&eeprom->refc, 1) > 1) return;
+    if(!nn_decRef(&eeprom->refc)) return;
 
     if(eeprom->deinit == NULL) {
         eeprom->deinit(component, eeprom);
@@ -56,7 +56,8 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
     size_t len;
     const char *buf = nn_toString(data, &len);
     if(len > eeprom->getSize(component, eeprom->userdata)) {
-
+        nn_setCError(computer, "out of space");
+        return;
     }
     eeprom->set(component, eeprom->userdata, buf, len);
 }
@@ -81,6 +82,10 @@ void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
     nn_value data = nn_getArgument(computer, 0);
     size_t len;
     const char *buf = nn_toString(data, &len);
+    if(len > eeprom->getDataSize(component, eeprom->userdata)) {
+        nn_setCError(computer, "out of space");
+        return;
+    }
     eeprom->setData(component, eeprom->userdata, buf, len);
 }
 

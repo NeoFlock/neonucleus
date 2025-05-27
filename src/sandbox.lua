@@ -128,8 +128,10 @@ libcomponent = {
                 assert(ok, "blackout")
             end
 
-            if computer.getState() ~= states.busy then
+            if computer.getState() == states.busy then
                 -- busy gets to try again
+                computer.setState(states.running)
+            else
                 if r[1] then
                     return table.unpack(r, 2)
                 end

@@ -58,6 +58,8 @@
 #define NN_MAX_USERDATA 1024
 #define NN_MAX_USER_SIZE 128
 #define NN_MAX_SIGNAL_SIZE 8192
+#define NN_MAX_OPEN_FILES 128
+
 #define NN_OVERHEAT_MIN 100
 #define NN_CALL_HEAT 0.05
 #define NN_CALL_COST 1
@@ -65,6 +67,7 @@
 #define NN_INDIRECT_CALL_LATENCY 0.05
 
 typedef struct nn_guard nn_guard;
+typedef atomic_size_t nn_refc;
 typedef struct nn_universe nn_universe;
 typedef struct nn_computer nn_computer;
 typedef struct nn_component nn_component;
@@ -142,6 +145,13 @@ nn_guard *nn_newGuard();
 void nn_lock(nn_guard *guard);
 void nn_unlock(nn_guard *guard);
 void nn_deleteGuard(nn_guard *guard);
+
+void nn_addRef(nn_refc *refc, size_t count);
+void nn_incRef(nn_refc *refc);
+/* Returns true if the object should be freed */
+bool nn_removeRef(nn_refc *refc, size_t count);
+/* Returns true if the object should be freed */
+bool nn_decRef(nn_refc *refc);
 
 double nn_realTime();
 double nn_realTimeClock(void *_);
@@ -334,13 +344,14 @@ void nn_loadCoreComponentTables(nn_universe *universe);
 
 // loading each component
 void nn_loadEepromTable(nn_universe *universe);
+void nn_loadFilesystemTable(nn_universe *universe);
 
 // the helpers
 
 // EEPROM
 typedef struct nn_eeprom {
+    nn_refc refc;
     void *userdata;
-    atomic_size_t refc;
     void (*deinit)(nn_component *component, void *userdata);
 
     // methods
@@ -356,5 +367,83 @@ typedef struct nn_eeprom {
     void (*makeReadonly)(nn_component *component, void *userdata);
 } nn_eeprom;
 nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom);
+
+// FileSystem
+typedef struct nn_filesystemControl {
+    int pretendChunkSize;
+
+    // speed
+    // used to calculate the latency of seeking a file. It will treat the file as continuous within the storage medium, which is completely
+    // unrealistic. Essentially, after a seek, it will check how much the file pointer was changed. If it went backwards, it will pretend
+    // the whole drive had to spin. You can imagine the drive spinning counter-clockwise.
+    // Seeks are assumed to be *chunked* too, so seeking within a chunk, even backwards, won't actually do anything.
+    // Set it to 0 to disable seek latency.
+    int pretendRPM;
+    double readLatencyPerChunk;
+    double writeLatencyPerChunk;
+
+    // these control *random* latencies that each operation will do
+    double randomLatencyMin;
+    double randomLatencyMax;
+
+    // thermals
+    double motorHeat; // this times how many chunks have been seeked will be the heat addres, +/- the heat range.
+    double heatRange;
+} nn_filesystemControl;
+
+typedef struct nn_filesystem {
+    nn_refc refc;
+    nn_filesystemControl *control;
+    void *userdata;
+    void (*deinit)(nn_component *component, void *userdata);
+
+    void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
+    size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
+
+    size_t (*spaceUsed)(nn_component *component, void *userdata);
+    size_t (*spaceTotal)(nn_component *component, void *userdata);
+} nn_filesystem;
+
+nn_filesystem *nn_volatileFileSystem(size_t capacity, nn_filesystemControl *control);
+nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int slot, nn_filesystem *filesystem);
+
+// Drive
+typedef struct nn_driveControl {
+    // Set it to 0 to disable seek latency.
+    int rpm;
+
+    double readLatencyPerByte;
+    double writeLatencyPerByte;
+
+    double randomLatencyMin;
+    double randomLatencyMax;
+
+    double motorHeat;
+    double heatRange;
+} nn_driveControl;
+
+typedef struct nn_drive {
+    nn_refc refc;
+    nn_driveControl *control;
+    void *userdata;
+    void (*deinit)(nn_component *component, void *userdata);
+    
+    void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
+    size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
+
+    size_t (*getPlatterCount)(nn_component *component, void *userdata);
+    size_t (*getCapacity)(nn_component *component, void *userdata);
+    size_t (*getSectorSize)(nn_component *component, void *userdata);
+
+    // sectors start at 1 as per OC.
+    void (*readSector)(nn_component *component, void *userdata, int sector, char *buf);
+    void (*writeSector)(nn_component *component, void *userdata, int sector, const char *buf);
+
+    // readByte and writeByte will internally use readSector and writeSector. This is to ensure they are handled *consistently.*
+    // Also makes the interface less redundant
+} nn_drive;
+
+nn_drive *nn_volatileDrive(size_t capacity, size_t platterCount, nn_driveControl *control);
+nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive);
 
 #endif
