@@ -19,14 +19,12 @@ void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize
         nn_free(ptr);
         return NULL;
     } else {
-        if(arch->memoryUsed - osize + nsize > nn_getComputerMemoryTotal(arch->computer)) {
+        size_t actualOldSize = osize;
+        if(ptr == NULL) actualOldSize = 0;
+        if(arch->memoryUsed - actualOldSize + nsize > nn_getComputerMemoryTotal(arch->computer)) {
             return NULL; // OOM condition
         }
-        if(ptr != NULL) {
-            // if ptr is NULL, osize will actually encode the type.
-            // We do not want that to mess us up.
-            arch->memoryUsed -= osize;
-        }
+        arch->memoryUsed -= actualOldSize;
         arch->memoryUsed += nsize;
         return nn_realloc(ptr, nsize);
     }
@@ -397,8 +395,9 @@ static int testLuaArch_component_invoke(lua_State *L) {
         return 2;
     }
     nn_resetCall(c);
+    printf("%s %s %d\n", addr, method, argc);
     for(size_t i = 0; i < argc; i++) {
-        nn_addArgument(c, testLuaArch_getValue(L, 2 + argc));
+        nn_addArgument(c, testLuaArch_getValue(L, 3 + i));
     }
     if(!nn_invokeComponentMethod(component, method)) {
         nn_resetCall(c);
@@ -500,6 +499,10 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_pushinteger(L, NN_STATE_SWITCH);
     lua_setfield(L, states, "switch");
     lua_setglobal(L, "states");
+
+    lua_createtable(L, 0, 20);
+    int unicode = lua_gettop(L);
+    lua_setglobal(L, "unicode");
 }
 
 testLuaArch *testLuaArch_setup(nn_computer *computer, void *_) {

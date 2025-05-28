@@ -98,6 +98,15 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
         nn_setCError(computer, "out of space");
         return;
     }
+    if(buf == NULL) {
+        if(data.tag == NN_VALUE_NIL) {
+            buf = "";
+            len = 0;
+        } else {
+            nn_setCError(computer, "bad data (string expected)");
+            return;
+        }
+    }
     eeprom->set(component, eeprom->userdata, buf, len);
     
     nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
@@ -132,8 +141,17 @@ void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
 
 void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_value data = nn_getArgument(computer, 0);
-    size_t len;
+    size_t len = 0;
     const char *buf = nn_toString(data, &len);
+    if(buf == NULL) {
+        if(data.tag == NN_VALUE_NIL) {
+            buf = "";
+            len = 0;
+        } else {
+            nn_setCError(computer, "bad data (string expected)");
+            return;
+        }
+    }
     if(len > eeprom->getDataSize(component, eeprom->userdata)) {
         nn_setCError(computer, "out of space");
         return;

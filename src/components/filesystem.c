@@ -1,4 +1,5 @@
 #include "../neonucleus.h"
+#include <stdio.h>
 #include <string.h>
 
 void nn_fs_destroy(void *_, nn_component *component, nn_filesystem *fs) {
@@ -266,7 +267,7 @@ void nn_fs_list(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         // operation succeeded
         nn_value arr = nn_values_array(fileCount);
         for(size_t i = 0; i < fileCount; i++) {
-            nn_values_set(arr, i, nn_values_cstring(files[i]));
+            nn_values_set(arr, i, nn_values_string(files[i], strlen(files[i])));
             nn_free(files[i]);
         }
         nn_free(files);
@@ -336,7 +337,7 @@ void nn_fs_write(nn_filesystem *fs, void *_, nn_component *component, nn_compute
 
 void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     nn_value fdValue = nn_getArgument(computer, 0);
-    size_t fd = nn_toInt(fdValue);
+    int fd = nn_toInt(fdValue);
 
     nn_value lenValue = nn_getArgument(computer, 1);
     double len = nn_toNumber(lenValue);
@@ -423,6 +424,5 @@ void nn_loadFilesystemTable(nn_universe *universe) {
 
 nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int slot, nn_filesystem *filesystem) {
     nn_componentTable *fsTable = nn_queryUserdata(nn_getUniverse(computer), "NN:FILESYSTEM");
-
     return nn_newComponent(computer, address, slot, fsTable, filesystem);
 }

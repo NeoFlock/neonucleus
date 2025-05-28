@@ -62,6 +62,7 @@ pub fn build(b: *std.Build) void {
     });
     emulator.linkLibC();
     emulator.linkSystemLibrary("lua");
+    emulator.linkSystemLibrary("raylib");
     emulator.addCSourceFiles(.{
         .files = &.{
             "src/testLuaArch.c",

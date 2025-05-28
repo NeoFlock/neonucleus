@@ -76,7 +76,7 @@ local function checkArg(idx, v, ...)
     local bad = true
     local n = select("#", ...)
     for i=1,n do
-        local t  = select(i, ...)
+        local t = select(i, ...)
         if type(v) == t then bad = false break end
     end
     if not bad then return end
@@ -390,9 +390,11 @@ sandbox = {
     },
 
     utf8 = copy(utf8),
+    unicode = copy(unicode),
     checkArg = checkArg,
     component = libcomponent,
     computer = libcomputer,
+    print = print,
 }
 sandbox._G = sandbox
 
@@ -418,12 +420,10 @@ while true do
     local ok, err = resume(co)
 
     if not ok then
-        error(err)
+        error(debug.traceback(co, err), 0)
     elseif coroutine.status(co) == "dead" then
         error("computer halted", 0)
     else
         coroutine.yield()
     end
 end
-
-error("machine halted")
