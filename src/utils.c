@@ -64,3 +64,9 @@ void nn_busySleep(double t) {
     double deadline = nn_realTime() + t;
     while(nn_realTime() < deadline) {}
 }
+
+void nn_randomLatency(double min, double max) {
+    double t = (double)rand() / RAND_MAX;
+    double latency = min + t * (max - min);
+    nn_busySleep(latency);
+}

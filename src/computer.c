@@ -241,20 +241,20 @@ void nn_setState(nn_computer *computer, int state) {
     computer->state = state;
 }
 
-void nn_setEnergyInfo(nn_computer *computer, size_t energy, size_t capacity) {
+void nn_setEnergyInfo(nn_computer *computer, double energy, double capacity) {
     computer->energy = energy;
     computer->maxEnergy = capacity;
 }
 
-size_t nn_getEnergy(nn_computer *computer) {
+double nn_getEnergy(nn_computer *computer) {
     return computer->energy;
 }
 
-size_t nn_getMaxEnergy(nn_computer *computer) {
+double nn_getMaxEnergy(nn_computer *computer) {
     return computer->maxEnergy;
 }
 
-void nn_removeEnergy(nn_computer *computer, size_t energy) {
+void nn_removeEnergy(nn_computer *computer, double energy) {
     if(computer->energy < energy) {
         // blackout
         computer->energy = 0;
@@ -264,7 +264,7 @@ void nn_removeEnergy(nn_computer *computer, size_t energy) {
     computer->energy -= energy;
 }
 
-void nn_addEnergy(nn_computer *computer, size_t amount) {
+void nn_addEnergy(nn_computer *computer, double amount) {
     if(computer->maxEnergy - computer->energy < amount) {
         computer->energy = computer->maxEnergy;
         return;

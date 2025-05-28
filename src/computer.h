@@ -30,8 +30,8 @@ typedef struct nn_computer {
     nn_universe *universe;
     char *users[NN_MAX_USERS];
     size_t userCount;
-    size_t energy;
-    size_t maxEnergy;
+    double energy;
+    double maxEnergy;
     nn_signal signals[NN_MAX_SIGNALS];
     size_t signalCount;
     size_t memoryTotal;

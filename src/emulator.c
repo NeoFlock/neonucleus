@@ -4,6 +4,20 @@
 #include <string.h>
 #include "neonucleus.h"
 #include "testLuaArch.h"
+
+nn_eepromControl ne_eeprom_getControl(nn_component *component, void *_) {
+    return (nn_eepromControl) {
+        .randomLatencyMin = 0.001,
+        .randomLatencyMax = 0.012,
+        .readLatency = 0.03,
+        .writeLatency = 0.05,
+        .readCost = 3,
+        .writeCost = 5,
+        .readEnergyCost = 1,
+        .writeEnergyCost = 5,
+        .writeHeatCost = 0.2,
+    };
+}
     
 size_t ne_eeprom_getSize(nn_component *component, void *_) {
     return 4096;
@@ -21,14 +35,14 @@ size_t ne_eeprom_setLabel(nn_component *component, void *_, const char *buf, siz
     return 0;
 }
 
-const char *ne_eeprom_location(nn_address address) {
+const char *ne_location(nn_address address) {
     static char buffer[256];
     snprintf(buffer, 256, "data/%s", address);
     return buffer;
 }
 
 size_t ne_eeprom_get(nn_component *component, void *_, char *buf) {
-    FILE *f = fopen(ne_eeprom_location(nn_getComponentAddress(component)), "rb");
+    FILE *f = fopen(ne_location(nn_getComponentAddress(component)), "rb");
     fseek(f, 0, SEEK_END);
     size_t len = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -38,7 +52,7 @@ size_t ne_eeprom_get(nn_component *component, void *_, char *buf) {
 }
 
 void ne_eeprom_set(nn_component *component, void *_, const char *buf, size_t len) {
-    FILE *f = fopen(ne_eeprom_location(nn_getComponentAddress(component)), "wb");
+    FILE *f = fopen(ne_location(nn_getComponentAddress(component)), "wb");
     fwrite(buf, sizeof(char), len, f);
     fclose(f);
 }
@@ -72,6 +86,7 @@ int main() {
         .userdata = NULL,
         .refc = 1,
         .deinit = NULL,
+        .control = ne_eeprom_getControl,
         .getSize = ne_eeprom_getSize,
         .getDataSize = ne_eeprom_getDataSize,
         .getLabel = ne_eeprom_getLabel,

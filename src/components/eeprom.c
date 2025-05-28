@@ -1,5 +1,9 @@
 #include "../neonucleus.h"
 
+nn_eepromControl nn_eeprom_getControl(nn_component *component, nn_eeprom *eeprom) {
+    return eeprom->control(component, eeprom->userdata);
+}
+
 void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
     if(!nn_decRef(&eeprom->refc)) return;
 
@@ -10,10 +14,24 @@ void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
 
 void nn_eeprom_getSize(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_return(computer, nn_values_integer(eeprom->getSize(component, eeprom->userdata)));
+
+    // Latency, energy costs and stuff
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.readLatency);
+    nn_removeEnergy(computer, control.readEnergyCost);
+    nn_callCost(computer, control.readCost);
 }
 
 void nn_eeprom_getDataSize(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_return(computer, nn_values_integer(eeprom->getDataSize(component, eeprom->userdata)));
+    
+    // Latency, energy costs and stuff
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.readLatency);
+    nn_removeEnergy(computer, control.readEnergyCost);
+    nn_callCost(computer, control.readCost);
 }
 
 void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -25,6 +43,13 @@ void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
     } else {
         nn_return(computer, nn_values_string(buf, l));
     }
+    
+    // Latency, energy costs and stuff
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.readLatency);
+    nn_removeEnergy(computer, control.readEnergyCost);
+    nn_callCost(computer, control.readCost);
 }
 
 void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -37,6 +62,14 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
     }
     l = eeprom->setLabel(component, eeprom->userdata, buf, l);
     nn_return(computer, nn_values_string(buf, l));
+    
+    // Latency, energy costs and stuff
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.writeLatency);
+    nn_removeEnergy(computer, control.writeEnergyCost);
+    nn_removeHeat(computer, control.writeHeatCost);
+    nn_callCost(computer, control.writeCost);
 }
 
 void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -49,6 +82,12 @@ void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
     size_t len = eeprom->get(component, eeprom->userdata, buf);
     nn_return(computer, nn_values_string(buf, len));
     nn_free(buf);
+    
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.readLatency);
+    nn_removeEnergy(computer, control.readEnergyCost);
+    nn_callCost(computer, control.readCost);
 }
 
 void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -60,6 +99,13 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
         return;
     }
     eeprom->set(component, eeprom->userdata, buf, len);
+    
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.writeLatency);
+    nn_removeEnergy(computer, control.writeEnergyCost);
+    nn_removeHeat(computer, control.writeHeatCost);
+    nn_callCost(computer, control.writeCost);
 }
 
 void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -76,6 +122,12 @@ void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
         nn_return(computer, nn_values_string(buf, len));
     }
     nn_free(buf);
+    
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.readLatency);
+    nn_removeEnergy(computer, control.readEnergyCost);
+    nn_callCost(computer, control.readCost);
 }
 
 void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -91,10 +143,18 @@ void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
 
 void nn_eeprom_isReadOnly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_return(computer, nn_values_boolean(eeprom->isReadonly(component, eeprom->userdata)));
+    
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_removeEnergy(computer, control.readEnergyCost);
 }
 
 void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     eeprom->makeReadonly(component, eeprom->userdata);
+    
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_removeEnergy(computer, control.writeEnergyCost);
 }
 
 // TODO: make good
@@ -113,6 +173,12 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
     nn_free(buf);
 
     nn_return(computer, nn_values_string((void *)&sum, sizeof(sum)));
+    
+    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
+    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
+    nn_busySleep(control.readLatency);
+    nn_removeEnergy(computer, control.readEnergyCost);
+    nn_callCost(computer, control.readCost);
 }
 
 void nn_loadEepromTable(nn_universe *universe) {

@@ -157,6 +157,8 @@ double nn_realTime();
 double nn_realTimeClock(void *_);
 /* Will busy-loop until the time passes. This is meant for computed latencies in components. */
 void nn_busySleep(double t);
+// calls nn_busySleep with a random latency
+void nn_randomLatency(double min, double max);
 
 typedef double nn_clock_t(void *_);
 
@@ -233,11 +235,11 @@ void nn_unlockComputer(nn_computer *computer);
 int nn_getState(nn_computer *computer);
 void nn_setState(nn_computer *computer, int state);
 
-void nn_setEnergyInfo(nn_computer *computer, size_t energy, size_t capacity);
-size_t nn_getEnergy(nn_computer *computer);
-size_t nn_getMaxEnergy(nn_computer *computer);
-void nn_removeEnergy(nn_computer *computer, size_t energy);
-void nn_addEnergy(nn_computer *computer, size_t amount);
+void nn_setEnergyInfo(nn_computer *computer, double energy, double capacity);
+double nn_getEnergy(nn_computer *computer);
+double nn_getMaxEnergy(nn_computer *computer);
+void nn_removeEnergy(nn_computer *computer, double energy);
+void nn_addEnergy(nn_computer *computer, double amount);
 
 double nn_getTemperature(nn_computer *computer);
 double nn_getThermalCoefficient(nn_computer *computer);
@@ -349,10 +351,29 @@ void nn_loadFilesystemTable(nn_universe *universe);
 // the helpers
 
 // EEPROM
+typedef struct nn_eepromControl {
+    double readLatency;
+    double writeLatency;
+
+    double readEnergyCost;
+    double writeEnergyCost;
+
+    double writeHeatCost;
+
+    double randomLatencyMin;
+    double randomLatencyMax;
+
+    // Call costs
+    size_t readCost;
+    size_t writeCost;
+} nn_eepromControl;
+
 typedef struct nn_eeprom {
     nn_refc refc;
     void *userdata;
     void (*deinit)(nn_component *component, void *userdata);
+
+    nn_eepromControl (*control)(nn_component *component, void *userdata);
 
     // methods
     size_t (*getSize)(nn_component *component, void *userdata);
@@ -389,19 +410,47 @@ typedef struct nn_filesystemControl {
     // thermals
     double motorHeat; // this times how many chunks have been seeked will be the heat addres, +/- the heat range.
     double heatRange;
+    
+    // call budget
+    size_t readCostPerChunk;
+    size_t writeCostPerChunk;
+    size_t seekCostPerChunk;
 } nn_filesystemControl;
 
 typedef struct nn_filesystem {
     nn_refc refc;
-    nn_filesystemControl *control;
     void *userdata;
     void (*deinit)(nn_component *component, void *userdata);
 
+    nn_filesystemControl (*control)(nn_component *component, void *userdata);
     void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
     size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
 
     size_t (*spaceUsed)(nn_component *component, void *userdata);
     size_t (*spaceTotal)(nn_component *component, void *userdata);
+    bool (*isReadOnly)(nn_component *component, void *userdata);
+
+    // general operations
+    size_t (*size)(nn_component *component, void *userdata, const char *path);
+    bool (*remove)(nn_component *component, void *userdata, const char *path);
+    size_t (*lastModified)(nn_component *component, void *userdata, const char *path);
+    bool (*rename)(nn_component *component, void *userdata, const char *from, const char *to);
+    bool (*exists)(nn_component *component, void *userdata, const char *path);
+
+    // directory operations
+    bool (*isDirectory)(nn_component *component, void *userdata, const char *path);
+    bool (*makeDirectory)(nn_component *component, void *userdata, const char *path);
+    // the length and array must be nn_alloc'd.
+    // The strings must be NULL-terminated and also nn_alloc'd.
+    // See nn_strdup().
+    char **(*list)(nn_component *component, void *userdata, const char *path, size_t *len);
+
+    // file operations
+    size_t (*open)(nn_component *component, void *userdata, const char *path, const char *mode);
+    void (*close)(nn_component *component, void *userdata, int fd);
+    size_t (*seek)(nn_component *component, void *userdata, int fd, int whence, int off);
+    size_t (*read)(nn_component *component, void *userdata, int fd, char *buf, size_t required);
+    bool (*write)(nn_component *component, void *userdata, int fd, char *buf, size_t len);
 } nn_filesystem;
 
 nn_filesystem *nn_volatileFileSystem(size_t capacity, nn_filesystemControl *control);
@@ -412,22 +461,32 @@ typedef struct nn_driveControl {
     // Set it to 0 to disable seek latency.
     int rpm;
 
-    double readLatencyPerByte;
-    double writeLatencyPerByte;
+    double readLatencyPerSector;
+    double writeLatencyPerSector;
 
     double randomLatencyMin;
     double randomLatencyMax;
 
     double motorHeat;
     double heatRange;
+    
+    // These are per sector
+    double motorEnergyCost;
+    double readEnergyCost;
+    double writeEnergyCost;
+    
+    // call budget
+    size_t readCostPerChunk;
+    size_t writeCostPerChunk;
+    size_t seekCostPerChunk;
 } nn_driveControl;
 
 typedef struct nn_drive {
     nn_refc refc;
-    nn_driveControl *control;
     void *userdata;
     void (*deinit)(nn_component *component, void *userdata);
     
+    nn_driveControl (*control)(nn_component *component, void *userdata);
     void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
     size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
 
