@@ -347,6 +347,7 @@ void nn_loadCoreComponentTables(nn_universe *universe);
 // loading each component
 void nn_loadEepromTable(nn_universe *universe);
 void nn_loadFilesystemTable(nn_universe *universe);
+void nn_loadDriveTable(nn_universe *universe);
 
 // the helpers
 
@@ -395,10 +396,8 @@ typedef struct nn_filesystemControl {
 
     // speed
     // used to calculate the latency of seeking a file. It will treat the file as continuous within the storage medium, which is completely
-    // unrealistic. Essentially, after a seek, it will check how much the file pointer was changed. If it went backwards, it will pretend
-    // the whole drive had to spin. You can imagine the drive spinning counter-clockwise.
-    // Seeks are assumed to be *chunked* too, so seeking within a chunk, even backwards, won't actually do anything.
-    // Set it to 0 to disable seek latency.
+    // unrealistic. Essentially, after a seek, it will check how much the file pointer was changed. If it went backwards, the drive spins
+    // in the opposite direction. Drives work the same way.
     int pretendRPM;
     double readLatencyPerChunk;
     double writeLatencyPerChunk;
@@ -408,13 +407,19 @@ typedef struct nn_filesystemControl {
     double randomLatencyMax;
 
     // thermals
-    double motorHeat; // this times how many chunks have been seeked will be the heat addres, +/- the heat range.
-    double heatRange;
+    double motorHeat; // this times how many chunks have been seeked will be the heat addres, +/- the motor heat range.
+    double motorHeatRange;
+    double writeHeatPerChunk;
     
     // call budget
     size_t readCostPerChunk;
     size_t writeCostPerChunk;
     size_t seekCostPerChunk;
+
+    // energy cost
+    double readEnergyCost;
+    double writeEnergyCost;
+    double motorEnergyCost;
 } nn_filesystemControl;
 
 typedef struct nn_filesystem {
@@ -434,7 +439,7 @@ typedef struct nn_filesystem {
     size_t (*size)(nn_component *component, void *userdata, const char *path);
     bool (*remove)(nn_component *component, void *userdata, const char *path);
     size_t (*lastModified)(nn_component *component, void *userdata, const char *path);
-    bool (*rename)(nn_component *component, void *userdata, const char *from, const char *to);
+    size_t (*rename)(nn_component *component, void *userdata, const char *from, const char *to);
     bool (*exists)(nn_component *component, void *userdata, const char *path);
 
     // directory operations
@@ -447,10 +452,11 @@ typedef struct nn_filesystem {
 
     // file operations
     size_t (*open)(nn_component *component, void *userdata, const char *path, const char *mode);
-    void (*close)(nn_component *component, void *userdata, int fd);
-    size_t (*seek)(nn_component *component, void *userdata, int fd, int whence, int off);
+    bool (*close)(nn_component *component, void *userdata, int fd);
+    bool (*write)(nn_component *component, void *userdata, int fd, const char *buf, size_t len);
     size_t (*read)(nn_component *component, void *userdata, int fd, char *buf, size_t required);
-    bool (*write)(nn_component *component, void *userdata, int fd, char *buf, size_t len);
+    // moved is an out pointer that says how many bytes the pointer moved.
+    size_t (*seek)(nn_component *component, void *userdata, int fd, const char *whence, int off, int *moved);
 } nn_filesystem;
 
 nn_filesystem *nn_volatileFileSystem(size_t capacity, nn_filesystemControl *control);
@@ -468,7 +474,8 @@ typedef struct nn_driveControl {
     double randomLatencyMax;
 
     double motorHeat;
-    double heatRange;
+    double motorHeatRange;
+    double writeHeatPerSector;
     
     // These are per sector
     double motorEnergyCost;
@@ -476,9 +483,9 @@ typedef struct nn_driveControl {
     double writeEnergyCost;
     
     // call budget
-    size_t readCostPerChunk;
-    size_t writeCostPerChunk;
-    size_t seekCostPerChunk;
+    size_t readCostPerSector;
+    size_t writeCostPerSector;
+    size_t seekCostPerSector;
 } nn_driveControl;
 
 typedef struct nn_drive {

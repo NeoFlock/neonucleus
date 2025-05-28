@@ -46,4 +46,5 @@ double nn_getTime(nn_universe *universe) {
 
 void nn_loadCoreComponentTables(nn_universe *universe) {
     nn_loadEepromTable(universe);
+    nn_loadFilesystemTable(universe);
 }

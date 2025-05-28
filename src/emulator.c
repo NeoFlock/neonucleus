@@ -110,7 +110,10 @@ int main() {
 
         // remove some heat per second
         nn_removeHeat(computer, dt * (rand() % 12));
-        if(nn_isOverheating(computer)) continue;
+        if(nn_isOverheating(computer)) {
+            printf("Machine overheating.\n");
+            continue;
+        }
 
         int state = nn_tickComputer(computer);
         if(state == NN_STATE_SWITCH) {

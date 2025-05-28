@@ -8,7 +8,7 @@ void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
     if(!nn_decRef(&eeprom->refc)) return;
 
     if(eeprom->deinit == NULL) {
-        eeprom->deinit(component, eeprom);
+        eeprom->deinit(component, eeprom->userdata);
     }
 }
 
@@ -68,7 +68,7 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
     nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
     nn_busySleep(control.writeLatency);
     nn_removeEnergy(computer, control.writeEnergyCost);
-    nn_removeHeat(computer, control.writeHeatCost);
+    nn_addHeat(computer, control.writeHeatCost);
     nn_callCost(computer, control.writeCost);
 }
 
@@ -104,7 +104,7 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
     nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
     nn_busySleep(control.writeLatency);
     nn_removeEnergy(computer, control.writeEnergyCost);
-    nn_removeHeat(computer, control.writeHeatCost);
+    nn_addHeat(computer, control.writeHeatCost);
     nn_callCost(computer, control.writeCost);
 }
 
