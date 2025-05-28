@@ -420,3 +420,9 @@ void nn_loadFilesystemTable(nn_universe *universe) {
     nn_defineMethod(fsTable, "read", true, (void *)nn_fs_read, NULL, "read(fd: integer, len: number): string - Reads bytes from a file. Infinity is a valid length, in which case it reads as much as possible.");
     nn_defineMethod(fsTable, "seek", true, (void *)nn_fs_seek, NULL, "seek(fd: integer, whence: string, offset: integer): integer - Seeks a file. Returns the new position. Valid whences are set, cur and end.");
 }
+
+nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int slot, nn_filesystem *filesystem) {
+    nn_componentTable *fsTable = nn_queryUserdata(nn_getUniverse(computer), "NN:FILESYSTEM");
+
+    return nn_newComponent(computer, address, slot, fsTable, filesystem);
+}
