@@ -153,6 +153,20 @@ bool nn_removeRef(nn_refc *refc, size_t count);
 /* Returns true if the object should be freed */
 bool nn_decRef(nn_refc *refc);
 
+bool nn_unicode_validate(const char *s);
+// returned string must be nn_free()'d
+char *nn_unicode_char(int *codepoints, size_t codepointCount);
+// returned array must be nn_free()'d
+int *nn_unicode_codepoints(const char *s);
+size_t nn_unicode_len(const char *s);
+int nn_unicode_codepointAt(const char *s, size_t byteOffset);
+size_t nn_unicode_codepointSize(int codepoint);
+const char *nn_unicode_codepointToChar(int codepoint, size_t *len);
+size_t nn_unicode_charWidth(int codepoint);
+size_t nn_unicode_wlen(const char *s);
+void nn_unicode_upper(char *s);
+void nn_unicode_lower(char *s);
+
 double nn_realTime();
 double nn_realTimeClock(void *_);
 /* Will busy-loop until the time passes. This is meant for computed latencies in components. */

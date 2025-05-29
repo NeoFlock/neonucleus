@@ -191,6 +191,12 @@ bool ne_fs_isDirectory(nn_component *component, ne_fs *fs, const char *path) {
     return DirectoryExists(p);
 }
 
+bool ne_fs_makeDirectory(nn_component *component, ne_fs *fs, const char *path) {
+    const char *p = ne_fs_diskPath(component, path);
+
+    return MakeDirectory(p) == 0;
+}
+
 int main() {
     printf("Setting up universe\n");
     nn_universe *universe = nn_newUniverse();
