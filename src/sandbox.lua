@@ -142,20 +142,22 @@ libcomponent = {
     list = function(filter, exact)
         checkArg(1, filter, "string", "nil")
         local t = component.list()
-        if not filter then return t end
-        local list = {}
-        for addr, kind in pairs(t) do
-            if type(exact) == "boolean" and exact then
-                if kind == filter then
-                    list[addr] = kind
-                end
-            elseif rawequal(exact, "pattern") then
-                if string.match(kind, filter) then
-                    list[addr] = kind
-                end
-            else
-                if string.find(kind, filter, nil, true) then
-                    list[addr] = kind
+        local list = t
+        if filter then
+            list = {}
+            for addr, kind in pairs(t) do
+                if type(exact) == "boolean" and exact then
+                    if kind == filter then
+                        list[addr] = kind
+                    end
+                elseif rawequal(exact, "pattern") then
+                    if string.match(kind, filter) then
+                        list[addr] = kind
+                    end
+                else
+                    if string.find(kind, filter, nil, true) then
+                        list[addr] = kind
+                    end
                 end
             end
         end
