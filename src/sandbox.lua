@@ -390,7 +390,7 @@ sandbox = {
     },
 
     utf8 = copy(utf8),
-    unicode = copy(unicode),
+    unicode = copy(string),
     checkArg = checkArg,
     component = libcomponent,
     computer = libcomputer,

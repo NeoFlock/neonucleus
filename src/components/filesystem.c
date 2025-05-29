@@ -51,7 +51,10 @@ void nn_fs_writeCost(nn_filesystem *fs, size_t count, nn_component *component, n
 
 void nn_fs_seekCost(nn_filesystem *fs, size_t count, nn_component *component, nn_computer *computer) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
-    double seekLatency = ((double)control.pretendRPM / 60) * control.pretendChunkSize / fs->spaceTotal(component, fs->userdata);
+    if(control.pretendRPM == 0) return; // disabled, likely SSD
+    double rps = (double)control.pretendRPM / 60;
+    double seekLatency = 1.0 / ((double)fs->spaceTotal(component, fs->userdata) / control.pretendChunkSize) / rps;
+    printf("Seek Latency: %lf\n", seekLatency);
 
     nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
     nn_busySleep(seekLatency * count);

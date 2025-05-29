@@ -59,6 +59,7 @@
 #define NN_MAX_USER_SIZE 128
 #define NN_MAX_SIGNAL_SIZE 8192
 #define NN_MAX_OPEN_FILES 128
+#define NN_MAX_SCREEN_KEYBOARDS 64
 
 #define NN_OVERHEAT_MIN 100
 #define NN_CALL_HEAT 0.05
@@ -525,5 +526,67 @@ typedef struct nn_drive {
 
 nn_drive *nn_volatileDrive(size_t capacity, size_t platterCount, nn_driveControl *control);
 nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive);
+
+// Screens and GPUs
+typedef struct nn_screen nn_screen;
+
+typedef struct nn_screenChar {
+    int codepoint;
+    int fg;
+    int bg;
+    bool isFgPalette;
+    bool isBgPalette;
+} nn_screenChar;
+
+nn_screen *nn_newScreen(int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
+
+void nn_retainScreen(nn_screen *screen);
+void nn_destroyScreen(nn_screen *screen);
+
+void nn_lockScreen(nn_screen *screen);
+void nn_unlockScreen(nn_screen *screen);
+
+void nn_getResolution(nn_screen *screen, int *width, int *height);
+void nn_maxResolution(nn_screen *screen, int *width, int *height);
+bool nn_setResolution(nn_screen *screen, int width, int height);
+
+void nn_getViewport(nn_screen *screen, int *width, int *height);
+bool nn_setViewport(nn_screen *screen, int width, int height);
+
+void nn_getAspectRatio(nn_screen *screen, int *width, int *height);
+void nn_setAspectRatio(nn_screen *screen, int width, int height);
+
+void nn_addKeyboard(nn_screen *screen, nn_address address);
+void nn_removeKeyboard(nn_screen *screen, nn_address address);
+nn_address nn_getKeyboard(nn_screen *screen, size_t idx);
+size_t nn_getKeyboardCount(nn_screen *screen);
+
+void nn_setEditableColors(nn_screen *screen, int count);
+int nn_getEditableColors(nn_screen *screen);
+void nn_setPaletteColor(nn_screen *screen, int );
+
+int nn_maxDepth(nn_screen *screen);
+int nn_getDepth(nn_screen *screen);
+void nn_setDepth(nn_screen *screen, int depth);
+
+void nn_set(nn_screen *screen, int x, int y, nn_screenChar pixel);
+nn_screenChar nn_get(nn_screen *screen, int x, int y);
+
+bool nn_isDirty(nn_screen *screen);
+void nn_setDirty(nn_screen *screen, bool dirty);
+bool nn_isPrecise(nn_screen *screen);
+void nn_setPrecise(nn_screen *screen, bool precise);
+bool nn_isTouchModeInverted(nn_screen *screen);
+void nn_setTouchModeInverted(nn_screen *screen, bool touchModeInverted);
+bool nn_isOn(nn_screen *buffer);
+void nn_setOn(nn_screen *buffer, bool on);
+
+// Easy setup shortcuts. 1-4 are valid.
+// Basic tiers:
+// - Tier 1 has 50x16 max resolution, 1 bit color depth. 1 editable palette color, used as the accent color.
+// - Tier 2 has 80x25 max resolution, 4 bit color depth. 16 fixed palette colors.
+// - Tier 3 has 160x50 max resolution, 8 bit color depth. 256 palette colors, 16 are editable, 240 are fixed.
+// - Tier 4 has 240x80 max resolution, 16 bit color depth. 256 editable palette colors.
+void nn_screen_setBasicTier(nn_screen *screen, int tier);
 
 #endif

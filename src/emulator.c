@@ -81,7 +81,7 @@ typedef struct ne_fs {
 nn_filesystemControl ne_fs_getControl(nn_component *component, ne_fs *_) {
     return (nn_filesystemControl) {
         .pretendChunkSize = 512,
-        .pretendRPM = 1800,
+        .pretendRPM = 12,
         .writeHeatPerChunk = 0.01,
         .writeCostPerChunk = 3,
         .writeEnergyCost = 0.015,
@@ -197,6 +197,12 @@ bool ne_fs_makeDirectory(nn_component *component, ne_fs *fs, const char *path) {
     return MakeDirectory(p) == 0;
 }
 
+bool ne_fs_exists(nn_component *component, ne_fs *fs, const char *path) {
+    const char *p = ne_fs_diskPath(component, path);
+
+    return FileExists(p) || DirectoryExists(p);
+}
+
 int main() {
     printf("Setting up universe\n");
     nn_universe *universe = nn_newUniverse();
@@ -249,9 +255,9 @@ int main() {
         .remove = NULL,
         .lastModified = NULL,
         .rename = NULL,
-        .exists = NULL,
+        .exists = (void *)ne_fs_exists,
         .isDirectory = (void *)ne_fs_isDirectory,
-        .makeDirectory = NULL,
+        .makeDirectory = (void *)ne_fs_makeDirectory,
         .list = (void *)ne_fs_list,
         .open = (void *)ne_fs_open,
         .close = (void *)ne_fs_close,
