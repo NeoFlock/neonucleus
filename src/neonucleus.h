@@ -569,8 +569,8 @@ int nn_maxDepth(nn_screen *screen);
 int nn_getDepth(nn_screen *screen);
 void nn_setDepth(nn_screen *screen, int depth);
 
-void nn_set(nn_screen *screen, int x, int y, nn_screenChar pixel);
-nn_screenChar nn_get(nn_screen *screen, int x, int y);
+void nn_setPixel(nn_screen *screen, int x, int y, nn_screenChar pixel);
+nn_screenChar nn_getPixel(nn_screen *screen, int x, int y);
 
 bool nn_isDirty(nn_screen *screen);
 void nn_setDirty(nn_screen *screen, bool dirty);
