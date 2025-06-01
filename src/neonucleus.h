@@ -363,6 +363,8 @@ void nn_loadCoreComponentTables(nn_universe *universe);
 void nn_loadEepromTable(nn_universe *universe);
 void nn_loadFilesystemTable(nn_universe *universe);
 void nn_loadDriveTable(nn_universe *universe);
+void nn_loadScreenTable(nn_universe *universe);
+void nn_loadGraphicsCardTable(nn_universe *universe);
 
 // the helpers
 
@@ -588,5 +590,8 @@ void nn_setOn(nn_screen *buffer, bool on);
 // - Tier 3 has 160x50 max resolution, 8 bit color depth. 256 palette colors, 16 are editable, 240 are fixed.
 // - Tier 4 has 240x80 max resolution, 16 bit color depth. 256 editable palette colors.
 void nn_screen_setBasicTier(nn_screen *screen, int tier);
+
+nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
+nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, int maxWidth, int maxHeight, int maxDepth, int totalVRAM);
 
 #endif
