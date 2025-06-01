@@ -565,7 +565,8 @@ size_t nn_getKeyboardCount(nn_screen *screen);
 
 void nn_setEditableColors(nn_screen *screen, int count);
 int nn_getEditableColors(nn_screen *screen);
-void nn_setPaletteColor(nn_screen *screen, int );
+void nn_setPaletteColor(nn_screen *screen, int idx, int color);
+int nn_getPaletteColor(nn_screen *screen, int idx);
 
 int nn_maxDepth(nn_screen *screen);
 int nn_getDepth(nn_screen *screen);
