@@ -550,10 +550,10 @@ void nn_unlockScreen(nn_screen *screen);
 
 void nn_getResolution(nn_screen *screen, int *width, int *height);
 void nn_maxResolution(nn_screen *screen, int *width, int *height);
-bool nn_setResolution(nn_screen *screen, int width, int height);
+void nn_setResolution(nn_screen *screen, int width, int height);
 
 void nn_getViewport(nn_screen *screen, int *width, int *height);
-bool nn_setViewport(nn_screen *screen, int width, int height);
+void nn_setViewport(nn_screen *screen, int width, int height);
 
 void nn_getAspectRatio(nn_screen *screen, int *width, int *height);
 void nn_setAspectRatio(nn_screen *screen, int width, int height);
@@ -591,6 +591,8 @@ typedef struct nn_gpuControl {
     int maxWidth;
     int maxHeight;
     int maxDepth;
+
+    // other stuff
 } nn_gpuControl;
 
 // the control is COPIED.

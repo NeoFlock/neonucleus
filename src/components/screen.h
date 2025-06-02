@@ -14,10 +14,16 @@ typedef struct nn_screen {
     int maxWidth;
     int maxHeight;
     int maxDepth;
+    int depth;
     int editableColors;
     int paletteColors;
     int *palette;
+    int aspectRatioWidth;
+    int aspectRatioHeight;
     bool isOn;
+    bool isTouchModeInverted;
+    bool isPrecise;
+    bool isDirty;
     nn_address keyboards[NN_MAX_SCREEN_KEYBOARDS];
     size_t keyboardCount;
 } nn_screen;
