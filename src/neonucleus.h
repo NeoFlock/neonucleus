@@ -567,6 +567,7 @@ void nn_setEditableColors(nn_screen *screen, int count);
 int nn_getEditableColors(nn_screen *screen);
 void nn_setPaletteColor(nn_screen *screen, int idx, int color);
 int nn_getPaletteColor(nn_screen *screen, int idx);
+int nn_getPaletteCount(nn_screen *screen);
 
 int nn_maxDepth(nn_screen *screen);
 int nn_getDepth(nn_screen *screen);
@@ -584,15 +585,15 @@ void nn_setTouchModeInverted(nn_screen *screen, bool touchModeInverted);
 bool nn_isOn(nn_screen *buffer);
 void nn_setOn(nn_screen *buffer, bool on);
 
-// Easy setup shortcuts. 1-4 are valid.
-// Basic tiers:
-// - Tier 1 has 50x16 max resolution, 1 bit color depth. 1 editable palette color, used as the accent color.
-// - Tier 2 has 80x25 max resolution, 4 bit color depth. 16 fixed palette colors.
-// - Tier 3 has 160x50 max resolution, 8 bit color depth. 256 palette colors, 16 are editable, 240 are fixed.
-// - Tier 4 has 240x80 max resolution, 16 bit color depth. 256 editable palette colors.
-void nn_screen_setBasicTier(nn_screen *screen, int tier);
-
 nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
-nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, int maxWidth, int maxHeight, int maxDepth, int totalVRAM);
+
+typedef struct nn_gpuControl {
+    int maxWidth;
+    int maxHeight;
+    int maxDepth;
+} nn_gpuControl;
+
+// the control is COPIED.
+nn_component *nn_addGPU(nn_computer *computer, nn_address address, nn_gpuControl *control);
 
 #endif
