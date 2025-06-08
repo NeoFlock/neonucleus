@@ -1,6 +1,32 @@
 #include "screen.h"
+#include <string.h>
 
-nn_screen *nn_newScreen(int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
+nn_screen *nn_newScreen(int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors) {
+    nn_screen *screen = nn_malloc(sizeof(nn_screen));
+    screen->buffer = nn_malloc(sizeof(nn_screenChar) * maxWidth * maxHeight);
+    screen->lock = nn_newGuard();
+    screen->refc = 1;
+    screen->width = maxWidth;
+    screen->height = maxHeight;
+    screen->viewportWidth = maxWidth;
+    screen->viewportHeight = maxHeight;
+    screen->maxWidth = maxWidth;
+    screen->maxHeight = maxHeight;
+    screen->maxDepth = maxDepth;
+    screen->depth = maxDepth;
+    screen->editableColors = editableColors;
+    screen->paletteColors = paletteColors;
+    screen->palette = nn_malloc(sizeof(int) * screen->paletteColors);
+    memset(screen->palette, 0, sizeof(int) * screen->paletteColors);
+    screen->aspectRatioWidth = 1;
+    screen->aspectRatioHeight = 1;
+    screen->isOn = true;
+    screen->isTouchModeInverted = true;
+    screen->isPrecise = true;
+    screen->isDirty = true;
+    screen->keyboardCount = 0;
+    return screen;
+}
 
 void nn_retainScreen(nn_screen *screen) {
     nn_incRef(&screen->refc);
@@ -62,7 +88,18 @@ void nn_addKeyboard(nn_screen *screen, nn_address address) {
     screen->keyboards[screen->keyboardCount++] = nn_strdup(address);
 }
 
-void nn_removeKeyboard(nn_screen *screen, nn_address address);
+void nn_removeKeyboard(nn_screen *screen, nn_address address) {
+    size_t j = 0;
+    for(size_t i = 0; i < screen->keyboardCount; i++) {
+        if(strcmp(screen->keyboards[i], address) == 0) {
+            nn_free(screen->keyboards[i]);
+        } else {
+            screen->keyboards[j] = screen->keyboards[i];
+            j++;
+        }
+    }
+    screen->keyboardCount = j;
+}
 
 nn_address nn_getKeyboard(nn_screen *screen, size_t idx) {
     if(idx >= screen->keyboardCount) return NULL;
@@ -148,5 +185,19 @@ void nn_setOn(nn_screen *buffer, bool on) {
     buffer->isOn = on;
 }
 
-void nn_loadScreenTable(nn_universe *universe);
+void nn_screenComp_destroy(void *_, nn_component *component, nn_screen *screen) {
+    nn_destroyScreen(screen);
+}
+
+void nn_screenComp_getKeyboards(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_value arr = nn_values_array(nn_getKeyboardCount(screen));
+}
+
+void nn_loadScreenTable(nn_universe *universe) {
+    nn_componentTable *screenTable = nn_newComponentTable("screen", NULL, NULL, (void *)nn_screenComp_destroy);
+    nn_storeUserdata(universe, "NN:SCREEN", screenTable);
+
+    nn_defineMethod(screenTable, "getKeyboards", false, (void *)nn_screenComp_getKeyboards, NULL, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
+}
+
 nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
