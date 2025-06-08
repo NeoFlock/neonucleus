@@ -191,6 +191,15 @@ void nn_screenComp_destroy(void *_, nn_component *component, nn_screen *screen) 
 
 void nn_screenComp_getKeyboards(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
     nn_value arr = nn_values_array(nn_getKeyboardCount(screen));
+
+    size_t len = arr.array->len;
+    for(size_t i = 0; i < len; i++) {
+        size_t addrlen = strlen(nn_getKeyboard(screen, i));
+        nn_value addr = nn_values_string(nn_getKeyboard(screen, i), addrlen);
+        nn_values_set(arr, i, addr);
+    }
+
+    nn_return(computer, arr);
 }
 
 void nn_loadScreenTable(nn_universe *universe) {
