@@ -190,6 +190,7 @@ void nn_screenComp_destroy(void *_, nn_component *component, nn_screen *screen) 
 }
 
 void nn_screenComp_getKeyboards(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_lockScreen(screen);
     nn_value arr = nn_values_array(nn_getKeyboardCount(screen));
 
     size_t len = arr.array->len;
@@ -199,6 +200,7 @@ void nn_screenComp_getKeyboards(nn_screen *screen, void *_, nn_component *compon
         nn_values_set(arr, i, addr);
     }
 
+    nn_unlockScreen(screen);
     nn_return(computer, arr);
 }
 
@@ -209,4 +211,7 @@ void nn_loadScreenTable(nn_universe *universe) {
     nn_defineMethod(screenTable, "getKeyboards", false, (void *)nn_screenComp_getKeyboards, NULL, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
 }
 
-nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
+nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen) {
+    nn_componentTable *screenTable = nn_queryUserdata(nn_getUniverse(computer), "NN:SCREEN");
+    return nn_newComponent(computer, address, slot, screenTable, screen);
+}
