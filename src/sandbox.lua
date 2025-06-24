@@ -48,7 +48,7 @@ debug.sethook(function()
         bubbleYield = true
         error(tooLongWithoutYielding) -- here it is an actual string
     end
-end, "c", 20000) -- no bogo mips, the check is cheap anyways
+end, "c", 100000) -- no bogo mips, the check is cheap anyways
 
 local function resume(co, val1, ...)
     while true do
@@ -222,7 +222,7 @@ local libcomputer = {
 
         repeat
             yield() -- give executor a chance to give us stuff
-            local s = table.pack(computer.pullSignal())
+            local s = table.pack(computer.popSignal())
             if s.n > 0 then
                 return table.unpack(s)
             end
@@ -396,7 +396,7 @@ sandbox = {
     checkArg = checkArg,
     component = libcomponent,
     computer = libcomputer,
-    print = print,
+    debugprint = print,
 }
 sandbox._G = sandbox
 
@@ -419,7 +419,7 @@ while true do
     timeout = nextDeadline()
     bubbleYield = false
 
-    local ok, err = resume(co)
+    local ok, err = coroutine.resume(co)
 
     if not ok then
         error(debug.traceback(co, err), 0)

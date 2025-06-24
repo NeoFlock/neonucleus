@@ -146,10 +146,25 @@ void nn_setDepth(nn_screen *screen, int depth) {
 }
 
 void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel) {
+    if(x < 0) return;
+    if(y < 0) return;
+    if(x >= screen->width) return;
+    if(y >= screen->height) return;
     screen->buffer[x + y * screen->maxWidth] = pixel;
 }
 
 nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y) {
+    nn_scrchr_t blank = {
+        .codepoint = ' ',
+        .fg = 0xFFFFFF,
+        .bg = 0x000000,
+        .isFgPalette = false,
+        .isBgPalette = false,
+    };
+    if(x < 0) return blank;
+    if(y < 0) return blank;
+    if(x >= screen->width) return blank;
+    if(x >= screen->height) return blank;
     return screen->buffer[x + y * screen->maxWidth];
 }
 

@@ -7,8 +7,10 @@
 #include "testLuaArch.h"
 #include <raylib.h>
 
-Color ne_processColor(int color) {
-    return GetColor(color * 0x100 + 0xFF);
+Color ne_processColor(unsigned int color) {
+    color <<= 8;
+    color |= 0xFF;
+    return GetColor(color);
 }
 
 nn_eepromControl ne_eeprom_getControl(nn_component *component, void *_) {
@@ -136,6 +138,7 @@ size_t ne_fs_open(nn_component *component, ne_fs *fs, const char *path, const ch
     }
 
     const char *p = ne_fs_diskPath(component, path);
+    if(p[0] == '/') p++;
     FILE *f = fopen(p, trueMode);
 
     if(f == NULL) {
@@ -175,6 +178,7 @@ size_t ne_fs_read(nn_component *component, ne_fs *fs, int fd, char *buf, size_t 
 
 char **ne_fs_list(nn_component *component, ne_fs *fs, const char *path, size_t *len) {
     const char *p = ne_fs_diskPath(component, path);
+    if(p[0] == '/') p++;
 
     FilePathList files = LoadDirectoryFiles(p);
     *len = files.count;
@@ -191,18 +195,21 @@ char **ne_fs_list(nn_component *component, ne_fs *fs, const char *path, size_t *
 
 bool ne_fs_isDirectory(nn_component *component, ne_fs *fs, const char *path) {
     const char *p = ne_fs_diskPath(component, path);
+    if(p[0] == '/') p++;
 
     return DirectoryExists(p);
 }
 
 bool ne_fs_makeDirectory(nn_component *component, ne_fs *fs, const char *path) {
     const char *p = ne_fs_diskPath(component, path);
+    if(p[0] == '/') p++;
 
     return MakeDirectory(p) == 0;
 }
 
 bool ne_fs_exists(nn_component *component, ne_fs *fs, const char *path) {
     const char *p = ne_fs_diskPath(component, path);
+    if(p[0] == '/') p++;
 
     return FileExists(p) || DirectoryExists(p);
 }
@@ -271,19 +278,40 @@ int main() {
     };
     nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
 
-    nn_screen *s = nn_newScreen(240, 80, 16, 16, 256);
-
+    nn_screen *s = nn_newScreen(80, 32, 16, 16, 256);
+    nn_addKeyboard(s, "shitty keyboard");
     nn_addScreen(computer, "Main Screen", 2, s);
 
     nn_gpuControl gpuCtrl = {
         .maxWidth = 240,
         .maxHeight = 80,
         .maxDepth = 16,
-        // fuck the rest, to be decided later
+
+        .totalVRAM = 32*1024,
+        .vramByteChangeCost = 0,
+        .vramByteChangeEnergy = 0,
+        .vramByteChangeHeat = 0,
+        .vramByteChangeLatency = 0,
+
+        .pixelChangeCost = 0,
+        .pixelChangeEnergy = 0,
+        .pixelChangeHeat = 0,
+        .pixelChangeLatency = 0,
+        
+        .pixelResetCost = 0,
+        .pixelResetEnergy = 0,
+        .pixelResetHeat = 0,
+        .pixelResetLatency = 0,
+
+        .colorChangeLatency = 0,
+        .colorChangeCost = 0,
+        .colorChangeEnergy = 0,
+        .colorChangeHeat = 0,
     };
 
     nn_addGPU(computer, "RTX 6090", 3, &gpuCtrl);
 
+    SetWindowState(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");
 
     double lastTime = nn_realTime();
@@ -344,14 +372,14 @@ render:
                 Color fgColor = ne_processColor(p.fg);
                 Color bgColor = ne_processColor(p.bg);
                 DrawRectangle(x * pixelWidth, y * pixelHeight, pixelWidth, pixelHeight, bgColor);
-                DrawText(s, x * pixelWidth, y * pixelHeight, pixelHeight, fgColor);
+                DrawText(s, x * pixelWidth, y * pixelHeight, pixelHeight - 5, fgColor);
             }
         }
         
         Color heatColor = GREEN;
         if(heat > 60) heatColor = YELLOW;
         if(heat > 80) heatColor = RED;
-        DrawText(TextFormat("Heat: %lf\n", heat), 10, 10, 20, heatColor);
+        DrawText(TextFormat("Heat: %lf\n", heat), 10, GetScreenHeight() - 30, 20, heatColor);
 
         EndDrawing();
     }

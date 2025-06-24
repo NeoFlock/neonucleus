@@ -65,7 +65,7 @@
 #define NN_CALL_HEAT 0.05
 #define NN_CALL_COST 1
 #define NN_LABEL_SIZE 128
-#define NN_INDIRECT_CALL_LATENCY 0.05
+#define NN_INDIRECT_CALL_LATENCY 0.005
 
 typedef struct nn_guard nn_guard;
 typedef atomic_size_t nn_refc;
