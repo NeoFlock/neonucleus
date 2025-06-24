@@ -7,6 +7,10 @@
 #include "testLuaArch.h"
 #include <raylib.h>
 
+Color ne_processColor(int color) {
+    return GetColor(color * 0x100 + 0xFF);
+}
+
 nn_eepromControl ne_eeprom_getControl(nn_component *component, void *_) {
     return (nn_eepromControl) {
         .randomLatencyMin = 0.001,
@@ -267,18 +271,38 @@ int main() {
     };
     nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
 
+    nn_screen *s = nn_newScreen(240, 80, 16, 16, 256);
+
+    nn_addScreen(computer, "Main Screen", 2, s);
+
+    nn_gpuControl gpuCtrl = {
+        .maxWidth = 240,
+        .maxHeight = 80,
+        .maxDepth = 16,
+        // fuck the rest, to be decided later
+    };
+
+    nn_addGPU(computer, "RTX 6090", 3, &gpuCtrl);
+
+    InitWindow(800, 600, "emulator");
+
     double lastTime = nn_realTime();
     while(true) {
+        if(WindowShouldClose()) break;
         double now = nn_realTime();
         double dt = now - lastTime;
         if(dt == 0) dt = 1.0/60;
         lastTime = now;
+        
+        double heat = nn_getTemperature(computer);
+        double roomHeat = nn_getRoomTemperature(computer);
+
+        double tx = 0.1;
 
         // remove some heat per second
-        nn_removeHeat(computer, dt * (rand() % 12));
+        nn_removeHeat(computer, dt * (rand() % 3) * tx * (heat - roomHeat));
         if(nn_isOverheating(computer)) {
-            printf("Machine overheating.\n");
-            continue;
+            goto render;
         }
 
         int state = nn_tickComputer(computer);
@@ -300,11 +324,41 @@ int main() {
             printf("Error: %s\n", e);
             break;
         }
+
+render:
+        BeginDrawing();
+
+        ClearBackground(BLACK);
+
+        int scrW, scrH = 1;
+        nn_getResolution(s, &scrW, &scrH);
+        int pixelHeight = GetScreenHeight() / scrH;
+        int pixelWidth = MeasureText("a", pixelHeight);
+
+        for(size_t x = 0; x < scrW; x++) {
+            for(size_t y = 0; y < scrH; y++) {
+                nn_scrchr_t p = nn_getPixel(s, x, y);
+                int l;
+                const char *s = CodepointToUTF8(p.codepoint, &l);
+                // fuck palettes
+                Color fgColor = ne_processColor(p.fg);
+                Color bgColor = ne_processColor(p.bg);
+                DrawRectangle(x * pixelWidth, y * pixelHeight, pixelWidth, pixelHeight, bgColor);
+                DrawText(s, x * pixelWidth, y * pixelHeight, pixelHeight, fgColor);
+            }
+        }
+        
+        Color heatColor = GREEN;
+        if(heat > 60) heatColor = YELLOW;
+        if(heat > 80) heatColor = RED;
+        DrawText(TextFormat("Heat: %lf\n", heat), 10, 10, 20, heatColor);
+
+        EndDrawing();
     }
 
     // destroy
     nn_deleteComputer(computer);
     nn_unsafeDeleteUniverse(universe);
-    printf("Emulator is nowhere close to complete\n");
+    CloseWindow();
     return 0;
 }

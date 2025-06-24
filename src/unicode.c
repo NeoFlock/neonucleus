@@ -43,7 +43,9 @@ size_t nn_unicode_len(const char *s) {
     return count;
 }
 
-int nn_unicode_codepointAt(const char *s, size_t byteOffset);
+int nn_unicode_codepointAt(const char *s, size_t byteOffset) {
+    return s[byteOffset];
+}
 
 size_t nn_unicode_codepointSize(int codepoint) {
     if (codepoint <= 0x007f) {

@@ -395,7 +395,6 @@ static int testLuaArch_component_invoke(lua_State *L) {
         return 2;
     }
     nn_resetCall(c);
-    printf("%s %s %d\n", addr, method, argc);
     for(size_t i = 0; i < argc; i++) {
         nn_addArgument(c, testLuaArch_getValue(L, 3 + i));
     }

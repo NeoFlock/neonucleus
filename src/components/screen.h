@@ -4,7 +4,7 @@
 #include "../neonucleus.h"
 
 typedef struct nn_screen {
-    nn_screenChar *buffer;
+    nn_scrchr_t *buffer;
     nn_guard *lock;
     nn_refc refc;
     int width;

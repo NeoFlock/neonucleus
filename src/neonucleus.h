@@ -532,15 +532,16 @@ nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, n
 // Screens and GPUs
 typedef struct nn_screen nn_screen;
 
-typedef struct nn_screenChar {
+typedef struct nn_scrchr_t {
     int codepoint;
     int fg;
     int bg;
     bool isFgPalette;
     bool isBgPalette;
-} nn_screenChar;
+} nn_scrchr_t;
 
 nn_screen *nn_newScreen(int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
+nn_componentTable *nn_getScreenTable(nn_universe *universe);
 
 void nn_retainScreen(nn_screen *screen);
 void nn_destroyScreen(nn_screen *screen);
@@ -573,8 +574,8 @@ int nn_maxDepth(nn_screen *screen);
 int nn_getDepth(nn_screen *screen);
 void nn_setDepth(nn_screen *screen, int depth);
 
-void nn_setPixel(nn_screen *screen, int x, int y, nn_screenChar pixel);
-nn_screenChar nn_getPixel(nn_screen *screen, int x, int y);
+void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel);
+nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y);
 
 bool nn_isDirty(nn_screen *screen);
 void nn_setDirty(nn_screen *screen, bool dirty);
@@ -588,14 +589,44 @@ void nn_setOn(nn_screen *buffer, bool on);
 nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
 
 typedef struct nn_gpuControl {
+    // resolution and colors
     int maxWidth;
     int maxHeight;
     int maxDepth;
+    
+    // VRAM Buffers
+    int totalVRAM;
 
-    // other stuff
+    // Energy costs
+    double bindEnergy;
+    double pixelChangeEnergy;
+    double pixelResetEnergy;
+    double colorChangeEnergy;
+    double vramByteChangeEnergy;
+    
+    // Heat
+    double bindHeat;
+    double pixelChangeHeat;
+    double pixelResetHeat;
+    double colorChangeHeat;
+    double vramByteChangeHeat;
+
+    // Call budgets
+    size_t bindCost;
+    size_t pixelChangeCost;
+    size_t pixelResetCost;
+    size_t colorChangeCost;
+    size_t vramByteChangeCost;
+
+    // Latencies
+    double bindLatency;
+    double pixelChangeLatency;
+    double pixelResetLatency;
+    double colorChangeLatency;
+    double vramByteChangeLatency;
 } nn_gpuControl;
 
 // the control is COPIED.
-nn_component *nn_addGPU(nn_computer *computer, nn_address address, nn_gpuControl *control);
+nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control);
 
 #endif

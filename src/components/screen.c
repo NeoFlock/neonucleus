@@ -3,7 +3,7 @@
 
 nn_screen *nn_newScreen(int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors) {
     nn_screen *screen = nn_malloc(sizeof(nn_screen));
-    screen->buffer = nn_malloc(sizeof(nn_screenChar) * maxWidth * maxHeight);
+    screen->buffer = nn_malloc(sizeof(nn_scrchr_t) * maxWidth * maxHeight);
     screen->lock = nn_newGuard();
     screen->refc = 1;
     screen->width = maxWidth;
@@ -145,11 +145,11 @@ void nn_setDepth(nn_screen *screen, int depth) {
     screen->depth = depth;
 }
 
-void nn_setPixel(nn_screen *screen, int x, int y, nn_screenChar pixel) {
+void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel) {
     screen->buffer[x + y * screen->maxWidth] = pixel;
 }
 
-nn_screenChar nn_getPixel(nn_screen *screen, int x, int y) {
+nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y) {
     return screen->buffer[x + y * screen->maxWidth];
 }
 
@@ -209,6 +209,10 @@ void nn_loadScreenTable(nn_universe *universe) {
     nn_storeUserdata(universe, "NN:SCREEN", screenTable);
 
     nn_defineMethod(screenTable, "getKeyboards", false, (void *)nn_screenComp_getKeyboards, NULL, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
+}
+
+nn_componentTable *nn_getScreenTable(nn_universe *universe) {
+    return nn_queryUserdata(universe, "NN:SCREEN");
 }
 
 nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen) {
