@@ -280,6 +280,7 @@ int main() {
 
     nn_screen *s = nn_newScreen(80, 32, 16, 16, 256);
     nn_addKeyboard(s, "shitty keyboard");
+    nn_mountKeyboard(computer, "shitty keyboard", 2);
     nn_addScreen(computer, "Main Screen", 2, s);
 
     nn_gpuControl gpuCtrl = {
@@ -358,10 +359,10 @@ render:
 
         ClearBackground(BLACK);
 
-        int scrW, scrH = 1;
+        int scrW = 1, scrH = 1;
         nn_getResolution(s, &scrW, &scrH);
         int pixelHeight = GetScreenHeight() / scrH;
-        int pixelWidth = MeasureText("a", pixelHeight);
+        int pixelWidth = MeasureText("A", pixelHeight);
 
         for(size_t x = 0; x < scrW; x++) {
             for(size_t y = 0; y < scrH; y++) {

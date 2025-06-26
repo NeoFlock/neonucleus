@@ -114,6 +114,7 @@ libcomponent = {
 
         while true do
             local r = {pcall(component.invoke, addr, method, ...)}
+            computer.clearError()
 
             -- in this situation, either the temperature is above 100 C and we throttle
             -- or the call budget has been filled and we dont care
@@ -392,7 +393,9 @@ sandbox = {
     },
 
     utf8 = copy(utf8),
-    unicode = copy(string),
+    unicode = copy(unicode, {
+        wtrunc = function(s) return s end,
+    }),
     checkArg = checkArg,
     component = libcomponent,
     computer = libcomputer,

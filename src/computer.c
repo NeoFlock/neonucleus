@@ -158,21 +158,25 @@ const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len) {
 }
 
 nn_value nn_fetchSignalValue(nn_computer *computer, size_t index) {
-    nn_signal *p = computer->signals + computer->signalCount - 1;
+    if(computer->signalCount == 0) return nn_values_nil();
+    nn_signal *p = computer->signals;
     if(index >= p->len) return nn_values_nil();
     return p->values[index];
 }
 
 size_t nn_signalSize(nn_computer *computer) {
     if(computer->signalCount == 0) return 0;
-    return computer->signals[computer->signalCount-1].len;
+    return computer->signals[0].len;
 }
 
 void nn_popSignal(nn_computer *computer) {
     if(computer->signalCount == 0) return;
-    nn_signal *p = computer->signals + computer->signalCount - 1;
+    nn_signal *p = computer->signals;
     for(size_t i = 0; i < p->len; i++) {
         nn_values_drop(p->values[i]);
+    }
+    for(size_t i = 1; i < computer->signalCount; i++) {
+        computer->signals[i-1] = computer->signals[i];
     }
     computer->signalCount--;
 }

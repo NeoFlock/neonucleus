@@ -113,6 +113,12 @@ static void testLuaArch_pushValue(lua_State *L, nn_value val) {
     }
 }
 
+static int testLuaArch_computer_clearError(lua_State *L) {
+    testLuaArch *s = testLuaArch_get(L);
+    nn_clearError(s->computer);
+    return 0;
+}
+
 static int testLuaArch_computer_usedMemory(lua_State *L) {
     testLuaArch *s = testLuaArch_get(L);
     lua_pushinteger(L, s->memoryUsed);
@@ -416,9 +422,91 @@ static int testLuaArch_component_invoke(lua_State *L) {
     return retc;
 }
 
+int testLuaArch_unicode_sub(lua_State *L) {
+    const char *s = luaL_checkstring(L, 1);
+    int start = luaL_checkinteger(L, 2);
+    int stop = -1;
+    if(lua_isinteger(L, 3)) {
+        stop = luaL_checkinteger(L, 3);
+    }
+    if(!nn_unicode_validate(s)) {
+        luaL_error(L, "invalid utf-8");
+    }
+    int len = nn_unicode_len(s);
+    if(len < 0) {
+        luaL_error(L, "length overflow");
+    }
+    // OpenOS does this...
+    if(len == 0) {
+        lua_pushstring(L, "");
+        return 1;
+    }
+    // Lua indexing bullshit
+    if(start > 0) {
+        start -= 1;
+    } else if(start < 0) {
+        start = len + start;
+    }
+    if(stop > 0) {
+        stop -= 1;
+    } else if(stop < 0) {
+        stop = len + stop;
+    }
+    if(start < 0) start = 0;
+    if(stop < 0) stop = 0;
+    if(start >= len) start = len - 1;
+    if(stop >= len) stop = len - 1;
+    // there is a way to do it without an allocation
+    // however, I'm lazy
+    unsigned int *points = nn_unicode_codepoints(s);
+    if(points == NULL) {
+        luaL_error(L, "out of memory");
+    }
+    // there are a few cases where memory is leaked due to
+    // Lua's tendency to longjmp.
+    // TODO: fix them.
+    char *sub = nn_unicode_char(points + start, stop - start + 1);
+    lua_pushstring(L, sub);
+    nn_free(sub);
+    nn_free(points);
+    return 1;
+}
+
+int testLuaArch_unicode_char(lua_State *L) {
+    int argc = lua_gettop(L);
+    unsigned int *codepoints = nn_malloc(sizeof(unsigned int) * argc);
+    if(codepoints == NULL) {
+        luaL_error(L, "out of memory");
+    }
+    for(int i = 0; i < argc; i++) {
+        int idx = i + 1;
+        if(!lua_isinteger(L, idx)) {
+            nn_free(codepoints);
+            luaL_argerror(L, idx, "integer expected");
+        }
+        codepoints[i] = lua_tointeger(L, idx);
+    }
+    char *s = nn_unicode_char(codepoints, argc);
+    lua_pushstring(L, s);
+    nn_free(s);
+    nn_free(codepoints);
+    return 1;
+}
+
+int testLuaArch_unicode_len(lua_State *L) {
+    const char *s = luaL_checkstring(L, 1);
+    if(!nn_unicode_validate(s)) {
+        luaL_error(L, "invalid utf-8");
+    }
+    lua_pushinteger(L, nn_unicode_len(s));
+    return 1;
+}
+
 void testLuaArch_loadEnv(lua_State *L) {
     lua_createtable(L, 0, 10);
     int computer = lua_gettop(L);
+    lua_pushcfunction(L, testLuaArch_computer_clearError);
+    lua_setfield(L, computer, "clearError");
     lua_pushcfunction(L, testLuaArch_computer_usedMemory);
     lua_setfield(L, computer, "usedMemory");
     lua_pushcfunction(L, testLuaArch_computer_freeMemory);
@@ -501,6 +589,14 @@ void testLuaArch_loadEnv(lua_State *L) {
 
     lua_createtable(L, 0, 20);
     int unicode = lua_gettop(L);
+    lua_pushcfunction(L, testLuaArch_unicode_sub);
+    lua_setfield(L, unicode, "sub");
+    lua_pushcfunction(L, testLuaArch_unicode_len);
+    lua_setfield(L, unicode, "len");
+    lua_pushcfunction(L, testLuaArch_unicode_len);
+    lua_setfield(L, unicode, "wlen");
+    lua_pushcfunction(L, testLuaArch_unicode_char);
+    lua_setfield(L, unicode, "char");
     lua_setglobal(L, "unicode");
 }
 

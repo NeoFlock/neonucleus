@@ -1,6 +1,7 @@
 #include "../neonucleus.h"
 #include "screen.h"
 #include <stdio.h>
+#include <string.h>
 
 typedef struct nni_gpu {
     nn_screen *currentScreen;
@@ -21,6 +22,16 @@ bool nni_samePixel(nn_scrchr_t a, nn_scrchr_t b) {
         a.isFgPalette == b.isFgPalette &&
         a.isBgPalette == b.isBgPalette
         ;
+}
+
+bool nni_inBounds(nni_gpu *gpu, int x, int y) {
+    if(gpu->currentScreen == NULL) return false;
+    return
+        x >= 0 &&
+        y >= 0 &&
+        x < gpu->currentScreen->width &&
+        y < gpu->currentScreen->height &&
+        true;
 }
 
 nni_gpu *nni_newGPU(nn_gpuControl *ctrl) {
@@ -113,13 +124,13 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
 
 void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
-    int x = nn_toInt(nn_getArgument(computer, 0));
-    int y = nn_toInt(nn_getArgument(computer, 1));
+    int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
+    int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     const char *s = nn_toCString(nn_getArgument(computer, 2));
     bool isVertical = nn_toBoolean(nn_getArgument(computer, 3));
 
     if(s == NULL) {
-        nn_setCError(computer, "bad argument #4 (string expected)");
+        nn_setCError(computer, "bad argument #3 (string expected in set)");
         return;
     }
 
@@ -127,23 +138,25 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
     while(s[current]) {
         int codepoint = nn_unicode_codepointAt(s, current);
         nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, s + current));
-        if(isVertical)
+        if(isVertical) {
             y++;
-        else
+        } else {
             x++;
+        }
         current += nn_unicode_codepointSize(codepoint);
     }
 }
 
 void nni_gpu_get(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->screenAddress == NULL) return;
-    int x = nn_toInt(nn_getArgument(computer, 0));
-    int y = nn_toInt(nn_getArgument(computer, 1));
+    int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
+    int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     nn_scrchr_t pxl = nn_getPixel(gpu->currentScreen, x, y);
 
     size_t l;
     const char *chr = nn_unicode_codepointToChar(pxl.codepoint, &l);
 
+    // TODO: gosh darn palettes
     nn_return(computer, nn_values_cstring(chr));
     nn_return(computer, nn_values_integer(pxl.fg));
     nn_return(computer, nn_values_integer(pxl.bg));
@@ -165,13 +178,39 @@ void nni_gpu_maxResolution(nni_gpu *gpu, void *_, nn_component *component, nn_co
 void nni_gpu_getResolution(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
     int w, h;
-    nn_maxResolution(gpu->currentScreen, &w, &h);
+    nn_getResolution(gpu->currentScreen, &w, &h);
     nn_return(computer, nn_values_integer(w));
     nn_return(computer, nn_values_integer(h));
 }
 
 void nni_gpu_setResolution(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
+    int mw, mh;
+    nn_maxResolution(gpu->currentScreen, &mw, &mh);
+    
+    int lw, lh;
+    nn_getResolution(gpu->currentScreen, &lw, &lh);
+
+    int w = nn_toInt(nn_getArgument(computer, 0));
+    int h = nn_toInt(nn_getArgument(computer, 1));
+
+    bool changed = w != lw || h != lh;
+
+    if(w <= 0) w = 1;
+    if(h <= 0) h = 1;
+    if(w > mw) w = mw;
+    if(h > mh) h = mh;
+    nn_setResolution(gpu->currentScreen, w, h);
+
+    nn_return(computer, nn_values_boolean(changed));
+    
+    nn_value signalShit[] = {
+        nn_values_cstring("screen_resized"),
+        nn_values_cstring(gpu->screenAddress),
+        nn_values_integer(w),
+        nn_values_integer(h),
+    };
+    nn_pushSignal(computer, signalShit, 4);
 }
 
 void nni_gpu_setBackground(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
@@ -205,6 +244,10 @@ void nni_gpu_setBackground(nni_gpu *gpu, void *_, nn_component *component, nn_co
     }
 }
 
+void nni_gpu_getBackground(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    nn_return(computer, nn_values_integer(gpu->currentBg));
+}
+
 void nni_gpu_setForeground(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
     int color = nn_toInt(nn_getArgument(computer, 0));
@@ -236,10 +279,14 @@ void nni_gpu_setForeground(nni_gpu *gpu, void *_, nn_component *component, nn_co
     }
 }
 
+void nni_gpu_getForeground(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    nn_return(computer, nn_values_integer(gpu->currentFg));   
+}
+
 void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
-    int x = nn_toInt(nn_getArgument(computer, 0));
-    int y = nn_toInt(nn_getArgument(computer, 1));
+    int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
+    int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     int w = nn_toInt(nn_getArgument(computer, 2));
     int h = nn_toInt(nn_getArgument(computer, 3));
     const char *s = nn_toCString(nn_getArgument(computer, 4));
@@ -285,6 +332,56 @@ void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     nn_return(computer, nn_values_boolean(true));
 }
 
+void nni_gpu_copy(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    if(gpu->currentScreen == NULL) return;
+    int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
+    int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
+    int w = nn_toInt(nn_getArgument(computer, 2));
+    int h = nn_toInt(nn_getArgument(computer, 3));
+    int tx = nn_toInt(nn_getArgument(computer, 4));
+    int ty = nn_toInt(nn_getArgument(computer, 5));
+
+    // prevent DoS
+    if(x < 0) x = 0;
+    if(y < 0) y = 0;
+    if(w > gpu->currentScreen->width - x) w = gpu->currentScreen->width - x;
+    if(h > gpu->currentScreen->height - y) y = gpu->currentScreen->height - y;
+    
+    int changes = 0, clears = 0;
+
+    for(int cx = x; cx < x + w; cx++) {
+        for(int cy = y; cy < y + h; cy++) {
+            nn_scrchr_t src = nn_getPixel(gpu->currentScreen, cx, cy);
+            nn_scrchr_t old = nn_getPixel(gpu->currentScreen, cx + tx, cy + ty);
+            if(!nni_samePixel(old, src)) {
+                nn_setPixel(gpu->currentScreen, cx + tx, cy + ty, src);
+                if(src.codepoint == ' ')
+                    clears++;
+                else changes++;
+            }
+        }
+    }
+
+    nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * changes);
+    nn_callCost(computer, gpu->ctrl.pixelChangeCost * changes);
+    nn_removeEnergy(computer, gpu->ctrl.pixelChangeEnergy * changes);
+    nn_busySleep(gpu->ctrl.pixelChangeLatency * changes);
+    
+    nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * clears);
+    nn_callCost(computer, gpu->ctrl.pixelChangeCost * clears);
+    nn_removeEnergy(computer, gpu->ctrl.pixelChangeEnergy * clears);
+    nn_busySleep(gpu->ctrl.pixelChangeLatency * clears);
+
+    nn_return(computer, nn_values_boolean(true));
+}
+
+void nni_gpu_getViewport(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    int w, h;
+    nn_getViewport(gpu->currentScreen, &w, &h);
+    nn_return(computer, nn_values_integer(w));
+    nn_return(computer, nn_values_integer(h));
+}
+
 void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_componentTable *gpuTable = nn_newComponentTable("gpu", NULL, NULL, (void *)nni_gpuDeinit);
     nn_storeUserdata(universe, "NN:GPU", gpuTable);
@@ -298,7 +395,11 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_defineMethod(gpuTable, "setResolution", true, (void *)nni_gpu_setResolution, NULL, "maxResolution(): integer, integer - Changes the resolution of the bound screen.");
     nn_defineMethod(gpuTable, "setBackground", true, (void *)nni_gpu_setBackground, NULL, "setBackground(color: integer, isPalette: boolean): integer, integer? - Sets the current background color. Returns the old one and palette index if applicable.");
     nn_defineMethod(gpuTable, "setForeground", true, (void *)nni_gpu_setForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
+    nn_defineMethod(gpuTable, "getBackground", true, (void *)nni_gpu_getBackground, NULL, "setBackground(color: integer, isPalette: boolean): integer, integer? - Sets the current background color. Returns the old one and palette index if applicable.");
+    nn_defineMethod(gpuTable, "getForeground", true, (void *)nni_gpu_getForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
     nn_defineMethod(gpuTable, "fill", true, (void *)nni_gpu_fill, NULL, "fill(x: integer, y: integer, w: integer, h: integer, s: string)");
+    nn_defineMethod(gpuTable, "copy", true, (void *)nni_gpu_copy, NULL, "copy(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer) - Copies stuff");
+    nn_defineMethod(gpuTable, "getViewport", true, (void *)nni_gpu_getViewport, NULL, "getViewport(): integer, integer - Gets the current viewport resolution");
 }
 
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control) {

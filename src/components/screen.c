@@ -164,7 +164,7 @@ nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y) {
     if(x < 0) return blank;
     if(y < 0) return blank;
     if(x >= screen->width) return blank;
-    if(x >= screen->height) return blank;
+    if(y >= screen->height) return blank;
     return screen->buffer[x + y * screen->maxWidth];
 }
 

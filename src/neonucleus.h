@@ -156,14 +156,14 @@ bool nn_decRef(nn_refc *refc);
 
 bool nn_unicode_validate(const char *s);
 // returned string must be nn_free()'d
-char *nn_unicode_char(int *codepoints, size_t codepointCount);
+char *nn_unicode_char(unsigned int *codepoints, size_t codepointCount);
 // returned array must be nn_free()'d
-int *nn_unicode_codepoints(const char *s);
+unsigned int *nn_unicode_codepoints(const char *s);
 size_t nn_unicode_len(const char *s);
-int nn_unicode_codepointAt(const char *s, size_t byteOffset);
-size_t nn_unicode_codepointSize(int codepoint);
-const char *nn_unicode_codepointToChar(int codepoint, size_t *len);
-size_t nn_unicode_charWidth(int codepoint);
+unsigned int nn_unicode_codepointAt(const char *s, size_t byteOffset);
+size_t nn_unicode_codepointSize(unsigned int codepoint);
+const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len);
+size_t nn_unicode_charWidth(unsigned int codepoint);
 size_t nn_unicode_wlen(const char *s);
 void nn_unicode_upper(char *s);
 void nn_unicode_lower(char *s);
@@ -365,6 +365,9 @@ void nn_loadFilesystemTable(nn_universe *universe);
 void nn_loadDriveTable(nn_universe *universe);
 void nn_loadScreenTable(nn_universe *universe);
 void nn_loadGraphicsCardTable(nn_universe *universe);
+void nn_loadKeyboardTable(nn_universe *universe);
+
+nn_component *nn_mountKeyboard(nn_computer *computer, nn_address address, int slot);
 
 // the helpers
 

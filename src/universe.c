@@ -50,4 +50,5 @@ void nn_loadCoreComponentTables(nn_universe *universe) {
     //nn_loadDriveTable(universe);
     nn_loadScreenTable(universe);
     nn_loadGraphicsCardTable(universe);
+    nn_loadKeyboardTable(universe);
 }

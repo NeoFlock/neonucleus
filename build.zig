@@ -18,6 +18,7 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
             "src/components/filesystem.c",
             "src/components/screen.c",
             "src/components/gpu.c",
+            "src/components/keyboard.c",
         },
     });
 }
