@@ -483,6 +483,7 @@ int testLuaArch_unicode_char(lua_State *L) {
         if(!lua_isinteger(L, idx)) {
             nn_free(codepoints);
             luaL_argerror(L, idx, "integer expected");
+            return 0;
         }
         codepoints[i] = lua_tointeger(L, idx);
     }
