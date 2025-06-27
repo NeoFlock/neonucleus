@@ -134,6 +134,11 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
         return;
     }
 
+    if(!nn_unicode_validate(s)) {
+        nn_setCError(computer, "invalid utf-8");
+        return;
+    }
+
     int current = 0;
     while(s[current]) {
         int codepoint = nn_unicode_codepointAt(s, current);
@@ -292,6 +297,10 @@ void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     const char *s = nn_toCString(nn_getArgument(computer, 4));
     if(s == NULL) {
         nn_setCError(computer, "bad argument #5 (character expected)");
+        return;
+    }
+    if(!nn_unicode_validate(s)) {
+        nn_setCError(computer, "invalid utf-8");
         return;
     }
 
