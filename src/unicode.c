@@ -2,12 +2,13 @@
 #include <stdio.h>
 #include <string.h>
 
-bool nn_unicode_is_continuation(char byte) {
+bool nn_unicode_is_continuation(unsigned char byte) {
     return (byte >> 6) == 0b10;
 }
 
-bool nn_unicode_validate(const char *s) {
+bool nn_unicode_validate(const char *b) {
     // TODO: validate UTF-8-ness
+    const unsigned char* s = (const unsigned char*)b;
     while (*s) {
         if(s[0] <= 0x7F) {
             s++;
@@ -81,8 +82,9 @@ unsigned int *nn_unicode_codepoints(const char *s) {
     return buf;
 }
 
-size_t nn_unicode_len(const char *s) {
+size_t nn_unicode_len(const char *b) {
     size_t count = 0;
+    const unsigned char* s = (const unsigned char*)b;
     while (*s) {
         count++;
         if(s[0] <= 0x7F) {
