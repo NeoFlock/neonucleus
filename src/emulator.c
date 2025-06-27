@@ -312,7 +312,7 @@ int main() {
 
     nn_addGPU(computer, "RTX 6090", 3, &gpuCtrl);
 
-    SetWindowState(FLAG_WINDOW_RESIZABLE);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");
 
     double lastTime = nn_realTime();
