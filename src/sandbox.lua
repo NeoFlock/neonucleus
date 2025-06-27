@@ -394,7 +394,9 @@ sandbox = {
 
     utf8 = copy(utf8),
     unicode = copy(unicode, {
-        wtrunc = function(s) return s end,
+        wtrunc = function(s, count)
+            return unicode.sub(s, 1, count)
+        end,
     }),
     checkArg = checkArg,
     component = libcomponent,
