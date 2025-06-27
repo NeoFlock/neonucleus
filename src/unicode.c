@@ -2,8 +2,41 @@
 #include <stdio.h>
 #include <string.h>
 
+bool nn_unicode_is_continuation(char byte) {
+    return (byte >> 6) == 0b10;
+}
+
 bool nn_unicode_validate(const char *s) {
     // TODO: validate UTF-8-ness
+    while (*s) {
+        if(s[0] <= 0x7F) {
+            s++;
+        } else if((s[0] >> 5) == 0b110) {
+            if (!nn_unicode_is_continuation(s[1])) {
+                return false;
+            }
+            s += 2;
+        } else if((s[0] >> 4) == 0b1110) {
+            if (!nn_unicode_is_continuation(s[1])) {
+                return false;
+            }
+            if (!nn_unicode_is_continuation(s[2])) {
+                return false;
+            }
+            s += 3;
+        } else if((s[0] >> 3) == 0b11110) {
+            if (!nn_unicode_is_continuation(s[1])) {
+                return false;
+            }
+            if (!nn_unicode_is_continuation(s[2])) {
+                return false;
+            }
+            if (!nn_unicode_is_continuation(s[3])) {
+                return false;
+            }
+            s += 4;
+        }
+    }
     return true;
 }
 
