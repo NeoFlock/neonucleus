@@ -90,10 +90,11 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
         return;
     }
 
-    if(gpu->currentScreen != NULL) {
-        nn_destroyScreen(gpu->currentScreen);
-    }
     nn_screen *screen = nn_getComponentUserdata(c);
+    nn_retainScreen(screen);
+    if(gpu->currentScreen != NULL) nn_destroyScreen(gpu->currentScreen);
+    gpu->currentScreen = screen;
+    
 
     if(reset) {
         for(size_t i = 0; i < screen->width; i++) {
