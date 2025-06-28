@@ -214,6 +214,232 @@ bool ne_fs_exists(nn_component *component, ne_fs *fs, const char *path) {
     return FileExists(p) || DirectoryExists(p);
 }
 
+int keycode_to_oc(int keycode) {
+    switch (keycode) {
+        case KEY_NULL:
+            return 0;
+        case KEY_APOSTROPHE:
+            return 0x28;
+        case KEY_COMMA:
+            return 0x33;
+        case KEY_MINUS:
+            return 0x0C;
+        case KEY_PERIOD:
+            return 0x34;
+        case KEY_SLASH:
+            return 0x35;
+        case KEY_ZERO:
+            return 0x0B;
+        case KEY_ONE:
+            return 0x02;
+        case KEY_TWO:
+            return 0x03;
+        case KEY_THREE:
+            return 0x04;
+        case KEY_FOUR:
+            return 0x05;
+        case KEY_FIVE:
+            return 0x06;
+        case KEY_SIX:
+            return 0x07;
+        case KEY_SEVEN:
+            return 0x08;
+        case KEY_EIGHT:
+            return 0x09;
+        case KEY_NINE:
+            return 0x0A;
+        case KEY_SEMICOLON:
+            return 0x27;
+        case KEY_EQUAL:
+            return 0x0D;
+        case KEY_A:
+            return 0x1E;
+        case KEY_B:
+            return 0x30;
+        case KEY_C:
+            return 0x2E;
+        case KEY_D:
+            return 0x20;
+        case KEY_E:
+            return 0x12;
+        case KEY_F:
+            return 0x21;
+        case KEY_G:
+            return 0x22;
+        case KEY_H:
+            return 0x23;
+        case KEY_I:
+            return 0x17;
+        case KEY_J:
+            return 0x24;
+        case KEY_K:
+            return 0x25;
+        case KEY_L:
+            return 0x26;
+        case KEY_M:
+            return 0x32;
+        case KEY_N:
+            return 0x31;
+        case KEY_O:
+            return 0x18;
+        case KEY_P:
+            return 0x19;
+        case KEY_Q:
+            return 0x10;
+        case KEY_R:
+            return 0x13;
+        case KEY_S:
+            return 0x1F;
+        case KEY_T:
+            return 0x14;
+        case KEY_U:
+            return 0x16;
+        case KEY_V:
+            return 0x2F;
+        case KEY_W:
+            return 0x11;
+        case KEY_X:
+            return 0x2D;
+        case KEY_Y:
+            return 0x15;
+        case KEY_Z:
+            return 0x2C;
+        case KEY_LEFT_BRACKET:
+            return 0x1A;
+        case KEY_BACKSLASH:
+            return 0x2B;
+        case KEY_RIGHT_BRACKET:
+            return 0x1B;
+        case KEY_GRAVE:
+            return 0x29;
+        case KEY_SPACE:
+            return 0x39;
+        case KEY_ESCAPE:
+            return 0;
+        case KEY_ENTER:
+            return 0x1C;
+        case KEY_TAB:
+            return 0x0F;
+        case KEY_BACKSPACE:
+            return 0x0E;
+        case KEY_INSERT:
+            return 0xD2;
+        case KEY_DELETE:
+            return 0xD3;
+        case KEY_RIGHT:
+            return 0xCD;
+        case KEY_LEFT:
+            return 0xCB;
+        case KEY_DOWN:
+            return 0xD0;
+        case KEY_UP:
+            return 0xC8;
+        case KEY_PAGE_UP:
+            return 0xC9;
+        case KEY_PAGE_DOWN:
+            return 0xD1;
+        case KEY_HOME:
+            return 0xC7;
+        case KEY_END:
+            return 0xCF;
+        case KEY_CAPS_LOCK:
+            return 0x3A;
+        case KEY_SCROLL_LOCK:
+            return 0x46;
+        case KEY_NUM_LOCK:
+            return 0x45;
+        case KEY_PRINT_SCREEN:
+            return 0;
+        case KEY_PAUSE:
+            return 0xC5;
+        case KEY_F1:
+            return 0x3B;
+        case KEY_F2:
+            return 0x3C;
+        case KEY_F3:
+            return 0x3D;
+        case KEY_F4:
+            return 0x3E;
+        case KEY_F5:
+            return 0x3F;
+        case KEY_F6:
+            return 0x40;
+        case KEY_F7:
+            return 0x41;
+        case KEY_F8:
+            return 0x42;
+        case KEY_F9:
+            return 0x43;
+        case KEY_F10:
+            return 0x44;
+        case KEY_F11:
+            return 0x57;
+        case KEY_F12:
+            return 0x58;
+        case KEY_LEFT_SHIFT:
+            return 0x2A;
+        case KEY_LEFT_CONTROL:
+            return 0x1D;
+        case KEY_LEFT_ALT:
+            return 0x38;
+        case KEY_LEFT_SUPER:
+            return 0;
+        case KEY_RIGHT_SHIFT:
+            return 0x36;
+        case KEY_RIGHT_CONTROL:
+            return 0x9D;
+        case KEY_RIGHT_ALT:
+            return 0xB8;
+        case KEY_RIGHT_SUPER:
+            return 0;
+        case KEY_KB_MENU:
+            return 0;
+        case KEY_KP_0:
+            return 0x52;
+        case KEY_KP_1:
+            return 0x4F;
+        case KEY_KP_2:
+            return 0x50;
+        case KEY_KP_3:
+            return 0x51;
+        case KEY_KP_4:
+            return 0x4B;
+        case KEY_KP_5:
+            return 0x4C;
+        case KEY_KP_6:
+            return 0x4D;
+        case KEY_KP_7:
+            return 0x47;
+        case KEY_KP_8:
+            return 0x48;
+        case KEY_KP_9:
+            return 0x49;
+        case KEY_KP_DECIMAL:
+            return 0x54;
+        case KEY_KP_DIVIDE:
+            return 0xB5;
+        case KEY_KP_MULTIPLY:
+            return 0x37;
+        case KEY_KP_SUBTRACT:
+            return 0x4A;
+        case KEY_KP_ADD:
+            return 0x4E;
+        case KEY_KP_ENTER:
+            return 0x9C;
+        case KEY_KP_EQUAL:
+            return 0x8D;
+        case KEY_BACK:
+            return 0;
+        case KEY_MENU:
+            return 0;
+        case KEY_VOLUME_DOWN:
+            return 0;
+        case KEY_VOLUME_UP:
+            return 0;
+    }
+    return 0;
+}
+
 int main() {
     printf("Setting up universe\n");
     nn_universe *universe = nn_newUniverse();
@@ -320,6 +546,31 @@ int main() {
     double lastTime = nn_realTime();
     while(true) {
         if(WindowShouldClose()) break;
+
+        while (true) { // TODO: find out if we can check if the keycode and unicode are for the same key event or not
+            int keycode = GetKeyPressed();
+            int unicode = GetCharPressed();
+
+            if (keycode == 0 && unicode == 0) {
+                break;
+            }
+
+            nn_value values[5];
+
+            values[0] = nn_values_cstring("key_down");
+            values[1] = nn_values_cstring("my ass");
+            values[2] = nn_values_integer(unicode);
+            values[3] = nn_values_integer(keycode_to_oc(keycode));
+            values[4] = nn_values_cstring("USER");
+
+            const char* error = nn_pushSignal(computer, values, 5);
+
+            if (error != NULL) {
+                // well fuck
+                printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
+            }
+        }
+
         double now = nn_realTime();
         double dt = now - lastTime;
         if(dt == 0) dt = 1.0/60;
