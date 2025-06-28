@@ -315,6 +315,8 @@ int main() {
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");
 
+    Font unscii = LoadFont("unscii-16-full.ttf");
+
     double lastTime = nn_realTime();
     while(true) {
         if(WindowShouldClose()) break;
@@ -362,7 +364,8 @@ render:
         int scrW = 1, scrH = 1;
         nn_getResolution(s, &scrW, &scrH);
         int pixelHeight = GetScreenHeight() / scrH;
-        int pixelWidth = MeasureText("A", pixelHeight);
+        float spacing = (float)pixelHeight/10;
+        int pixelWidth = MeasureTextEx(unscii, "A", pixelHeight, spacing).x;
 
         for(size_t x = 0; x < scrW; x++) {
             for(size_t y = 0; y < scrH; y++) {
@@ -373,7 +376,7 @@ render:
                 Color fgColor = ne_processColor(p.fg);
                 Color bgColor = ne_processColor(p.bg);
                 DrawRectangle(x * pixelWidth, y * pixelHeight, pixelWidth, pixelHeight, bgColor);
-                DrawText(s, x * pixelWidth, y * pixelHeight, pixelHeight - 5, fgColor);
+                DrawTextEx(unscii, s, (Vector2) {x * pixelWidth, y * pixelHeight}, pixelHeight - 5, spacing, fgColor);
             }
         }
         

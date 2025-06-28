@@ -141,7 +141,7 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
     }
 
     int current = 0;
-    while(s[current]) {
+    while(s[current] != 0) {
         int codepoint = nn_unicode_codepointAt(s, current);
         nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, s + current));
         if(isVertical) {
