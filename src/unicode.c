@@ -103,22 +103,22 @@ size_t nn_unicode_len(const char *b) {
 unsigned int nn_unicode_codepointAt(const char *s, size_t byteOffset) {
     unsigned int point = 0;
     const unsigned char *b = (const unsigned char *)s + byteOffset;
-    const unsigned int subpartMask = 0b111111;
+    const unsigned char subpartMask = 0b111111;
     // look into nn_unicode_codepointToChar as well.
     if(b[0] <= 0x7F) {
         return b[0];
     } else if((b[0] >> 5) == 0b110) {
-        point += b[0] & 0b11111;
-        point += (b[1] & subpartMask) << 5;
+        point += ((unsigned int)(b[0] & 0b11111)) << 6;
+        point += ((unsigned int)(b[1] & subpartMask));
     } else if((b[0] >> 4) == 0b1110) {
-        point += b[0] & 0b1111;
-        point += (b[1] & subpartMask) << 4;
-        point += (b[2] & subpartMask) << 10;
+        point += ((unsigned int)(b[0] & 0b1111)) << 12;
+        point += ((unsigned int)(b[1] & subpartMask)) << 6;
+        point += ((unsigned int)(b[2] & subpartMask));
     } else if((b[0] >> 3) == 0b11110) {
-        point += b[0] & 0b111;
-        point += (b[1] & subpartMask) << 3;
-        point += (b[2] & subpartMask) << 9;
-        point += (b[3] & subpartMask) << 15;
+        point += ((unsigned int)(b[0] & 0b111)) << 18;
+        point += ((unsigned int)(b[1] & subpartMask)) << 12;
+        point += ((unsigned int)(b[2] & subpartMask)) << 6;
+        point += ((unsigned int)(b[3] & subpartMask));
     }
     return point;
 }
@@ -146,17 +146,17 @@ const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len) {
     if (codepointSize == 1) {
         buffer[0] = (char)codepoint;
     } else if (codepointSize == 2) {
-        buffer[0] = 0b11000000 + (codepoint & 0b11111);
-        buffer[1] = 0b10000000 + (codepoint >> 5);
+        buffer[0] = 0b11000000 + ((codepoint >> 6) & 0b11111);
+        buffer[1] = 0b10000000 + (codepoint & 0b111111);
     } else if (codepointSize == 3) {
-        buffer[0] = 0b11100000 + (codepoint & 0b1111);
-        buffer[1] = 0b10000000 + ((codepoint >> 4) & 0b111111);
-        buffer[2] = 0b10000000 + (codepoint >> 10);
+        buffer[0] = 0b11100000 + ((codepoint >> 12) & 0b1111);
+        buffer[1] = 0b10000000 + ((codepoint >> 6) & 0b111111);
+        buffer[2] = 0b10000000 + (codepoint & 0b111111);
     } else if (codepointSize == 4) {
-        buffer[0] = 0b11110000 + (codepoint & 0b111);
-        buffer[1] = 0b10000000 + ((codepoint >> 3) & 0b111111);
-        buffer[2] = 0b10000000 + ((codepoint >> 9) & 0b111111);
-        buffer[3] = 0b10000000 + (codepoint >> 15);
+        buffer[0] = 0b11110000 + ((codepoint >> 18) & 0b111);
+        buffer[1] = 0b10000000 + ((codepoint >> 12) & 0b111111);
+        buffer[2] = 0b10000000 + ((codepoint >> 6) & 0b111111);
+        buffer[3] = 0b10000000 + (codepoint & 0b111111);
     }
 
     return buffer;

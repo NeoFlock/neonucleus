@@ -42,22 +42,24 @@ nn_computer *testLuaArch_getComputer(lua_State *L) {
 }
 
 static nn_value testLuaArch_getValue(lua_State *L, int index) {
-    if(lua_isinteger(L, index)) {
-        return nn_values_integer(lua_tointeger(L, index));
-    }
-    if(lua_isnumber(L, index)) {
-        return nn_values_number(lua_tonumber(L, index));
-    }
-    if(lua_isboolean(L, index)) {
+    int type = lua_type(L, index);
+    
+    if(type == LUA_TBOOLEAN) {
         return nn_values_boolean(lua_toboolean(L, index));
     }
     if(lua_isnoneornil(L, index)) {
         return nn_values_nil();
     }
-    if(lua_isstring(L, index)) {
+    if(type == LUA_TSTRING) {
         size_t l = 0;
         const char *s = lua_tolstring(L, index, &l);
         return nn_values_string(s, l);
+    }
+    if(type == LUA_TNUMBER && lua_isnumber(L, index)) {
+        return nn_values_number(lua_tonumber(L, index));
+    }
+    if(type == LUA_TNUMBER && lua_isinteger(L, index)) {
+        return nn_values_integer(lua_tointeger(L, index));
     }
     //TODO: bring it back once I make everything else not leak memory
     //luaL_argcheck(L, false, index, luaL_typename(L, index));

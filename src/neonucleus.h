@@ -536,7 +536,7 @@ nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, n
 typedef struct nn_screen nn_screen;
 
 typedef struct nn_scrchr_t {
-    int codepoint;
+    unsigned int codepoint;
     int fg;
     int bg;
     bool isFgPalette;
