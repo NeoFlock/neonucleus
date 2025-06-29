@@ -502,7 +502,7 @@ int main() {
         .read = (void *)ne_fs_read,
         .seek = NULL,
     };
-    nn_addFileSystem(computer, "frostos", 1, &genericFS);
+    nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
 
     nn_screen *s = nn_newScreen(80, 32, 16, 16, 256);
     nn_addKeyboard(s, "shitty keyboard");
@@ -558,12 +558,20 @@ int main() {
             nn_value values[5];
 
             values[0] = nn_values_cstring("key_down");
-            values[1] = nn_values_cstring("my ass");
+            values[1] = nn_values_cstring("shitty keyboard");
             values[2] = nn_values_integer(unicode);
             values[3] = nn_values_integer(keycode_to_oc(keycode));
             values[4] = nn_values_cstring("USER");
 
             const char* error = nn_pushSignal(computer, values, 5);
+
+            if (error != NULL) {
+                // well fuck
+                printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
+            }
+           
+            values[0] = nn_values_cstring("key_up");
+            error = nn_pushSignal(computer, values, 5);
 
             if (error != NULL) {
                 // well fuck

@@ -397,6 +397,7 @@ sandbox = {
         wtrunc = function(s, count)
             return unicode.sub(s, 1, count)
         end,
+        isWide = function(s) return unicode.wlen(s) > unicode.len(s) end,
     }),
     checkArg = checkArg,
     component = libcomponent,

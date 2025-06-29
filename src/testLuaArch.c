@@ -456,7 +456,10 @@ int testLuaArch_unicode_sub(lua_State *L) {
     }
     if(start < 0) start = 0;
     if(stop < 0) stop = 0;
-    if(start >= len) start = len - 1;
+    if(start >= len) {
+        lua_pushstring(L, "");
+        return 1;
+    }
     if(stop >= len) stop = len - 1;
     if(stop < start) {
         lua_pushstring(L, "");
