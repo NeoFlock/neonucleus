@@ -193,6 +193,22 @@ char **ne_fs_list(nn_component *component, ne_fs *fs, const char *path, size_t *
     return buf;
 }
 
+size_t ne_fs_size(nn_component *component, ne_fs *fs, const char *path) {
+    const char *p = ne_fs_diskPath(component, path);
+    if(p[0] == '/') p++;
+
+    if(DirectoryExists(p)) return 0;
+
+    return GetFileLength(p);
+}
+
+size_t ne_fs_lastModified(nn_component *component, ne_fs *fs, const char *path) {
+    const char *p = ne_fs_diskPath(component, path);
+    if(p[0] == '/') p++;
+
+    return GetFileModTime(p);
+}
+
 bool ne_fs_isDirectory(nn_component *component, ne_fs *fs, const char *path) {
     const char *p = ne_fs_diskPath(component, path);
     if(p[0] == '/') p++;
@@ -488,9 +504,9 @@ int main() {
         .spaceUsed = ne_fs_spaceUsed,
         .spaceTotal = ne_fs_spaceTotal,
         .isReadOnly = ne_eeprom_isReadonly,
-        .size = NULL,
+        .size = (void *)ne_fs_size,
         .remove = NULL,
-        .lastModified = NULL,
+        .lastModified = (void *)ne_fs_lastModified,
         .rename = NULL,
         .exists = (void *)ne_fs_exists,
         .isDirectory = (void *)ne_fs_isDirectory,

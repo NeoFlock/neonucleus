@@ -162,7 +162,7 @@ void nn_fs_lastModified(nn_filesystem *fs, void *_, nn_component *component, nn_
         return;
     }
 
-    nn_return(computer, nn_values_integer(fs->remove(component, fs->userdata, path)));
+    nn_return(computer, nn_values_integer(fs->lastModified(component, fs->userdata, path)));
    
     nn_fs_readCost(fs, 1, component, computer);
 }
