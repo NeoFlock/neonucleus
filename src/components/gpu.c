@@ -359,18 +359,35 @@ void nni_gpu_copy(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     
     int changes = 0, clears = 0;
 
+    nn_scrchr_t *tmpBuffer = nn_malloc(sizeof(nn_scrchr_t) * w * h);
+    if(tmpBuffer == NULL) {
+        nn_setCError(computer, "out of memory");
+        return;
+    }
+
     for(int cx = x; cx < x + w; cx++) {
         for(int cy = y; cy < y + h; cy++) {
+            int ox = cx - x;
+            int oy = cy - y;
             nn_scrchr_t src = nn_getPixel(gpu->currentScreen, cx, cy);
             nn_scrchr_t old = nn_getPixel(gpu->currentScreen, cx + tx, cy + ty);
+            tmpBuffer[ox + oy * w] = src;
             if(!nni_samePixel(old, src)) {
-                nn_setPixel(gpu->currentScreen, cx + tx, cy + ty, src);
                 if(src.codepoint == ' ')
                     clears++;
                 else changes++;
             }
         }
     }
+
+    for(int ox = 0; ox < w; ox++) {
+        for(int oy = 0; oy < h; oy++) {
+            nn_scrchr_t p = tmpBuffer[ox + oy * w];
+            nn_setPixel(gpu->currentScreen, ox + x + tx, oy + y + ty, p);
+        }
+    }
+
+    nn_free(tmpBuffer);
 
     nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * changes);
     nn_callCost(computer, gpu->ctrl.pixelChangeCost * changes);
