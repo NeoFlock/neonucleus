@@ -502,7 +502,7 @@ int main() {
         .read = (void *)ne_fs_read,
         .seek = NULL,
     };
-    nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
+    nn_addFileSystem(computer, "frostos", 1, &genericFS);
 
     nn_screen *s = nn_newScreen(80, 32, 16, 16, 256);
     nn_addKeyboard(s, "shitty keyboard");

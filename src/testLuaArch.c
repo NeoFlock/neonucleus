@@ -458,6 +458,18 @@ int testLuaArch_unicode_sub(lua_State *L) {
     if(stop < 0) stop = 0;
     if(start >= len) start = len - 1;
     if(stop >= len) stop = len - 1;
+    if(stop < start) {
+        lua_pushstring(L, "");
+        return 1;
+    }
+    if(start < 0) {
+        lua_pushstring(L, "");
+        return 1;
+    }
+    if((stop - start) >= len) {
+        lua_pushstring(L, "");
+        return 1;
+    }
     // there is a way to do it without an allocation
     // however, I'm lazy
     unsigned int *points = nn_unicode_codepoints(s);
