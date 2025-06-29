@@ -560,6 +560,11 @@ int main() {
     Font unscii = LoadFont("unscii-16-full.ttf");
 
     double lastTime = nn_realTime();
+
+    static int release_check_list[256];
+    memset(release_check_list, 0, sizeof(int)*256);
+    uint8_t release_check_ptr;
+
     while(true) {
         if(WindowShouldClose()) break;
 
@@ -569,6 +574,10 @@ int main() {
 
             if (keycode == 0 && unicode == 0) {
                 break;
+            }
+
+            if (keycode != 0) {
+                release_check_list[release_check_ptr++] = keycode;
             }
 
             nn_value values[5];
@@ -585,13 +594,27 @@ int main() {
                 // well fuck
                 printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
             }
-           
-            values[0] = nn_values_cstring("key_up");
-            error = nn_pushSignal(computer, values, 5);
+        }
 
-            if (error != NULL) {
-                // well fuck
-                printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
+        for (int i = 0; i < 256; i++) {
+            int key = release_check_list[i];
+            if (key != 0) {
+                if (IsKeyReleased(key)) {
+                    // omg
+                    nn_value values[5];
+                    values[0] = nn_values_cstring("key_up");
+                    values[1] = nn_values_cstring("shitty keyboard");
+                    values[2] = nn_values_integer(0); // we can't really know, unless we store it, which i am way too lazy to do.
+                    values[3] = nn_values_integer(keycode_to_oc(key));
+                    values[4] = nn_values_cstring("USER");
+
+                    const char* error = nn_pushSignal(computer, values, 5);
+
+                    if (error != NULL) {
+                        // well fuck
+                        printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
+                    }
+                }
             }
         }
 
