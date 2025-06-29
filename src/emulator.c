@@ -645,13 +645,12 @@ render:
         for(size_t x = 0; x < scrW; x++) {
             for(size_t y = 0; y < scrH; y++) {
                 nn_scrchr_t p = nn_getPixel(s, x, y);
-                int l;
-                const char *s = CodepointToUTF8(p.codepoint, &l);
+
                 // fuck palettes
                 Color fgColor = ne_processColor(p.fg);
                 Color bgColor = ne_processColor(p.bg);
                 DrawRectangle(x * pixelWidth, y * pixelHeight, pixelWidth, pixelHeight, bgColor);
-                DrawTextEx(unscii, s, (Vector2) {x * pixelWidth, y * pixelHeight}, pixelHeight - 5, spacing, fgColor);
+                DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth, y * pixelHeight}, pixelHeight - 5, fgColor);
             }
         }
         
