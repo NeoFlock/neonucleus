@@ -165,8 +165,10 @@ size_t nn_unicode_codepointSize(unsigned int codepoint);
 const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len);
 size_t nn_unicode_charWidth(unsigned int codepoint);
 size_t nn_unicode_wlen(const char *s);
-void nn_unicode_upper(char *s);
-void nn_unicode_lower(char *s);
+unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
+char *nn_unicode_upper(const char *s);
+unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
+char *nn_unicode_lower(const char *s);
 
 double nn_realTime();
 double nn_realTimeClock(void *_);

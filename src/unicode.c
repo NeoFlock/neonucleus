@@ -168,10 +168,13 @@ const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len) {
     return buffer;
 }
 
+// NOT IMPLEMENTED YET
+
 size_t nn_unicode_charWidth(unsigned int codepoint);
 
 size_t nn_unicode_wlen(const char *s);
 
-// NOT IMPLEMENTED YET
-void nn_unicode_upper(char *s);
-void nn_unicode_lower(char *s);
+unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
+char *nn_unicode_upper(const char *s);
+unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
+char *nn_unicode_lower(const char *s);
