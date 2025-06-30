@@ -8,7 +8,6 @@ static bool nn_unicode_is_continuation(unsigned char byte) {
 }
 
 bool nn_unicode_validate(const char *b) {
-    // TODO: validate UTF-8-ness
     const unsigned char* s = (const unsigned char*)b;
     while (*s) {
         if(s[0] <= 0x7F) {
@@ -168,11 +167,23 @@ const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len) {
     return buffer;
 }
 
+size_t nn_unicode_charWidth(unsigned int codepoint) {
+    // TODO: implement this
+    return 1;
+}
+
+size_t nn_unicode_wlen(const char *s) {
+    size_t wlen = 0;
+    while (*s) {
+        unsigned int codepoint = nn_unicode_codepointAt(s, 0);
+        size_t codepointSize = nn_unicode_codepointSize(codepoint);
+        wlen += nn_unicode_charWidth(codepoint);
+        s += codepointSize;
+    }
+    return wlen;
+}
+
 // NOT IMPLEMENTED YET
-
-size_t nn_unicode_charWidth(unsigned int codepoint);
-
-size_t nn_unicode_wlen(const char *s);
 
 unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
 char *nn_unicode_upper(const char *s);
