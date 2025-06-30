@@ -399,6 +399,7 @@ sandbox = {
         isWide = function(s) return unicode.wlen(s) > unicode.len(s) end,
         upper = string.upper,
         lower = string.lower,
+        --[[
         sub = function (str,a,b)
 			if not b then b = utf8.len(str) end
 			if not a then a = 1 end
@@ -424,6 +425,7 @@ sandbox = {
 			return str:sub(a,b)
 			-- return str:sub(a, b)
 		end,
+        ]]
     }),
     checkArg = checkArg,
     component = libcomponent,

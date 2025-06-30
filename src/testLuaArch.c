@@ -427,10 +427,6 @@ static int testLuaArch_component_invoke(lua_State *L) {
 int testLuaArch_unicode_sub(lua_State *L) {
     const char *s = luaL_checkstring(L, 1);
     int start = luaL_checkinteger(L, 2);
-    int stop = -1;
-    if(lua_isinteger(L, 3)) {
-        stop = luaL_checkinteger(L, 3);
-    }
     if(!nn_unicode_validate(s)) {
         luaL_error(L, "invalid utf-8");
     }
@@ -438,58 +434,45 @@ int testLuaArch_unicode_sub(lua_State *L) {
     if(len < 0) {
         luaL_error(L, "length overflow");
     }
+    int stop = len;
+    if(lua_isinteger(L, 3)) {
+        stop = luaL_checkinteger(L, 3);
+    }
     // OpenOS does this...
     if(len == 0) {
         lua_pushstring(L, "");
         return 1;
     }
-    // Lua indexing bullshit
+
+    if(start == 0) start = 1;
     if(stop == 0) {
         lua_pushstring(L, "");
         return 1;
     }
-    if(start > 0) {
-        start -= 1;
-    } else if(start < 0) {
-        start = len + start;
+    if(start < 0) start = len + start + 1;
+    if(stop < 0) stop = len + stop + 1;
+
+    if(stop >= len) {
+        stop = len;
     }
-    if(stop > 0) {
-        stop -= 1;
-    } else if(stop < 0) {
-        stop = len + stop;
-    }
-    if(start < 0) start = 0;
-    if(stop < 0) stop = 0;
-    if(start >= len) {
+    
+    if(start > stop) {
         lua_pushstring(L, "");
         return 1;
     }
-    if(stop >= len) stop = len - 1;
-    if(stop < start) {
-        lua_pushstring(L, "");
-        return 1;
-    }
-    if(start < 0) {
-        lua_pushstring(L, "");
-        return 1;
-    }
-    if((stop - start) >= len) {
-        lua_pushstring(L, "");
-        return 1;
-    }
+
     // there is a way to do it without an allocation
     // however, I'm lazy
     unsigned int *points = nn_unicode_codepoints(s);
     if(points == NULL) {
         luaL_error(L, "out of memory");
     }
-    // there are a few cases where memory is leaked due to
-    // Lua's tendency to longjmp.
-    // TODO: fix them.
-    char *sub = nn_unicode_char(points + start, stop - start + 1);
-    lua_pushstring(L, sub);
+
+    char *sub = nn_unicode_char(points + start - 1, stop - start + 1);
+    lua_pushstring(L, sub); // TODO: fix OOM here
     nn_free(sub);
     nn_free(points);
+
     return 1;
 }
 
