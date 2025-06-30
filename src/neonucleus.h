@@ -1,6 +1,10 @@
 #ifndef NEONUCLEUS_H
 #define NEONUCLEUS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -633,5 +637,9 @@ typedef struct nn_gpuControl {
 
 // the control is COPIED.
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
