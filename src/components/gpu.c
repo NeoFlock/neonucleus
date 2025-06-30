@@ -207,6 +207,7 @@ void nni_gpu_setResolution(nni_gpu *gpu, void *_, nn_component *component, nn_co
     if(w > mw) w = mw;
     if(h > mh) h = mh;
     nn_setResolution(gpu->currentScreen, w, h);
+    nn_setViewport(gpu->currentScreen, w, h);
 
     nn_return(computer, nn_values_boolean(changed));
     
