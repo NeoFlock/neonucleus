@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 fn addEngineSources(c: *std.Build.Step.Compile) void {
     c.linkLibC(); // we need a libc
@@ -24,6 +25,8 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
 }
 
 pub fn build(b: *std.Build) void {
+    const os = builtin.target.os.tag;
+
     const target = b.standardTargetOptions(.{});
 
     const optimize = b.standardOptimizeOption(.{});
@@ -40,13 +43,13 @@ pub fn build(b: *std.Build) void {
     const install = b.getInstallStep();
 
     b.installArtifact(engineStatic);
-    
+
     const engineShared = b.addSharedLibrary(.{
         .name = "neonucleus",
         .target = target,
         .optimize = optimize,
     });
-    
+
     addEngineSources(engineShared);
 
     b.installArtifact(engineShared);
@@ -65,8 +68,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     emulator.linkLibC();
-    emulator.linkSystemLibrary("lua");
-    emulator.linkSystemLibrary("raylib");
+
+    if (os == .windows) {
+        // use the msvc win64 dll versions and copy them to raylib/ and lua/
+        // get raylib from https://github.com/raysan5/raylib/releases
+        // get lua from https://luabinaries.sourceforge.net/
+        emulator.addIncludePath(b.path("lua/include"));
+        emulator.addIncludePath(b.path("raylib/include"));
+        emulator.addObjectFile(b.path("lua/lua54.lib"));
+        emulator.addObjectFile(b.path("raylib/lib/raylibdll.lib"));
+    } else {
+        emulator.linkSystemLibrary("lua");
+        emulator.linkSystemLibrary("raylib");
+    }
     emulator.addCSourceFiles(.{
         .files = &.{
             "src/testLuaArch.c",
