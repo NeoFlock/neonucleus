@@ -1,14 +1,14 @@
 #ifndef NEONUCLEUS_H
 #define NEONUCLEUS_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdatomic.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
