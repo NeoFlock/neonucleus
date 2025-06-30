@@ -434,8 +434,6 @@ sandbox = {
 }
 sandbox._G = sandbox
 
-print("oh gosh", sandbox.unicode.sub("abc", 1, 0))
-
 local function bootstrap()
     local eeprom = libcomponent.list("eeprom")()
     assert(eeprom, "no eeprom")
