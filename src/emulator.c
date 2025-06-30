@@ -565,6 +565,8 @@ int main() {
     memset(release_check_list, 0, sizeof(int)*256);
     uint8_t release_check_ptr;
 
+    SetExitKey(KEY_NULL);
+
     while(true) {
         if(WindowShouldClose()) break;
 

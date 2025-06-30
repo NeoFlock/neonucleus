@@ -312,7 +312,7 @@ void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     if(x < 0) x = 0;
     if(y < 0) y = 0;
     if(w > gpu->currentScreen->width - x) w = gpu->currentScreen->width - x;
-    if(h > gpu->currentScreen->height - y) y = gpu->currentScreen->height - y;
+    if(h > gpu->currentScreen->height - y) h = gpu->currentScreen->height - y;
     
     int changes = 0, clears = 0;
 
