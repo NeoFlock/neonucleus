@@ -680,7 +680,11 @@ render:
         Color heatColor = GREEN;
         if(heat > 60) heatColor = YELLOW;
         if(heat > 80) heatColor = RED;
-        DrawText(TextFormat("Heat: %lf\n", heat), 10, GetScreenHeight() - 30, 20, heatColor);
+
+        size_t memUsage = nn_getComputerMemoryUsed(computer);
+        size_t memTotal = nn_getComputerMemoryTotal(computer);
+
+        DrawText(TextFormat("Heat: %.02lf Memory Used: %.2lf%%", heat, (double)memUsage / memTotal * 100), 10, GetScreenHeight() - 30, 20, heatColor);
 
         EndDrawing();
     }

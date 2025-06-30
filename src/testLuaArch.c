@@ -444,6 +444,10 @@ int testLuaArch_unicode_sub(lua_State *L) {
         return 1;
     }
     // Lua indexing bullshit
+    if(stop == 0) {
+        lua_pushstring(L, "");
+        return 1;
+    }
     if(start > 0) {
         start -= 1;
     } else if(start < 0) {

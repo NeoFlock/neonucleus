@@ -127,6 +127,8 @@ void nn_fs_size(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     }
 
     size_t byteSize = fs->size(component, fs->userdata, path);
+
+    nn_return(computer, nn_values_integer(byteSize));
     
     nn_fs_readCost(fs, 1, component, computer);
 }
@@ -162,7 +164,14 @@ void nn_fs_lastModified(nn_filesystem *fs, void *_, nn_component *component, nn_
         return;
     }
 
-    nn_return(computer, nn_values_integer(fs->lastModified(component, fs->userdata, path)));
+    size_t t = fs->lastModified(component, fs->userdata, path);
+
+    // OpenOS does BULLSHIT with this thing, dividing it by 1000 and expecting it to be
+    // fucking usable as a date, meaning it needs to be an int.
+    // Because of that, we ensure it is divisible by 1000
+    t -= t % 1000;
+
+    nn_return(computer, nn_values_integer(t));
    
     nn_fs_readCost(fs, 1, component, computer);
 }

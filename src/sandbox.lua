@@ -8,9 +8,7 @@ local function copy(v, p)
         end
         if p then
             for key, val in pairs(p) do
-                if not rawget(t, key) then
-                    t[key] = copy(val)
-                end
+                t[key] = copy(val)
             end
         end
         return t
@@ -433,6 +431,8 @@ sandbox = {
     debugprint = print,
 }
 sandbox._G = sandbox
+
+print("oh gosh", sandbox.unicode.sub("abc", 1, 0))
 
 local function bootstrap()
     local eeprom = libcomponent.list("eeprom")()
