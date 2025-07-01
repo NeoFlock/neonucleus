@@ -75,6 +75,22 @@ void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_com
 
     nn_return(computer, nn_values_integer(buf[sector_offset]));
 }
+void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+    nn_value offsetValue = nn_getArgument(computer, 0);
+    nn_value writeValue = nn_getArgument(computer, 1);
+    size_t disk_offset = nn_toInt(offsetValue);
+    char write = nn_toInt(writeValue);
+    size_t sector_size = drive->getSectorSize(component, drive->userdata);
+    int sector = disk_offset / sector_size;
+    size_t sector_offset = disk_offset % sector_size;
+
+    char buf[sector_size];
+    drive->readSector(component, drive->userdata, sector, &buf);
+
+    buf[sector_offset] = write;
+
+    drive->writeSector(component, drive->userdata, sector, buf);
+}
 
 void nn_loadDriveTable(nn_universe *universe) {
     nn_componentTable *driveTable = nn_newComponentTable("drive", NULL, NULL, (void *)nn_drive_destroy);
@@ -87,6 +103,8 @@ void nn_loadDriveTable(nn_universe *universe) {
     nn_defineMethod(driveTable, "getCapacity", true, (void *)nn_drive_getCapacity, NULL, "getCapacity():number - Returns the total capacity of the drive, in bytes.");
     nn_defineMethod(driveTable, "readSector", false, (void *)nn_drive_readSector, NULL, "readSector(sector:number):string - Read the current contents of the specified sector.");
     nn_defineMethod(driveTable, "writeSector", false, (void *)nn_drive_writeSector, NULL, "writeSector(sector:number, value:string) - Write the specified contents to the specified sector.");
+    nn_defineMethod(driveTable, "readByte", false, (void *)nn_drive_readByte, NULL, "readByte(offset:number):number - Read a single byte at the specified offset.");
+    nn_defineMethod(driveTable, "writeByte", false, (void *)nn_drive_writeByte, NULL, "writeByte(offset:number, value:number) - Write a single byte to the specified offset.");
 }
 
 nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive) {
