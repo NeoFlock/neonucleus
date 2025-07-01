@@ -5,7 +5,7 @@
 void nn_fs_destroy(void *_, nn_component *component, nn_filesystem *fs) {
     if(!nn_decRef(&fs->refc)) return;
 
-    if(fs->deinit == NULL) {
+    if(fs->deinit != NULL) {
         fs->deinit(component, fs->userdata);
     }
 }

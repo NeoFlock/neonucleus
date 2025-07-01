@@ -5,7 +5,7 @@
 void nn_drive_destroy(void *_, nn_component *component, nn_drive *drive) {
     if(!nn_decRef(&drive->refc)) return;
 
-    if(drive->deinit == NULL) {
+    if(drive->deinit != NULL) {
         drive->deinit(component, drive->userdata);
     }
 }
