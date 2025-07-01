@@ -60,7 +60,7 @@ void nn_drive_writeSector(nn_drive *drive, void *_, nn_component *component, nn_
     int sector = nn_toInt(sectorValue);
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
     nn_value bufValue = nn_getArgument(computer, 1);
-    char *buf = nn_toString(bufValue, &sector_size);
+    const char *buf = nn_toString(bufValue, &sector_size);
     drive->writeSector(component, drive->userdata, sector, buf);
 }
 void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
@@ -71,7 +71,7 @@ void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_com
     size_t sector_offset = disk_offset % sector_size;
 
     char buf[sector_size];
-    drive->readSector(component, drive->userdata, sector, &buf);
+    drive->readSector(component, drive->userdata, sector, buf);
 
     nn_return(computer, nn_values_integer(buf[sector_offset]));
 }
@@ -85,7 +85,7 @@ void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_co
     size_t sector_offset = disk_offset % sector_size;
 
     char buf[sector_size];
-    drive->readSector(component, drive->userdata, sector, &buf);
+    drive->readSector(component, drive->userdata, sector, buf);
 
     buf[sector_offset] = write;
 

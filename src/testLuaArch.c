@@ -505,7 +505,7 @@ int testLuaArch_unicode_sub(lua_State *L) {
     }
 
     char *sub = nn_unicode_char(points + start - 1, stop - start + 1);
-    char *res = testLuaArch_pushstring(L, sub);
+    const char *res = testLuaArch_pushstring(L, sub);
     nn_free(sub);
     nn_free(points);
     if (!res) {
@@ -531,7 +531,7 @@ int testLuaArch_unicode_char(lua_State *L) {
         codepoints[i] = lua_tointeger(L, idx);
     }
     char *s = nn_unicode_char(codepoints, argc);
-    char *res = testLuaArch_pushstring(L, s);
+    const char *res = testLuaArch_pushstring(L, s);
     nn_free(s);
     nn_free(codepoints);
     if (!res) {

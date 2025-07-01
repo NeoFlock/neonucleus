@@ -51,6 +51,10 @@ const char *ne_location(nn_address address) {
 
 size_t ne_eeprom_get(nn_component *component, void *_, char *buf) {
     FILE *f = fopen(ne_location(nn_getComponentAddress(component)), "rb");
+    if (f == NULL) {
+        printf("couldn't read eeprom");
+        exit(1);
+    }
     fseek(f, 0, SEEK_END);
     size_t len = ftell(f);
     fseek(f, 0, SEEK_SET);
@@ -61,6 +65,10 @@ size_t ne_eeprom_get(nn_component *component, void *_, char *buf) {
 
 void ne_eeprom_set(nn_component *component, void *_, const char *buf, size_t len) {
     FILE *f = fopen(ne_location(nn_getComponentAddress(component)), "wb");
+    if (f == NULL) {
+        printf("couldn't write eeprom");
+        exit(1);
+    }
     fwrite(buf, sizeof(char), len, f);
     fclose(f);
 }
