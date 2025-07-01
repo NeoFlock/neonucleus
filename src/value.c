@@ -192,7 +192,7 @@ const char *nn_toString(nn_value val, size_t *len) {
         l = val.string->len;
     }
 
-    if(len == NULL) *len = l;
+    if(len != NULL) *len = l;
     return c;
 }
 
