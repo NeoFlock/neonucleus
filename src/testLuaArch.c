@@ -13,6 +13,30 @@ typedef struct testLuaArch {
     size_t memoryUsed;
 } testLuaArch;
 
+testLuaArch *testLuaArch_get(lua_State *L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "archPtr");
+    testLuaArch *arch = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    return arch;
+}
+
+const char *testLuaArch_pushlstring(lua_State *L, const char *s, size_t len) {
+    if (lua_checkstack(L, 1) == 0) {
+        return NULL;
+    }
+    testLuaArch* arch = testLuaArch_get(L);
+    size_t freeSpace = nn_getComputerMemoryTotal(arch->computer) - arch->memoryUsed;
+    if ((len * 2 + 64) > freeSpace) { // dk how much space this really needs and its unstable so :/
+        return NULL;
+    }
+    return lua_pushlstring(L, s, len);
+}
+const char *testLuaArch_pushstring(lua_State *L, const char *s) {
+    size_t len = strlen(s);
+    return testLuaArch_pushlstring(L, s, len);
+}
+
+
 void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize) {
     if(nsize == 0) {
         arch->memoryUsed -= osize;
@@ -28,13 +52,6 @@ void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize
         arch->memoryUsed += nsize;
         return nn_realloc(ptr, nsize);
     }
-}
-
-testLuaArch *testLuaArch_get(lua_State *L) {
-    lua_getfield(L, LUA_REGISTRYINDEX, "archPtr");
-    testLuaArch *arch = lua_touserdata(L, -1);
-    lua_pop(L, 1);
-    return arch;
 }
 
 nn_computer *testLuaArch_getComputer(lua_State *L) {
@@ -469,9 +486,12 @@ int testLuaArch_unicode_sub(lua_State *L) {
     }
 
     char *sub = nn_unicode_char(points + start - 1, stop - start + 1);
-    lua_pushstring(L, sub); // TODO: fix OOM here
+    char *res = testLuaArch_pushstring(L, sub);
     nn_free(sub);
     nn_free(points);
+    if (!res) {
+        luaL_error(L, "out of memory");
+    }
 
     return 1;
 }
@@ -492,9 +512,12 @@ int testLuaArch_unicode_char(lua_State *L) {
         codepoints[i] = lua_tointeger(L, idx);
     }
     char *s = nn_unicode_char(codepoints, argc);
-    lua_pushstring(L, s);
+    char *res = testLuaArch_pushstring(L, s);
     nn_free(s);
     nn_free(codepoints);
+    if (!res) {
+        luaL_error(L, "out of memory");
+    }
     return 1;
 }
 
