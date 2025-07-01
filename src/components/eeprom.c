@@ -7,7 +7,7 @@ nn_eepromControl nn_eeprom_getControl(nn_component *component, nn_eeprom *eeprom
 void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
     if(!nn_decRef(&eeprom->refc)) return;
 
-    if(eeprom->deinit == NULL) {
+    if(eeprom->deinit != NULL) {
         eeprom->deinit(component, eeprom->userdata);
     }
 }
