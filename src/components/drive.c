@@ -73,11 +73,10 @@ void nn_drive_writeSector(nn_drive *drive, void *_, nn_component *component, nn_
     }
 }
 void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    // TODO: calculate the right index aaaaargh
     nn_value offsetValue = nn_getArgument(computer, 0);
-    size_t disk_offset = nn_toInt(offsetValue);
+    size_t disk_offset = nn_toInt(offsetValue) - 1;
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
-    int sector = disk_offset / sector_size;
+    int sector = (disk_offset / sector_size) + 1;
     size_t sector_offset = disk_offset % sector_size;
 
     char buf[sector_size];
@@ -86,13 +85,12 @@ void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_com
     nn_return(computer, nn_values_integer(buf[sector_offset]));
 }
 void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    // TODO: calculate the right index aaaaargh
     nn_value offsetValue = nn_getArgument(computer, 0);
     nn_value writeValue = nn_getArgument(computer, 1);
-    size_t disk_offset = nn_toInt(offsetValue);
+    size_t disk_offset = nn_toInt(offsetValue) - 1;
     char write = nn_toInt(writeValue);
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
-    int sector = disk_offset / sector_size;
+    int sector = (disk_offset / sector_size) + 1;
     size_t sector_offset = disk_offset % sector_size;
 
     char buf[sector_size];
