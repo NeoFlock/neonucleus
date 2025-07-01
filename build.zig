@@ -17,6 +17,7 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
             // components
             "src/components/eeprom.c",
             "src/components/filesystem.c",
+            "src/components/drive.c",
             "src/components/screen.c",
             "src/components/gpu.c",
             "src/components/keyboard.c",
@@ -37,7 +38,7 @@ fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVer
     const alloc = b.allocator;
     const dirName = @tagName(version);
 
-    const rootPath = try std.mem.join(alloc, std.fs.path.sep_str, &.{"foreign", dirName});
+    const rootPath = try std.mem.join(alloc, std.fs.path.sep_str, &.{ "foreign", dirName });
 
     c.addIncludePath(b.path(rootPath));
 
@@ -45,13 +46,13 @@ fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVer
     var files = std.ArrayList([]const u8).init(alloc);
     errdefer files.deinit();
 
-    var dir = try std.fs.cwd().openDir(rootPath, std.fs.Dir.OpenDirOptions {.iterate = true});
+    var dir = try std.fs.cwd().openDir(rootPath, std.fs.Dir.OpenDirOptions{ .iterate = true });
     defer dir.close();
 
     var iter = dir.iterate();
 
-    while(try iter.next()) |e| {
-        if(std.mem.startsWith(u8, e.name, "l") and std.mem.endsWith(u8, e.name, ".c") and !std.mem.eql(u8, e.name, "lua.c")) {
+    while (try iter.next()) |e| {
+        if (std.mem.startsWith(u8, e.name, "l") and std.mem.endsWith(u8, e.name, ".c") and !std.mem.eql(u8, e.name, "lua.c")) {
             const name = try alloc.dupe(u8, e.name);
             try files.append(name);
         }
