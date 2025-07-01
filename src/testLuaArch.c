@@ -3,9 +3,28 @@
 #include <lauxlib.h>
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 #include "neonucleus.h"
 
 char *testLuaSandbox = NULL;
+
+#if LUA_VERSION_NUM == 502
+
+// monkey patching
+
+bool lua_isinteger(lua_State *L, int i) {
+    if(lua_type(L, i) != LUA_TNUMBER) return false;
+    double x = lua_tonumber(L, i);
+    if(isinf(x)) return false;
+    if(isnan(x)) return false;
+    return trunc(x) == x;
+}
+
+void lua_seti(lua_State *L, int arr, int i) {
+    lua_rawseti(L, arr, i);
+}
+
+#endif
 
 typedef struct testLuaArch {
     lua_State *L;
@@ -55,11 +74,11 @@ static nn_value testLuaArch_getValue(lua_State *L, int index) {
         const char *s = lua_tolstring(L, index, &l);
         return nn_values_string(s, l);
     }
-    if(type == LUA_TNUMBER && lua_isnumber(L, index)) {
-        return nn_values_number(lua_tonumber(L, index));
-    }
     if(type == LUA_TNUMBER && lua_isinteger(L, index)) {
         return nn_values_integer(lua_tointeger(L, index));
+    }
+    if(type == LUA_TNUMBER && lua_isnumber(L, index)) {
+        return nn_values_number(lua_tonumber(L, index));
     }
     //TODO: bring it back once I make everything else not leak memory
     //luaL_argcheck(L, false, index, luaL_typename(L, index));
@@ -628,7 +647,15 @@ void testLuaArch_teardown(nn_computer *computer, testLuaArch *arch, void *_) {
 
 void testLuaArch_tick(nn_computer *computer, testLuaArch *arch, void *_) {
     int ret = 0;
+#if LUA_VERSION_NUM == 504
     int res = lua_resume(arch->L, NULL, 0, &ret);
+#endif
+#if LUA_VERSION_NUM == 503
+    int res = lua_resume(arch->L, NULL, 0);
+#endif
+#if LUA_VERSION_NUM == 502
+    int res = lua_resume(arch->L, NULL, 0);
+#endif
     if(res == LUA_OK) {
         // machine halted, this is no good
         lua_pop(arch->L, ret);
