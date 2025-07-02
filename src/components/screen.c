@@ -1,4 +1,5 @@
 #include "screen.h"
+#include <stdio.h>
 #include <string.h>
 
 nn_screen *nn_newScreen(nn_Alloc *alloc, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors) {
@@ -87,7 +88,9 @@ void nn_setAspectRatio(nn_screen *screen, int width, int height) {
 
 void nn_addKeyboard(nn_screen *screen, nn_address address) {
     if(screen->keyboardCount == NN_MAX_SCREEN_KEYBOARDS) return;
-    screen->keyboards[screen->keyboardCount++] = nn_strdup(&screen->alloc, address);
+    char *kb = nn_strdup(&screen->alloc, address);
+    if(kb == NULL) return;
+    screen->keyboards[screen->keyboardCount++] = kb;
 }
 
 void nn_removeKeyboard(nn_screen *screen, nn_address address) {

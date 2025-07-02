@@ -138,8 +138,9 @@ void nn_deleteComputer(nn_computer *computer) {
     computer->arch->teardown(computer, computer->archState, computer->arch->userdata);
     nn_deleteGuard(a, computer->lock);
     nn_deallocStr(a, computer->address);
+    nn_deallocStr(a, computer->tmpAddress);
     nn_dealloc(a, computer->components, sizeof(nn_component) * computer->componentCap);
-    nn_dealloc(a, computer->components, sizeof(nn_computer));
+    nn_dealloc(a, computer, sizeof(nn_computer));
 }
 
 const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len) {

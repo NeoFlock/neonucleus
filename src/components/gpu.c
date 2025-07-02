@@ -174,7 +174,7 @@ void nni_gpu_get(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
 
 void nni_gpu_getScreen(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->screenAddress == NULL) return;
-    nn_return_string(computer, gpu->screenAddress, 0);
+    nn_return_string(computer, gpu->screenAddress, strlen(gpu->screenAddress));
 }
 
 void nni_gpu_maxResolution(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
