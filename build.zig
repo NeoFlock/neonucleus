@@ -63,6 +63,23 @@ fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVer
         .files = files.items,
     });
 }
+fn addRunArtifact(b: *std.Build, os: std.Target.Os.Tag, exe: *std.Build.Step.Compile) *std.Build.Step.Run {
+    if (os == .windows) {
+        // do this so that windows can find dll's
+        return b.addSystemCommand(&[_][]const u8{
+            b.getInstallPath(.bin, exe.name),
+        });
+    } else {
+        return b.addRunArtifact(exe);
+    }
+}
+fn getSharedEngineName(os: std.Target.Os.Tag) []const u8 {
+    if (os == .windows) {
+        return "neonucleusdll";
+    } else {
+        return "neonucleus";
+    }
+}
 
 pub fn build(b: *std.Build) void {
     const os = builtin.target.os.tag;
@@ -80,27 +97,21 @@ pub fn build(b: *std.Build) void {
 
     addEngineSources(engineStatic);
 
-    const install = b.getInstallStep();
-
-    b.installArtifact(engineStatic);
-
     const engineShared = b.addSharedLibrary(.{
-        .name = "neonucleus",
+        .name = getSharedEngineName(os),
         .target = target,
         .optimize = optimize,
     });
 
     addEngineSources(engineShared);
 
-    b.installArtifact(engineShared);
-
     const engineStep = b.step("engine", "Builds the engine as a static library");
     engineStep.dependOn(&engineStatic.step);
-    engineStep.dependOn(install);
+    engineStep.dependOn(&b.addInstallArtifact(engineStatic, .{}).step);
 
     const sharedStep = b.step("shared", "Builds the engine as a shared library");
     sharedStep.dependOn(&engineShared.step);
-    sharedStep.dependOn(install);
+    sharedStep.dependOn(&b.addInstallArtifact(engineShared, .{}).step);
 
     const emulator = b.addExecutable(.{
         .name = "neonucleus",
@@ -129,18 +140,21 @@ pub fn build(b: *std.Build) void {
     // forces us to link in everything too
     emulator.linkLibrary(engineStatic);
 
-    b.installArtifact(emulator);
-    b.step("emulator", "Builds the emulator").dependOn(&emulator.step);
+    const emulatorStep = b.step("emulator", "Builds the emulator");
+    emulatorStep.dependOn(&emulator.step);
+    emulatorStep.dependOn(&b.addInstallArtifact(emulator, .{}).step);
+    if (os == .windows) {
+        emulatorStep.dependOn(&b.addInstallBinFile(b.path("raylib/lib/raylib.dll"), "raylib.dll").step);
+    }
 
-    const run_cmd = b.addRunArtifact(emulator);
-
-    run_cmd.step.dependOn(install);
+    var run_cmd = addRunArtifact(b, os, emulator);
 
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
 
     const run_step = b.step("run", "Run the emulator");
+    run_step.dependOn(emulatorStep);
     run_step.dependOn(&run_cmd.step);
 
     const lib_unit_tests = b.addTest(.{
