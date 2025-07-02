@@ -221,7 +221,6 @@ function tty.keyboard()
     -- changes to this design should avoid this on every key hit
 
     -- this is expensive (slow!)
-    debugprint("screen", type(screen), string.format("%q", screen))
     window.keyboard = assert(component.invoke(screen, "getKeyboards"))[1] or system_keyboard
   end
 
