@@ -51,12 +51,12 @@ void nn_drive_readSector(nn_drive *drive, void *_, nn_component *component, nn_c
     nn_value sectorValue = nn_getArgument(computer, 0);
     int sector = nn_toInt(sectorValue);
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
-    char buf[sector_size];
     // we leave the +1 intentionally to compare the end of the real sector
     if (sector < 1 || (sector * sector_size > drive->getCapacity(component, drive->userdata))) {
         nn_setCError(computer, "bad argument #1 (sector out of range)");
         return;
     }
+    char buf[sector_size];
     drive->readSector(component, drive->userdata, sector, buf);
     nn_return_string(computer, buf, sector_size);
 }
@@ -86,6 +86,10 @@ void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_com
     int sector = (disk_offset / sector_size) + 1;
     size_t sector_offset = disk_offset % sector_size;
 
+    if (disk_offset >= drive->getCapacity(component, drive->userdata)) {
+        nn_setCError(computer, "bad argument #1 (index out of range)");
+        return;
+    }
     char buf[sector_size];
     drive->readSector(component, drive->userdata, sector, buf);
 
@@ -95,11 +99,19 @@ void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_co
     nn_value offsetValue = nn_getArgument(computer, 0);
     nn_value writeValue = nn_getArgument(computer, 1);
     size_t disk_offset = nn_toInt(offsetValue) - 1;
-    char write = nn_toInt(writeValue);
+    intptr_t write = nn_toInt(writeValue);
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
     int sector = (disk_offset / sector_size) + 1;
     size_t sector_offset = disk_offset % sector_size;
 
+    if (write < -128 || write > 255) {
+        nn_setCError(computer, "bad argument #2 (byte out of range)");
+        return;
+    }
+    if (disk_offset >= drive->getCapacity(component, drive->userdata)) {
+        nn_setCError(computer, "bad argument #1 (index out of range)");
+        return;
+    }
     char buf[sector_size];
     drive->readSector(component, drive->userdata, sector, buf);
 
