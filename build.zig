@@ -80,10 +80,6 @@ pub fn build(b: *std.Build) void {
 
     addEngineSources(engineStatic);
 
-    const install = b.getInstallStep();
-
-    b.installArtifact(engineStatic);
-
     const engineShared = b.addSharedLibrary(.{
         .name = "neonucleus",
         .target = target,
@@ -92,15 +88,11 @@ pub fn build(b: *std.Build) void {
 
     addEngineSources(engineShared);
 
-    b.installArtifact(engineShared);
-
     const engineStep = b.step("engine", "Builds the engine as a static library");
     engineStep.dependOn(&engineStatic.step);
-    engineStep.dependOn(install);
 
     const sharedStep = b.step("shared", "Builds the engine as a shared library");
     sharedStep.dependOn(&engineShared.step);
-    sharedStep.dependOn(install);
 
     const emulator = b.addExecutable(.{
         .name = "neonucleus",
@@ -129,12 +121,9 @@ pub fn build(b: *std.Build) void {
     // forces us to link in everything too
     emulator.linkLibrary(engineStatic);
 
-    b.installArtifact(emulator);
     b.step("emulator", "Builds the emulator").dependOn(&emulator.step);
 
     const run_cmd = b.addRunArtifact(emulator);
-
-    run_cmd.step.dependOn(install);
 
     if (b.args) |args| {
         run_cmd.addArgs(args);
