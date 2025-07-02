@@ -238,6 +238,47 @@ bool ne_fs_exists(nn_component *component, ne_fs *fs, const char *path) {
     return FileExists(p) || DirectoryExists(p);
 }
 
+typedef struct ne_drive {
+    FILE *file;
+} ne_drive;
+
+void ne_drive_close(nn_component *component, ne_drive *drive) {
+    fclose(drive->file);
+}
+nn_driveControl ne_drive_getControl(nn_component *component, ne_drive *_) {
+    return (nn_driveControl){};
+}
+size_t ne_drive_getPlatterCount(nn_component *component, ne_drive *_) {
+    return 1;
+}
+size_t ne_drive_getSectorSize(nn_component *component, ne_drive *_) {
+    return 512;
+}
+size_t ne_drive_getCapacity(nn_component *component, ne_drive *drive) {
+    fseek(drive->file, 0, SEEK_END);
+    return ftell(drive->file);
+}
+void ne_drive_readSector(nn_component *component, ne_drive *drive, int shifted_sector, char *buf) {
+    int sector = shifted_sector - 1;
+    size_t sectorSize = ne_drive_getSectorSize(component, drive);
+
+    size_t offset = sector * sectorSize;
+    fseek(drive->file, offset, SEEK_SET);
+    fread(buf, sizeof(char), sectorSize, drive->file);
+}
+void ne_drive_writeSector(nn_component *component, ne_drive *drive, int shifted_sector, const char *buf) {
+    int sector = shifted_sector - 1;
+    size_t sectorSize = ne_drive_getSectorSize(component, drive);
+
+    size_t offset = sector * sectorSize;
+    fseek(drive->file, offset, SEEK_SET);
+    fwrite(buf, sizeof(char), sectorSize, drive->file);
+
+    // this is probably not needed but i believe someone isn't running the deinit
+    fflush(drive->file);
+}
+
+
 int keycode_to_oc(int keycode) {
     switch (keycode) {
         case KEY_NULL:
@@ -532,6 +573,27 @@ int main() {
         .seek = NULL,
     };
     nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
+
+    ne_drive drive = {
+        .file = fopen("data/drive.img", "r+")
+    };
+    assert(drive.file != NULL);
+
+    nn_drive genericDrive = {
+        .refc = 0,
+        .userdata = &drive,
+        .deinit = (void *)ne_drive_close,
+        .control = (void *)ne_drive_getControl,
+        .getLabel = ne_eeprom_getLabel,
+        .setLabel = ne_eeprom_setLabel,
+        .getPlatterCount = (void *)ne_drive_getPlatterCount,
+        .getSectorSize = (void *)ne_drive_getSectorSize,
+        .getCapacity = (void *)ne_drive_getCapacity,
+        .readSector = (void *)ne_drive_readSector,
+        .writeSector = (void *)ne_drive_writeSector,
+    };
+
+    nn_addDrive(computer, "drive.img", 4, &genericDrive);
 
     nn_screen *s = nn_newScreen(&alloc, 80, 32, 16, 16, 256);
     nn_addKeyboard(s, "shitty keyboard");
