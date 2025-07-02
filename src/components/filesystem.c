@@ -328,7 +328,7 @@ void nn_fs_write(nn_filesystem *fs, void *_, nn_component *component, nn_compute
     nn_value fdValue = nn_getArgument(computer, 0);
     size_t fd = nn_toInt(fdValue);
 
-    size_t spaceRemaining = fs->spaceTotal(component, fs->userdata) - fs->spaceUsed(component, fs->userdata);
+    // size_t spaceRemaining = fs->spaceTotal(component, fs->userdata) - fs->spaceUsed(component, fs->userdata);
 
     nn_value bufferValue = nn_getArgument(computer, 1);
     size_t len = 0;
@@ -398,10 +398,10 @@ void nn_fs_seek(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         return;
     }
 
-    size_t capacity = fs->spaceTotal(component, fs->userdata);
+    // size_t capacity = fs->spaceTotal(component, fs->userdata);
     int moved = 0;
 
-    size_t pos = fs->seek(component, fs->userdata, fd, whence, off, &moved);
+    /* size_t pos = */ fs->seek(component, fs->userdata, fd, whence, off, &moved);
     if(moved < 0) moved = -moved;
 
     // do not ask where it comes from, balance is hard
