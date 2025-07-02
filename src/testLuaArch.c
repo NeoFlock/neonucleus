@@ -532,6 +532,7 @@ int testLuaArch_unicode_char(lua_State *L) {
     unsigned int *codepoints = nn_alloc(alloc, sizeof(unsigned int) * argc);
     if(codepoints == NULL) {
         luaL_error(L, "out of memory");
+        return 0; // tell lsp to shut the fuck up
     }
     for(int i = 0; i < argc; i++) {
         int idx = i + 1;
