@@ -2,6 +2,7 @@
 #include <lualib.h>
 #include <lauxlib.h>
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 #include "neonucleus.h"
 
@@ -40,6 +41,13 @@ testLuaArch *testLuaArch_get(lua_State *L) {
     return arch;
 }
 
+nn_Alloc *testLuaArch_getAlloc(lua_State *L) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "archPtr");
+    testLuaArch *arch = lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    return nn_getAllocator(nn_getUniverse(arch->computer));
+}
+
 const char *testLuaArch_pushlstring(lua_State *L, const char *s, size_t len) {
     if (lua_checkstack(L, 1) == 0) {
         return NULL;
@@ -58,9 +66,10 @@ const char *testLuaArch_pushstring(lua_State *L, const char *s) {
 
 
 void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize) {
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(arch->computer));
     if(nsize == 0) {
         arch->memoryUsed -= osize;
-        nn_free(ptr);
+        free(ptr);
         return NULL;
     } else {
         size_t actualOldSize = osize;
@@ -70,7 +79,7 @@ void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize
         }
         arch->memoryUsed -= actualOldSize;
         arch->memoryUsed += nsize;
-        return nn_realloc(ptr, nsize);
+        return realloc(ptr, nsize);
     }
 }
 
@@ -80,6 +89,7 @@ nn_computer *testLuaArch_getComputer(lua_State *L) {
 
 static nn_value testLuaArch_getValue(lua_State *L, int index) {
     int type = lua_type(L, index);
+    nn_Alloc *alloc = testLuaArch_getAlloc(L);
     
     if(type == LUA_TBOOLEAN) {
         return nn_values_boolean(lua_toboolean(L, index));
@@ -90,7 +100,7 @@ static nn_value testLuaArch_getValue(lua_State *L, int index) {
     if(type == LUA_TSTRING) {
         size_t l = 0;
         const char *s = lua_tolstring(L, index, &l);
-        return nn_values_string(s, l);
+        return nn_values_string(alloc, s, l);
     }
     if(type == LUA_TNUMBER && lua_isinteger(L, index)) {
         return nn_values_integer(lua_tointeger(L, index));
@@ -330,17 +340,12 @@ static int testLuaArch_computer_setState(lua_State *L) {
 
 static int testLuaArch_component_list(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
-    size_t len = 0;
-    nn_component **components = nn_listComponent(c, &len);
-    if(components == NULL) {
-        lua_pushnil(L);
-        lua_pushstring(L, "out of memory");
-        return 2;
-    }
-    lua_createtable(L, 0, len);
+    lua_createtable(L, 0, 10);
+    size_t iter = 0;
     int list = lua_gettop(L);
-    for(size_t i = 0; i < len; i++) {
-        nn_component *component = components[i];
+    while(true) {
+        nn_component *component = nn_iterComponent(c, &iter);
+        if(component == NULL) break;
         nn_componentTable *table = nn_getComponentTable(component);
         nn_address addr = nn_getComponentAddress(component);
         const char *type = nn_getComponentType(table);
@@ -348,7 +353,6 @@ static int testLuaArch_component_list(lua_State *L) {
         lua_pushstring(L, type);
         lua_setfield(L, list, addr);
     }
-    nn_free(components);
     return 1;
 }
 
@@ -463,6 +467,7 @@ static int testLuaArch_component_invoke(lua_State *L) {
 
 int testLuaArch_unicode_sub(lua_State *L) {
     const char *s = luaL_checkstring(L, 1);
+    nn_Alloc *alloc = testLuaArch_getAlloc(L);
     int start = luaL_checkinteger(L, 2);
     if(!nn_unicode_validate(s)) {
         luaL_error(L, "invalid utf-8");
@@ -500,15 +505,20 @@ int testLuaArch_unicode_sub(lua_State *L) {
 
     // there is a way to do it without an allocation
     // however, I'm lazy
-    unsigned int *points = nn_unicode_codepoints(s);
+    size_t pointLen;
+    unsigned int *points = nn_unicode_codepoints(alloc, s, &pointLen);
     if(points == NULL) {
         luaL_error(L, "out of memory");
     }
 
-    char *sub = nn_unicode_char(points + start - 1, stop - start + 1);
+    char *sub = nn_unicode_char(alloc, points + start - 1, stop - start + 1);
+    if(sub == NULL) {
+        nn_dealloc(alloc, points, sizeof(unsigned int) * pointLen);
+        luaL_error(L, "out of memory");
+    }
     const char *res = testLuaArch_pushstring(L, sub);
-    nn_free(sub);
-    nn_free(points);
+    nn_deallocStr(alloc, sub);
+    nn_dealloc(alloc, points, sizeof(unsigned int) * pointLen);
     if (!res) {
         luaL_error(L, "out of memory");
     }
@@ -518,23 +528,24 @@ int testLuaArch_unicode_sub(lua_State *L) {
 
 int testLuaArch_unicode_char(lua_State *L) {
     int argc = lua_gettop(L);
-    unsigned int *codepoints = nn_malloc(sizeof(unsigned int) * argc);
+    nn_Alloc *alloc = testLuaArch_getAlloc(L);
+    unsigned int *codepoints = nn_alloc(alloc, sizeof(unsigned int) * argc);
     if(codepoints == NULL) {
         luaL_error(L, "out of memory");
     }
     for(int i = 0; i < argc; i++) {
         int idx = i + 1;
         if(!lua_isinteger(L, idx)) {
-            nn_free(codepoints);
+            nn_dealloc(alloc, codepoints, sizeof(unsigned int) * argc);
             luaL_argerror(L, idx, "integer expected");
             return 0;
         }
         codepoints[i] = lua_tointeger(L, idx);
     }
-    char *s = nn_unicode_char(codepoints, argc);
+    char *s = nn_unicode_char(alloc, codepoints, argc);
     const char *res = testLuaArch_pushstring(L, s);
-    nn_free(s);
-    nn_free(codepoints);
+    nn_deallocStr(alloc, s);
+    nn_dealloc(alloc, codepoints, sizeof(unsigned int) * argc);
     if (!res) {
         luaL_error(L, "out of memory");
     }
@@ -649,7 +660,8 @@ void testLuaArch_loadEnv(lua_State *L) {
 }
 
 testLuaArch *testLuaArch_setup(nn_computer *computer, void *_) {
-    testLuaArch *s = nn_malloc(sizeof(testLuaArch));
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
+    testLuaArch *s = nn_alloc(alloc, sizeof(testLuaArch));
     if(s == NULL) return NULL;
     s->memoryUsed = 0;
     s->computer = computer;
@@ -665,8 +677,9 @@ testLuaArch *testLuaArch_setup(nn_computer *computer, void *_) {
 }
 
 void testLuaArch_teardown(nn_computer *computer, testLuaArch *arch, void *_) {
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     lua_close(arch->L);
-    nn_free(arch);
+    nn_dealloc(alloc, arch, sizeof(testLuaArch));
 }
 
 void testLuaArch_tick(nn_computer *computer, testLuaArch *arch, void *_) {
@@ -719,7 +732,7 @@ nn_architecture *testLuaArch_getArchitecture(const char *sandboxPath) {
         if(f == NULL) return NULL;
         fseek(f, 0, SEEK_END);
         size_t l = ftell(f);
-        testLuaSandbox = nn_malloc(l+1);
+        testLuaSandbox = malloc(l+1);
         if(testLuaSandbox == NULL) {
             fclose(f);
             return NULL;

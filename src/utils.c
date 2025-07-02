@@ -1,4 +1,5 @@
 #include "neonucleus.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -8,30 +9,69 @@
 #include <windows.h>
 #endif
 
-void *nn_malloc(size_t size) {
-    return malloc(size);
+void *nn_alloc(nn_Alloc *alloc, size_t size) {
+    if(size == 0) return alloc->proc;
+    return alloc->proc(alloc->userdata, NULL, 0, size, NULL);
 }
 
-void *nn_realloc(void *memory, size_t newSize) {
-    return realloc(memory, newSize);
+void *nn_resize(nn_Alloc *alloc, void *memory, size_t oldSize, size_t newSize) {
+    if(oldSize == newSize) return memory;
+    if(newSize == 0) {
+        nn_dealloc(alloc, memory, oldSize);
+        return alloc->proc;
+    }
+    if(memory == NULL) {
+        return nn_alloc(alloc, newSize);
+    }
+    if(memory == alloc->proc) {
+        if(newSize == 0) return memory;
+        return nn_alloc(alloc, newSize);
+    }
+    return alloc->proc(alloc->userdata, memory, oldSize, newSize, NULL);
 }
 
-void nn_free(void *memory) {
-    free(memory);
+void nn_dealloc(nn_Alloc *alloc, void *memory, size_t size) {
+    if(memory == NULL) return; // matches free()
+    if(memory == alloc->proc) return; // 0-sized memory
+    alloc->proc(alloc->userdata, memory, size, 0, NULL);
+}
+
+static void *nn_libcAllocProc(void *_, void *ptr, size_t oldSize, size_t newSize, void *__) {
+    if(newSize == 0) {
+        //printf("Freed %lu bytes from %p\n", oldSize, ptr);
+        free(ptr);
+        return NULL;
+    } else {
+        void *rptr = realloc(ptr, newSize);
+        //printf("Allocated %lu bytes for %p\n", newSize - oldSize, rptr);
+        return rptr;
+    }
+}
+
+nn_Alloc nn_libcAllocator() {
+    return (nn_Alloc) {
+        .userdata = NULL,
+        .proc = nn_libcAllocProc,
+    };
 }
 
 // Utilities, both internal and external
-char *nn_strdup(const char *s) {
+char *nn_strdup(nn_Alloc *alloc, const char *s) {
     size_t l = strlen(s);
-    char *m = nn_malloc(l+1);
+    char *m = nn_alloc(alloc, l+1);
     if(m == NULL) return m;
     return strcpy(m, s);
 }
 
-void *nn_memdup(const void *buf, size_t len) {
-    char *m = malloc(len);
+void *nn_memdup(nn_Alloc *alloc, const void *buf, size_t len) {
+    char *m = nn_alloc(alloc, len);
     if(m == NULL) return m;
     return memcpy(m, buf, len);
+}
+
+void nn_deallocStr(nn_Alloc *alloc, char *s) {
+    if(s == NULL) return;
+    nn_dealloc(alloc, s, strlen(s)+1);
 }
 
 #ifdef NN_POSIX
@@ -71,3 +111,4 @@ void nn_randomLatency(double min, double max) {
     double latency = min + t * (max - min);
     nn_busySleep(latency);
 }
+

@@ -2,9 +2,10 @@
 #include "universe.h"
 #include <string.h>
 
-nn_universe *nn_newUniverse() {
-    nn_universe *u = nn_malloc(sizeof(nn_universe));
+nn_universe *nn_newUniverse(nn_Alloc alloc) {
+    nn_universe *u = nn_alloc(&alloc, sizeof(nn_universe));
     if(u == NULL) return u;
+    u->alloc = alloc;
     // we leave udata uninitialized because it does not matter
     u->udataLen = 0;
     u->clockUserdata = NULL;
@@ -12,11 +13,15 @@ nn_universe *nn_newUniverse() {
     return u;
 }
 
+nn_Alloc *nn_getAllocator(nn_universe *universe) {
+    return &universe->alloc;
+}
+
 void nn_unsafeDeleteUniverse(nn_universe *universe) {
     for(size_t i = 0; i < universe->udataLen; i++) {
-        nn_free(universe->udata[i].name);
+        nn_deallocStr(&universe->alloc, universe->udata[i].name);
     }
-    nn_free(universe);
+    nn_dealloc(&universe->alloc, universe, sizeof(nn_universe));
 }
 
 void *nn_queryUserdata(nn_universe *universe, const char *name) {
@@ -32,7 +37,7 @@ void nn_storeUserdata(nn_universe *universe, const char *name, void *data) {
     if(universe->udataLen == NN_MAX_USERDATA) return; // prevent overflow
 
     size_t idx = universe->udataLen;
-    char *allocName = nn_strdup(name);
+    char *allocName = nn_strdup(&universe->alloc, name);
     if(allocName == NULL) return;
 
     universe->udata[idx].name = allocName;

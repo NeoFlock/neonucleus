@@ -41,7 +41,7 @@ void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
     if(l == 0) {
         nn_return(computer, nn_values_nil());
     } else {
-        nn_return(computer, nn_values_string(buf, l));
+        nn_return_string(computer, buf, l);
     }
     
     // Latency, energy costs and stuff
@@ -61,7 +61,7 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
         return;
     }
     l = eeprom->setLabel(component, eeprom->userdata, buf, l);
-    nn_return(computer, nn_values_string(buf, l));
+    nn_return_string(computer, buf, l);
     
     // Latency, energy costs and stuff
     nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
@@ -74,14 +74,15 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
 
 void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     size_t cap = eeprom->getSize(component, eeprom->userdata);
-    char *buf = nn_malloc(cap);
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
+    char *buf = nn_alloc(alloc, cap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
     }
     size_t len = eeprom->get(component, eeprom->userdata, buf);
-    nn_return(computer, nn_values_string(buf, len));
-    nn_free(buf);
+    nn_return_string(computer, buf, len);
+    nn_dealloc(alloc, buf, cap);
     
     nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
     nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
@@ -119,7 +120,8 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
 
 void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     size_t cap = eeprom->getDataSize(component, eeprom->userdata);
-    char *buf = nn_malloc(cap);
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
+    char *buf = nn_alloc(alloc, cap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
@@ -128,9 +130,9 @@ void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
     if(len < 0) {
         nn_return(computer, nn_values_nil());
     } else {
-        nn_return(computer, nn_values_string(buf, len));
+        nn_return_string(computer, buf, len);
     }
-    nn_free(buf);
+    nn_dealloc(alloc, buf, cap);
     
     nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
     nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
@@ -178,7 +180,8 @@ void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component,
 // TODO: make good
 void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     size_t cap = eeprom->getDataSize(component, eeprom->userdata);
-    char *buf = nn_malloc(cap);
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
+    char *buf = nn_alloc(alloc, cap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
@@ -188,9 +191,9 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
     for(size_t i = 0; i < len; i++) {
         sum += buf[i];
     }
-    nn_free(buf);
+    nn_dealloc(alloc, buf, cap);
 
-    nn_return(computer, nn_values_string((void *)&sum, sizeof(sum)));
+    nn_return_string(computer, (void *)&sum, sizeof(sum));
     
     nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
     nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
@@ -200,7 +203,7 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
 }
 
 void nn_loadEepromTable(nn_universe *universe) {
-    nn_componentTable *eepromTable = nn_newComponentTable("eeprom", NULL, NULL, (void *)nn_eeprom_destroy);
+    nn_componentTable *eepromTable = nn_newComponentTable(nn_getAllocator(universe), "eeprom", NULL, NULL, (void *)nn_eeprom_destroy);
     nn_storeUserdata(universe, "NN:EEPROM", eepromTable);
 
     nn_defineMethod(eepromTable, "getSize", true, (void *)nn_eeprom_getSize, NULL, "getSize(): integer - Returns the maximum code capacity of the EEPROM.");

@@ -21,38 +21,38 @@ nn_value nn_values_cstring(const char *string) {
     return (nn_value) {.tag = NN_VALUE_CSTR, .cstring = string};
 }
 
-nn_value nn_values_string(const char *string, size_t len) {
-    if(len == 0) len = strlen(string);
-
-    char *buf = nn_malloc(len+1);
+nn_value nn_values_string(nn_Alloc *alloc, const char *string, size_t len) {
+    char *buf = nn_alloc(alloc, len+1);
     if(buf == NULL) {
         return nn_values_nil();
     }
     memcpy(buf, string, len);
     buf[len] = '\0';
 
-    nn_string *s = nn_malloc(sizeof(nn_string));
+    nn_string *s = nn_alloc(alloc, sizeof(nn_string));
     if(s == NULL) {
-        nn_free(buf);
+        nn_dealloc(alloc, buf, len+1);
         return nn_values_nil();
     }
     s->data = buf;
     s->len = len;
     s->refc = 1;
+    s->alloc = *alloc;
 
     return (nn_value) {.tag = NN_VALUE_STR, .string = s};
 }
 
-nn_value nn_values_array(size_t len) {
-    nn_array *arr = nn_malloc(sizeof(nn_array));
+nn_value nn_values_array(nn_Alloc *alloc, size_t len) {
+    nn_array *arr = nn_alloc(alloc, sizeof(nn_array));
     if(arr == NULL) {
         return nn_values_nil();
     }
+    arr->alloc = *alloc;
     arr->refc = 1;
     arr->len = len;
-    nn_value *values = nn_malloc(sizeof(nn_value) * len);
+    nn_value *values = nn_alloc(alloc, sizeof(nn_value) * len);
     if(values == NULL) {
-        nn_free(arr);
+        nn_dealloc(alloc, arr, sizeof(nn_array));
         return nn_values_nil();
     }
     for(size_t i = 0; i < len; i++) {
@@ -62,16 +62,17 @@ nn_value nn_values_array(size_t len) {
     return (nn_value) {.tag = NN_VALUE_ARRAY, .array = arr};
 }
 
-nn_value nn_values_table(size_t pairCount) {
-    nn_table *table = nn_malloc(sizeof(nn_table));
+nn_value nn_values_table(nn_Alloc *alloc, size_t pairCount) {
+    nn_table *table = nn_alloc(alloc, sizeof(nn_table));
     if(table == NULL) {
         return nn_values_nil();
     }
+    table->alloc = *alloc;
     table->refc = 1;
     table->len = pairCount;
-    nn_pair *pairs = nn_malloc(sizeof(nn_pair) * pairCount);
+    nn_pair *pairs = nn_alloc(alloc, sizeof(nn_pair) * pairCount);
     if(pairs == NULL) {
-        nn_free(table);
+        nn_dealloc(alloc, table, sizeof(nn_table));
         return nn_values_nil();
     }
     for(size_t i = 0; i < pairCount; i++) {
@@ -101,8 +102,9 @@ void nn_values_drop(nn_value val) {
     if(val.tag == NN_VALUE_STR) {
         val.string->refc--;
         if(val.string->refc == 0) {
-            nn_free(val.string->data);
-            nn_free(val.string);
+            nn_Alloc *a = &val.string->alloc;
+            nn_dealloc(a, val.string->data, val.string->len + 1);
+            nn_dealloc(a, val.string, sizeof(nn_string));
         }
     } else if(val.tag == NN_VALUE_ARRAY) {
         val.array->refc--;
@@ -110,8 +112,9 @@ void nn_values_drop(nn_value val) {
             for(size_t i = 0; i < val.array->len; i++) {
                 nn_values_drop(val.array->values[i]);
             }
-            nn_free(val.array->values);
-            nn_free(val.array);
+            nn_Alloc *a = &val.array->alloc;
+            nn_dealloc(a, val.array->values, sizeof(nn_value) * val.array->len);
+            nn_dealloc(a, val.array, sizeof(nn_array));
         }
     } else if(val.tag == NN_VALUE_TABLE) {
         val.table->refc--;
@@ -120,8 +123,9 @@ void nn_values_drop(nn_value val) {
                 nn_values_drop(val.table->pairs[i].key);
                 nn_values_drop(val.table->pairs[i].val);
             }
-            nn_free(val.table->pairs);
-            nn_free(val.table);
+            nn_Alloc *a = &val.table->alloc;
+            nn_dealloc(a, val.table->pairs, sizeof(nn_pair) * val.table->len);
+            nn_dealloc(a, val.table, sizeof(nn_table));
         }
     }
 }

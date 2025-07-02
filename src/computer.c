@@ -1,26 +1,27 @@
 #include "computer.h"
 #include "component.h"
+#include "universe.h"
 #include "neonucleus.h"
 #include <string.h>
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit) {
-    nn_computer *c = nn_malloc(sizeof(nn_computer));
-    c->components = nn_malloc(sizeof(nn_component) * componentLimit);
+    nn_computer *c = nn_alloc(&universe->alloc, sizeof(nn_computer));
+    c->components = nn_alloc(&universe->alloc, sizeof(nn_component) * componentLimit);
     if(c->components == NULL) {
-        nn_free(c);
+        nn_dealloc(&universe->alloc, c, sizeof(nn_computer));
         return NULL;
     }
-    c->address = nn_strdup(address);
+    c->address = nn_strdup(&universe->alloc, address);
     if(c->address == NULL) {
-        nn_free(c->components);
-        nn_free(c);
+        nn_dealloc(&universe->alloc, c->components, sizeof(nn_component) * componentLimit);
+        nn_dealloc(&universe->alloc, c, sizeof(nn_computer));
         return NULL;
     }
-    c->lock = nn_newGuard();
+    c->lock = nn_newGuard(&universe->alloc);
     if(c->lock == NULL) {
-        nn_free(c->address);
-        nn_free(c->components);
-        nn_free(c);
+        nn_deallocStr(&universe->alloc, c->address);
+        nn_dealloc(&universe->alloc, c->components, sizeof(nn_component) * componentLimit);
+        nn_dealloc(&universe->alloc, c, sizeof(nn_computer));
         return NULL;
     }
     c->timeOffset = nn_getTime(universe);
@@ -50,10 +51,10 @@ nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_archit
     // Setup Architecture
     c->archState = c->arch->setup(c, c->arch->userdata);
     if(c->archState == NULL) {
-        nn_deleteGuard(c->lock);
-        nn_free(c->address);
-        nn_free(c->components);
-        nn_free(c);
+        nn_deleteGuard(&universe->alloc, c->lock);
+        nn_deallocStr(&universe->alloc, c->address);
+        nn_dealloc(&universe->alloc, c->components, sizeof(nn_component) * componentLimit);
+        nn_dealloc(&universe->alloc, c, sizeof(nn_computer));
         return NULL;
     }
 
@@ -65,8 +66,8 @@ nn_universe *nn_getUniverse(nn_computer *computer) {
 }
 
 void nn_setTmpAddress(nn_computer *computer, nn_address tmp) {
-    nn_free(computer->tmpAddress);
-    computer->tmpAddress = nn_strdup(tmp);
+    nn_deallocStr(&computer->universe->alloc, computer->tmpAddress);
+    computer->tmpAddress = nn_strdup(&computer->universe->alloc, tmp);
 }
 
 nn_address nn_getComputerAddress(nn_computer *computer) {
@@ -130,15 +131,15 @@ void nn_deleteComputer(nn_computer *computer) {
     while(computer->signalCount > 0) {
         nn_popSignal(computer);
     }
+    nn_Alloc *a = &computer->universe->alloc;
     for(size_t i = 0; i < computer->userCount; i++) {
-        nn_free(computer->users[i]);
+        nn_deallocStr(a, computer->users[i]);
     }
     computer->arch->teardown(computer, computer->archState, computer->arch->userdata);
-    nn_deleteGuard(computer->lock);
-    nn_free(computer->components);
-    nn_free(computer->address);
-    nn_free(computer->tmpAddress);
-    nn_free(computer);
+    nn_deleteGuard(a, computer->lock);
+    nn_deallocStr(a, computer->address);
+    nn_dealloc(a, computer->components, sizeof(nn_component) * computer->componentCap);
+    nn_dealloc(a, computer->components, sizeof(nn_computer));
 }
 
 const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len) {
@@ -183,7 +184,7 @@ void nn_popSignal(nn_computer *computer) {
 
 const char *nn_addUser(nn_computer *computer, const char *name) {
     if(computer->userCount == NN_MAX_USERS) return "too many users";
-    char *user = nn_strdup(name);
+    char *user = nn_strdup(&computer->universe->alloc, name);
     if(user == NULL) return "out of memory";
     computer->users[computer->userCount] = user;
     computer->userCount++;
@@ -195,7 +196,7 @@ void nn_deleteUser(nn_computer *computer, const char *name) {
     for(size_t i = 0; i < computer->userCount; i++) {
         char *user = computer->users[i];
         if(strcmp(user, name) == 0) {
-            nn_free(user);
+            nn_deallocStr(&computer->universe->alloc, user);
         } else {
             computer->users[j] = user;
             j++;
@@ -322,7 +323,7 @@ const char *nn_getError(nn_computer *computer) {
 
 void nn_clearError(nn_computer *computer) {
     if(computer->allocatedError) {
-        nn_free(computer->err);
+        nn_deallocStr(&computer->universe->alloc, computer->err);
     }
     computer->err = NULL;
     computer->allocatedError = false;
@@ -330,7 +331,7 @@ void nn_clearError(nn_computer *computer) {
 
 void nn_setError(nn_computer *computer, const char *err) {
     nn_clearError(computer);
-    char *copy = nn_strdup(err);
+    char *copy = nn_strdup(&computer->universe->alloc, err);
     if(copy == NULL) {
         nn_setCError(computer, "out of memory");
         return;
@@ -360,7 +361,7 @@ nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slo
         computer->componentLen++;
     }
 
-    c->address = nn_strdup(address);
+    c->address = nn_strdup(&computer->universe->alloc, address);
     if(c->address == NULL) return NULL;
     c->table = table;
     c->slot = slot;
@@ -382,7 +383,7 @@ void nn_removeComponent(nn_computer *computer, nn_address address) {
 }
 
 void nn_destroyComponent(nn_component *component) {
-    nn_free(component->address);
+    nn_deallocStr(&component->computer->universe->alloc, component->address);
     if(component->table->destructor != NULL) {
         component->table->destructor(component->table->userdata, component, component->statePtr);
     }
@@ -391,6 +392,7 @@ void nn_destroyComponent(nn_component *component) {
 
 nn_component *nn_findComponent(nn_computer *computer, nn_address address) {
     for(size_t i = 0; i < computer->componentLen; i++) {
+        if(computer->components[i].address == NULL) continue; // empty slot
         if(strcmp(computer->components[i].address, address) == 0) {
             return computer->components + i;
         }
@@ -398,19 +400,13 @@ nn_component *nn_findComponent(nn_computer *computer, nn_address address) {
     return NULL;
 }
 
-nn_component **nn_listComponent(nn_computer *computer, size_t *len) {
-    nn_component **c = nn_malloc(sizeof(nn_component *) * computer->componentLen);
-    if(c == NULL) return NULL;
-    size_t j = 0;
-    for(size_t i = 0; i < computer->componentLen; i++) {
-        nn_component *component = computer->components + i;
-        if(component->address != NULL) {
-            c[j] = component;
-            j++;
-        }
+nn_component *nn_iterComponent(nn_computer *computer, size_t *internalIndex) {
+    for(size_t i = *internalIndex; i < computer->componentLen; i++) {
+        if(computer->components[i].address == NULL) continue;
+        *internalIndex = i+1;
+        return computer->components + i;
     }
-    *len = j;
-    return c;
+    return NULL;
 }
 
 void nn_resetCall(nn_computer *computer) {
@@ -470,4 +466,50 @@ void nn_lockComputer(nn_computer *computer) {
 
 void nn_unlockComputer(nn_computer *computer) {
     nn_unlock(computer->lock);
+}
+
+void nn_return_nil(nn_computer *computer) {
+    nn_return(computer, nn_values_nil());
+}
+
+void nn_return_integer(nn_computer *computer, intptr_t integer) {
+    nn_return(computer, nn_values_integer(integer));
+}
+
+void nn_return_number(nn_computer *computer, double number) {
+    nn_return(computer, nn_values_number(number));
+}
+
+void nn_return_boolean(nn_computer *computer, bool boolean) {
+    nn_return(computer, nn_values_boolean(boolean));
+}
+
+void nn_return_cstring(nn_computer *computer, const char *cstr) {
+    nn_return(computer, nn_values_cstring(cstr));
+}
+
+void nn_return_string(nn_computer *computer, const char *str, size_t len) {
+    nn_value val = nn_values_string(&computer->universe->alloc, str, len);
+    if(val.tag == NN_VALUE_NIL) {
+        nn_setCError(computer, "out of memory");
+    }
+    nn_return(computer, val);
+}
+
+nn_value nn_return_array(nn_computer *computer, size_t len) {
+    nn_value val = nn_values_array(&computer->universe->alloc, len);
+    if(val.tag == NN_VALUE_NIL) {
+        nn_setCError(computer, "out of memory");
+    }
+    nn_return(computer, val);
+    return val;
+}
+
+nn_value nn_return_table(nn_computer *computer, size_t len) {
+    nn_value val = nn_values_table(&computer->universe->alloc, len);
+    if(val.tag == NN_VALUE_NIL) {
+        nn_setCError(computer, "out of memory");
+    }
+    nn_return(computer, val);
+    return val;
 }

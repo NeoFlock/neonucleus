@@ -2,36 +2,45 @@
 #include <string.h>
 #include "component.h"
 
-nn_componentTable *nn_newComponentTable(const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor) {
-    nn_componentTable *table = nn_malloc(sizeof(nn_componentTable));
-    table->name = nn_strdup(typeName);
+nn_componentTable *nn_newComponentTable(nn_Alloc *alloc, const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor) {
+    nn_componentTable *table = nn_alloc(alloc, sizeof(nn_componentTable));
+    if(table == NULL) {
+        return NULL;
+    }
+    table->name = nn_strdup(alloc, typeName);
+    if(table->name == NULL) {
+        nn_dealloc(alloc, table, sizeof(nn_componentTable));
+        return NULL;
+    }
     table->userdata = userdata;
     table->constructor = constructor;
     table->destructor = destructor;
     table->methodCount = 0;
+    table->alloc = *alloc;
     return table;
 }
 
 void nn_destroyComponentTable(nn_componentTable *table) {
-    nn_free(table->name);
+    nn_Alloc alloc = table->alloc;
+    nn_deallocStr(&alloc, table->name);
     for(size_t i = 0; i < table->methodCount; i++) {
         nn_method method = table->methods[i];
-        nn_free(method.name);
-        nn_free(method.doc);
+        nn_deallocStr(&alloc, method.name);
+        nn_deallocStr(&alloc, method.doc);
     }
-    nn_free(table);
+    nn_dealloc(&alloc, table, sizeof(nn_componentTable));
 }
 
 void nn_defineMethod(nn_componentTable *table, const char *methodName, bool direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc) {
     if(table->methodCount == NN_MAX_METHODS) return;
     nn_method method;
     method.method = methodFunc;
-    method.name = nn_strdup(methodName);
+    method.name = nn_strdup(&table->alloc, methodName);
     if(method.name == NULL) return;
     method.direct = direct;
-    method.doc = nn_strdup(methodDoc);
+    method.doc = nn_strdup(&table->alloc, methodDoc);
     if(method.doc == NULL) {
-        nn_free(method.name);
+        nn_deallocStr(&table->alloc, method.name);
         return;
     }
     method.userdata = methodUserdata;

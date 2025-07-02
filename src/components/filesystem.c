@@ -69,7 +69,7 @@ void nn_fs_getLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
     if(l == 0) {
         nn_return(computer, nn_values_nil());
     } else {
-        nn_return(computer, nn_values_string(buf, l));
+        nn_return_string(computer, buf, l);
     }
     
     // Latency, energy costs and stuff
@@ -89,7 +89,7 @@ void nn_fs_setLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
         return;
     }
     l = fs->setLabel(component, fs->userdata, buf, l);
-    nn_return(computer, nn_values_string(buf, l));
+    nn_return_string(computer, buf, l);
 
     nn_fs_readCost(fs, 1, component, computer);
 }
@@ -270,18 +270,20 @@ void nn_fs_list(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
+    
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
 
     size_t fileCount = 0;
-    char **files = fs->list(component, fs->userdata, path, &fileCount);
+    char **files = fs->list(alloc, component, fs->userdata, path, &fileCount);
 
     if(files != NULL) {
         // operation succeeded
-        nn_value arr = nn_values_array(fileCount);
+        nn_value arr = nn_values_array(alloc, fileCount);
         for(size_t i = 0; i < fileCount; i++) {
-            nn_values_set(arr, i, nn_values_string(files[i], strlen(files[i])));
-            nn_free(files[i]);
+            nn_values_set(arr, i, nn_values_string(alloc, files[i], strlen(files[i])));
+            nn_deallocStr(alloc, files[i]);
         }
-        nn_free(files);
+        nn_dealloc(alloc, files, sizeof(char *) * fileCount);
         nn_return(computer, arr);
     }
 
@@ -356,7 +358,8 @@ void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     if(len > capacity) len = capacity;
     size_t byteLen = len;
 
-    char *buf = nn_malloc(byteLen);
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
+    char *buf = nn_alloc(alloc, byteLen);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
@@ -365,9 +368,9 @@ void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     size_t readLen = fs->read(component, fs->userdata, fd, buf, byteLen);
     if(readLen > 0) {
         // Nothing read means EoF.
-        nn_return(computer, nn_values_string(buf, readLen));
+        nn_return_string(computer, buf, readLen);
     }
-    nn_free(buf);
+    nn_dealloc(alloc, buf, byteLen);
 
     // do not ask where it comes from, balance is hard
     nn_fs_readCost(fs, nn_fs_countChunks(fs, readLen, component), component, computer);
@@ -410,7 +413,7 @@ void nn_fs_seek(nn_filesystem *fs, void *_, nn_component *component, nn_computer
 }
 
 void nn_loadFilesystemTable(nn_universe *universe) {
-    nn_componentTable *fsTable = nn_newComponentTable("filesystem", NULL, NULL, (void *)nn_fs_destroy);
+    nn_componentTable *fsTable = nn_newComponentTable(nn_getAllocator(universe), "filesystem", NULL, NULL, (void *)nn_fs_destroy);
     nn_storeUserdata(universe, "NN:FILESYSTEM", fsTable);
 
     nn_defineMethod(fsTable, "getLabel", false, (void *)nn_fs_getLabel, NULL, "getLabel(): string - Returns the label of the filesystem.");

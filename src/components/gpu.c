@@ -4,6 +4,7 @@
 #include <string.h>
 
 typedef struct nni_gpu {
+    nn_Alloc alloc;
     nn_screen *currentScreen;
     nn_address screenAddress;
     nn_gpuControl ctrl;
@@ -34,8 +35,10 @@ bool nni_inBounds(nni_gpu *gpu, int x, int y) {
         true;
 }
 
-nni_gpu *nni_newGPU(nn_gpuControl *ctrl) {
-    nni_gpu *gpu = nn_malloc(sizeof(nni_gpu));
+nni_gpu *nni_newGPU(nn_Alloc *alloc, nn_gpuControl *ctrl) {
+    nni_gpu *gpu = nn_alloc(alloc, sizeof(nni_gpu));
+    if(gpu == NULL) return NULL;
+    gpu->alloc = *alloc;
     gpu->currentScreen = NULL;
     gpu->screenAddress = NULL;
     gpu->ctrl = *ctrl;
@@ -50,10 +53,11 @@ void nni_gpuDeinit(nni_gpu *gpu) {
     if(gpu->currentScreen != NULL) {
         nn_destroyScreen(gpu->currentScreen);
     }
+    nn_Alloc a = gpu->alloc;
     if(gpu->screenAddress != NULL) {
-        nn_free(gpu->screenAddress);
+        nn_deallocStr(&a, gpu->screenAddress);
     }
-    nn_free(gpu);
+    nn_dealloc(&a, gpu, sizeof(nni_gpu));
 }
 
 nn_scrchr_t nni_gpu_makePixel(nni_gpu *gpu, const char *s) {
@@ -111,9 +115,9 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
 
     gpu->currentScreen = screen;
     if(gpu->screenAddress != NULL) {
-        nn_free(gpu->screenAddress);
+        nn_deallocStr(&gpu->alloc, gpu->screenAddress);
     }
-    gpu->screenAddress = nn_strdup(addr);
+    gpu->screenAddress = nn_strdup(&gpu->alloc, addr);
 
     nn_addHeat(computer, gpu->ctrl.bindHeat);
     nn_callCost(computer, gpu->ctrl.bindCost);
@@ -170,7 +174,7 @@ void nni_gpu_get(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
 
 void nni_gpu_getScreen(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->screenAddress == NULL) return;
-    nn_return(computer, nn_values_string(gpu->screenAddress, 0));
+    nn_return_string(computer, gpu->screenAddress, 0);
 }
 
 void nni_gpu_maxResolution(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
@@ -360,7 +364,7 @@ void nni_gpu_copy(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     
     int changes = 0, clears = 0;
 
-    nn_scrchr_t *tmpBuffer = nn_malloc(sizeof(nn_scrchr_t) * w * h);
+    nn_scrchr_t *tmpBuffer = nn_alloc(&gpu->alloc, sizeof(nn_scrchr_t) * w * h);
     if(tmpBuffer == NULL) {
         nn_setCError(computer, "out of memory");
         return;
@@ -388,7 +392,7 @@ void nni_gpu_copy(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
         }
     }
 
-    nn_free(tmpBuffer);
+    nn_dealloc(&gpu->alloc, tmpBuffer, sizeof(nn_scrchr_t) * w * h);
 
     nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * changes);
     nn_callCost(computer, gpu->ctrl.pixelChangeCost * changes);
@@ -411,7 +415,7 @@ void nni_gpu_getViewport(nni_gpu *gpu, void *_, nn_component *component, nn_comp
 }
 
 void nn_loadGraphicsCardTable(nn_universe *universe) {
-    nn_componentTable *gpuTable = nn_newComponentTable("gpu", NULL, NULL, (void *)nni_gpuDeinit);
+    nn_componentTable *gpuTable = nn_newComponentTable(nn_getAllocator(universe), "gpu", NULL, NULL, (void *)nni_gpuDeinit);
     nn_storeUserdata(universe, "NN:GPU", gpuTable);
 
     nn_defineMethod(gpuTable, "bind", false, (void *)nni_gpu_bind, NULL, "bind(addr: string[, reset: boolean = false]): boolean - Bind a GPU to a screen. Very expensive. If reset is true, it will clear the screen.");
@@ -432,7 +436,7 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
 
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control) {
     nn_componentTable *gpuTable = nn_queryUserdata(nn_getUniverse(computer), "NN:GPU");
-    nni_gpu *gpu = nni_newGPU(control);
+    nni_gpu *gpu = nni_newGPU(nn_getAllocator(nn_getUniverse(computer)), control);
     if(gpu == NULL) {
         return NULL;
     }

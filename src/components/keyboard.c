@@ -1,7 +1,7 @@
 #include "../neonucleus.h"
 
 void nn_loadKeyboardTable(nn_universe *universe) {
-    nn_componentTable *keyboardTable = nn_newComponentTable("keyboard", NULL, NULL, NULL);
+    nn_componentTable *keyboardTable = nn_newComponentTable(nn_getAllocator(universe), "keyboard", NULL, NULL, NULL);
     nn_storeUserdata(universe, "NN:KEYBOARD", keyboardTable);
 }
 

@@ -184,16 +184,16 @@ size_t ne_fs_read(nn_component *component, ne_fs *fs, int fd, char *buf, size_t 
     return fread(buf, sizeof(char), required, f);
 }
 
-char **ne_fs_list(nn_component *component, ne_fs *fs, const char *path, size_t *len) {
+char **ne_fs_list(nn_Alloc *alloc, nn_component *component, ne_fs *fs, const char *path, size_t *len) {
     const char *p = ne_fs_diskPath(component, path);
     if(p[0] == '/') p++;
 
     FilePathList files = LoadDirectoryFiles(p);
     *len = files.count;
 
-    char **buf = nn_malloc(sizeof(char *) * files.count);
+    char **buf = nn_alloc(alloc, sizeof(char *) * files.count);
     for(size_t i = 0; i < files.count; i++) {
-        buf[i] = nn_strdup(GetFileName(files.paths[i]));
+        buf[i] = nn_strdup(alloc, GetFileName(files.paths[i]));
     }
 
     UnloadDirectoryFiles(files);
@@ -466,7 +466,12 @@ int keycode_to_oc(int keycode) {
 
 int main() {
     printf("Setting up universe\n");
-    nn_universe *universe = nn_newUniverse();
+    nn_Alloc alloc = nn_libcAllocator();
+    nn_universe *universe = nn_newUniverse(alloc);
+    if(universe == NULL) {
+        printf("Failed to create universe\n");
+        return 1;
+    }
     nn_loadCoreComponentTables(universe);
 
     nn_architecture *arch = testLuaArch_getArchitecture("src/sandbox.lua");
@@ -528,7 +533,7 @@ int main() {
     };
     nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
 
-    nn_screen *s = nn_newScreen(80, 32, 16, 16, 256);
+    nn_screen *s = nn_newScreen(&alloc, 80, 32, 16, 16, 256);
     nn_addKeyboard(s, "shitty keyboard");
     nn_mountKeyboard(computer, "shitty keyboard", 2);
     nn_addScreen(computer, "Main Screen", 2, s);

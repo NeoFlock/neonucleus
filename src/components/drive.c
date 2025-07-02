@@ -21,7 +21,7 @@ void nn_drive_getLabel(nn_drive *drive, void *_, nn_component *component, nn_com
     if(l == 0) {
         nn_return(computer, nn_values_nil());
     } else {
-        nn_return(computer, nn_values_string(buf, l));
+        nn_return_string(computer, buf, l);
     }
 }
 void nn_drive_setLabel(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
@@ -33,7 +33,7 @@ void nn_drive_setLabel(nn_drive *drive, void *_, nn_component *component, nn_com
         return;
     }
     l = drive->setLabel(component, drive->userdata, buf, l);
-    nn_return(computer, nn_values_string(buf, l));
+    nn_return_string(computer, buf, l);
 }
 void nn_drive_getSectorSize(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
@@ -53,7 +53,7 @@ void nn_drive_readSector(nn_drive *drive, void *_, nn_component *component, nn_c
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
     char buf[sector_size];
     drive->readSector(component, drive->userdata, sector, buf);
-    nn_return(computer, nn_values_string(buf, sector_size));
+    nn_return_string(computer, buf, sector_size);
 }
 void nn_drive_writeSector(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value sectorValue = nn_getArgument(computer, 0);
@@ -93,7 +93,7 @@ void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_co
 }
 
 void nn_loadDriveTable(nn_universe *universe) {
-    nn_componentTable *driveTable = nn_newComponentTable("drive", NULL, NULL, (void *)nn_drive_destroy);
+    nn_componentTable *driveTable = nn_newComponentTable(nn_getAllocator(universe), "drive", NULL, NULL, (void *)nn_drive_destroy);
     nn_storeUserdata(universe, "NN:DRIVE", driveTable);
 
     nn_defineMethod(driveTable, "getLabel", false, (void *)nn_drive_getLabel, NULL, "getLabel():string - Get the current label of the drive.");

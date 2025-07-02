@@ -14,6 +14,7 @@ typedef struct nn_method {
 
 typedef struct nn_componentTable {
     char *name;
+    nn_Alloc alloc;
     void *userdata;
     nn_componentConstructor *constructor;
     nn_componentDestructor *destructor;

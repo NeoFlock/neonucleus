@@ -205,14 +205,14 @@ bool nn_unicode_validate(const char *b) {
 // It is used to power the Lua architecture's Unicode API re-implementation.
 // It can also just be used to deal with unicode.
 
-char *nn_unicode_char(unsigned int *codepoints, size_t codepointCount) {
+char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepointCount) {
     size_t len = 0;
     for (size_t i = 0; i < codepointCount; i++) {
         unsigned int codepoint = codepoints[i];
         len += nn_unicode_codepointSize(codepoint);
     }
 
-    char *buf = nn_malloc(len+1);
+    char *buf = nn_alloc(alloc, len+1);
     if (buf == NULL) return buf;
 
     size_t j = 0;
@@ -224,15 +224,18 @@ char *nn_unicode_char(unsigned int *codepoints, size_t codepointCount) {
         j += codepointLen;
     }
     buf[j] = '\0';
-    assert(j == len); // better safe than sorry
+    // this can only fail if size_t is smaller than a pointer and overflowed.
+    // IF THIS HAPPENS, THE SYSTEM HEADERS ARE BUGGED.
+    assert(j == len);
 
     return buf;
 }
 
-unsigned int *nn_unicode_codepoints(const char *s) {
+unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, size_t *len) {
     size_t l = nn_unicode_len(s);
-    unsigned int *buf = nn_malloc(sizeof(unsigned int) * l);
+    unsigned int *buf = nn_alloc(alloc, sizeof(unsigned int) * l);
     if(buf == NULL) return NULL;
+    if(len != NULL) *len = l;
     size_t cur = 0;
     size_t bufidx = 0;
     while(s[cur] != 0) {
@@ -363,6 +366,6 @@ size_t nn_unicode_wlen(const char *s) {
 // NOT IMPLEMENTED YET
 
 unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
-char *nn_unicode_upper(const char *s);
+char *nn_unicode_upper(nn_Alloc *alloc, const char *s);
 unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
-char *nn_unicode_lower(const char *s);
+char *nn_unicode_lower(nn_Alloc *alloc, const char *s);

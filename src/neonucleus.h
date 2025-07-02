@@ -90,6 +90,23 @@ typedef struct nn_architecture {
 } nn_architecture;
 typedef char *nn_address;
 
+// A non-zero malloc is a null ptr, with a 0 oldSize, but a non-0 newSize.
+// A zero malloc is never called, the proc address itself is returned, which is ignored when freeing.
+// A free is a non-null ptr, with a non-zero oldSize, but a newSize of 0.
+// A realloc is a non-null ptr, with a non-zero oldSize, and a non-zero newSize.
+typedef void *nn_AllocProc(void *userdata, void *ptr, size_t oldSize, size_t newSize, void *extra);
+
+typedef struct nn_Alloc {
+    void *userdata;
+    nn_AllocProc *proc;
+} nn_Alloc;
+
+// TODO: write a bunch of utils so this *can* work on baremetal.
+
+#ifndef NN_BAREMETAL
+nn_Alloc nn_libcAllocator();
+#endif
+
 // Values for architectures
 
 #define NN_VALUE_INT 0
@@ -105,18 +122,21 @@ typedef struct nn_string {
     char *data;
     size_t len;
     size_t refc;
+    nn_Alloc alloc;
 } nn_string;
 
 typedef struct nn_array {
     struct nn_value *values;
     size_t len;
     size_t refc;
+    nn_Alloc alloc;
 } nn_array;
 
 typedef struct nn_object {
     struct nn_pair *pairs;
     size_t len;
     size_t refc;
+    nn_Alloc alloc;
 } nn_table;
 
 typedef struct nn_value {
@@ -138,18 +158,19 @@ typedef struct nn_pair {
 } nn_pair;
 
 // we expose the allocator because of some utilities
-void *nn_malloc(size_t size);
-void *nn_realloc(void *memory, size_t newSize);
-void nn_free(void *memory);
+void *nn_alloc(nn_Alloc *alloc, size_t size);
+void *nn_resize(nn_Alloc *alloc, void *memory, size_t oldSize, size_t newSize);
+void nn_dealloc(nn_Alloc *alloc, void *memory, size_t size);
 
 // Utilities, both internal and external
-char *nn_strdup(const char *s);
-void *nn_memdup(const void *buf, size_t len);
+char *nn_strdup(nn_Alloc *alloc, const char *s);
+void *nn_memdup(nn_Alloc *alloc, const void *buf, size_t len);
+void nn_deallocStr(nn_Alloc *alloc, char *s);
 
-nn_guard *nn_newGuard();
+nn_guard *nn_newGuard(nn_Alloc *alloc);
 void nn_lock(nn_guard *guard);
 void nn_unlock(nn_guard *guard);
-void nn_deleteGuard(nn_guard *guard);
+void nn_deleteGuard(nn_Alloc *alloc, nn_guard *guard);
 
 void nn_addRef(nn_refc *refc, size_t count);
 void nn_incRef(nn_refc *refc);
@@ -159,10 +180,10 @@ bool nn_removeRef(nn_refc *refc, size_t count);
 bool nn_decRef(nn_refc *refc);
 
 bool nn_unicode_validate(const char *s);
-// returned string must be nn_free()'d
-char *nn_unicode_char(unsigned int *codepoints, size_t codepointCount);
-// returned array must be nn_free()'d
-unsigned int *nn_unicode_codepoints(const char *s);
+// returned string must be nn_deallocStr()'d
+char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepointCount);
+// returned array must be nn_dealloc()'d
+unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, size_t *len);
 size_t nn_unicode_len(const char *s);
 unsigned int nn_unicode_codepointAt(const char *s, size_t byteOffset);
 size_t nn_unicode_codepointSize(unsigned int codepoint);
@@ -170,9 +191,11 @@ const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len);
 size_t nn_unicode_charWidth(unsigned int codepoint);
 size_t nn_unicode_wlen(const char *s);
 unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
-char *nn_unicode_upper(const char *s);
+// returned string must be nn_deallocStr()'d
+char *nn_unicode_upper(nn_Alloc *alloc, const char *s);
 unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
-char *nn_unicode_lower(const char *s);
+// returned string must be nn_deallocStr()'d
+char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
 
 double nn_realTime();
 double nn_realTimeClock(void *_);
@@ -183,7 +206,8 @@ void nn_randomLatency(double min, double max);
 
 typedef double nn_clock_t(void *_);
 
-nn_universe *nn_newUniverse();
+nn_universe *nn_newUniverse(nn_Alloc alloc);
+nn_Alloc *nn_getAllocator(nn_universe *universe);
 void nn_unsafeDeleteUniverse(nn_universe *universe);
 void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
@@ -300,8 +324,11 @@ nn_componentTable *nn_getComponentTable(nn_component *component);
 const char *nn_getComponentType(nn_componentTable *table);
 void *nn_getComponentUserdata(nn_component *component);
 nn_component *nn_findComponent(nn_computer *computer, nn_address address);
-/* RESULT SHOULD BE NN_FREE()'D OR ELSE MEMORY IS LEAKED */
-nn_component **nn_listComponent(nn_computer *computer, size_t *len);
+// the internal index is not the array index, but rather an index into
+// an internal structure. YOU SHOULD NOT ADD OR REMOVE COMPONENTS WHILE ITERATING.
+// the internalIndex SHOULD BE INITIALIZED TO 0.
+// Returns NULL at the end
+nn_component *nn_iterComponent(nn_computer *computer, size_t *internalIndex);
 
 // Component VTable stuff
 
@@ -309,7 +336,7 @@ typedef void *nn_componentConstructor(void *tableUserdata, void *componentUserda
 typedef void *nn_componentDestructor(void *tableUserdata, nn_component *component, void *componentUserdata);
 typedef void nn_componentMethod(void *componentUserdata, void *methodUserdata, nn_component *component, nn_computer *computer);
 
-nn_componentTable *nn_newComponentTable(const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
+nn_componentTable *nn_newComponentTable(nn_Alloc *alloc, const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
 void nn_destroyComponentTable(nn_componentTable *table);
 void nn_defineMethod(nn_componentTable *table, const char *methodName, bool direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc);
 const char *nn_getTableMethod(nn_componentTable *table, size_t idx, bool *outDirect);
@@ -334,9 +361,18 @@ nn_value nn_values_integer(intptr_t integer);
 nn_value nn_values_number(double num);
 nn_value nn_values_boolean(bool boolean);
 nn_value nn_values_cstring(const char *string);
-nn_value nn_values_string(const char *string, size_t len);
-nn_value nn_values_array(size_t len);
-nn_value nn_values_table(size_t pairCount);
+nn_value nn_values_string(nn_Alloc *alloc, const char *string, size_t len);
+nn_value nn_values_array(nn_Alloc *alloc, size_t len);
+nn_value nn_values_table(nn_Alloc *alloc, size_t pairCount);
+
+void nn_return_nil(nn_computer *computer);
+void nn_return_integer(nn_computer *computer, intptr_t integer);
+void nn_return_number(nn_computer *computer, double number);
+void nn_return_boolean(nn_computer *computer, bool boolean);
+void nn_return_cstring(nn_computer *computer, const char *cstr);
+void nn_return_string(nn_computer *computer, const char *str, size_t len);
+nn_value nn_return_array(nn_computer *computer, size_t len);
+nn_value nn_return_table(nn_computer *computer, size_t len);
 
 size_t nn_values_getType(nn_value val);
 nn_value nn_values_retain(nn_value val);
@@ -471,10 +507,13 @@ typedef struct nn_filesystem {
     // directory operations
     bool (*isDirectory)(nn_component *component, void *userdata, const char *path);
     bool (*makeDirectory)(nn_component *component, void *userdata, const char *path);
-    // the length and array must be nn_alloc'd.
-    // The strings must be NULL-terminated and also nn_alloc'd.
-    // See nn_strdup().
-    char **(*list)(nn_component *component, void *userdata, const char *path, size_t *len);
+    // The returned array should be allocated with the supplied allocator.
+    // The strings should be null terminated. Use nn_strdup for the allocation to guarantee nn_deallocStr deallocates it correctly.
+    // For the array, the *exact* size of the allocation should be sizeof(char *) * (*len),
+    // If it is not, the behavior is undefined.
+    // We recommend first computing len then allocating, though if that is not doable or practical,
+    // consider nn_resize()ing it to the correct size to guarantee a correct deallocation.
+    char **(*list)(nn_Alloc *alloc, nn_component *component, void *userdata, const char *path, size_t *len);
 
     // file operations
     size_t (*open)(nn_component *component, void *userdata, const char *path, const char *mode);
@@ -549,7 +588,7 @@ typedef struct nn_scrchr_t {
     bool isBgPalette;
 } nn_scrchr_t;
 
-nn_screen *nn_newScreen(int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
+nn_screen *nn_newScreen(nn_Alloc *alloc, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
 nn_componentTable *nn_getScreenTable(nn_universe *universe);
 
 void nn_retainScreen(nn_screen *screen);

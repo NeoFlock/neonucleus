@@ -5,8 +5,8 @@ typedef struct nn_guard {
     mtx_t m;
 } nn_guard;
 
-nn_guard *nn_newGuard() {
-    nn_guard *g = nn_malloc(sizeof(nn_guard));
+nn_guard *nn_newGuard(nn_Alloc *alloc) {
+    nn_guard *g = nn_alloc(alloc, sizeof(nn_guard));
     if(g == NULL) return NULL;
     mtx_init(&g->m, mtx_recursive);
     return g;
@@ -22,9 +22,10 @@ void nn_unlock(nn_guard *guard) {
     mtx_unlock(&guard->m);
 }
 
-void nn_deleteGuard(nn_guard *guard) {
+void nn_deleteGuard(nn_Alloc *alloc, nn_guard *guard) {
     if(guard == NULL) return;
     mtx_destroy(&guard->m);
+    nn_dealloc(alloc, guard, sizeof(nn_guard));
 }
 
 void nn_addRef(nn_refc *refc, size_t count) {

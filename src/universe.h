@@ -9,6 +9,7 @@ typedef struct nn_universe_udata {
 } nn_universe_udata;
 
 typedef struct nn_universe {
+    nn_Alloc alloc;
     nn_universe_udata udata[NN_MAX_USERDATA];
     size_t udataLen;
     nn_clock_t *currentClock;
