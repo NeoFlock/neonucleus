@@ -575,7 +575,7 @@ int main() {
     nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
 
     ne_drive drive = {
-        .file = fopen("data/drive.img", "r+")
+        .file = fopen("data/drive.img", "rb+")
     };
     assert(drive.file != NULL);
 
