@@ -3,4 +3,4 @@ zig-out/
 !data/.gitkeep
 .vscode/
 raylib/
-lua/
+*.log
