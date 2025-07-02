@@ -575,27 +575,6 @@ int main() {
     nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
 
     ne_drive drive = {
-        .file = fopen("data/drive.img", "rb+")
-    };
-    assert(drive.file != NULL);
-
-    nn_drive genericDrive = {
-        .refc = 0,
-        .userdata = &drive,
-        .deinit = (void *)ne_drive_close,
-        .control = (void *)ne_drive_getControl,
-        .getLabel = ne_eeprom_getLabel,
-        .setLabel = ne_eeprom_setLabel,
-        .getPlatterCount = (void *)ne_drive_getPlatterCount,
-        .getSectorSize = (void *)ne_drive_getSectorSize,
-        .getCapacity = (void *)ne_drive_getCapacity,
-        .readSector = (void *)ne_drive_readSector,
-        .writeSector = (void *)ne_drive_writeSector,
-    };
-
-    nn_addDrive(computer, "drive.img", 4, &genericDrive);
-
-    ne_drive drive = {
         .file = fopen("data/drive.img", "r+")
     };
     assert(drive.file != NULL);
