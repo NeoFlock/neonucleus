@@ -52,6 +52,11 @@ void nn_drive_readSector(nn_drive *drive, void *_, nn_component *component, nn_c
     int sector = nn_toInt(sectorValue);
     size_t sector_size = drive->getSectorSize(component, drive->userdata);
     char buf[sector_size];
+    // we leave the +1 intentionally to compare the end of the real sector
+    if (sector < 1 || (sector * sector_size > drive->getCapacity(component, drive->userdata))) {
+        nn_setCError(computer, "bad argument #1 (sector out of range)");
+        return;
+    }
     drive->readSector(component, drive->userdata, sector, buf);
     nn_return_string(computer, buf, sector_size);
 }
@@ -63,14 +68,16 @@ void nn_drive_writeSector(nn_drive *drive, void *_, nn_component *component, nn_
 
     size_t buf_size = 0;
     const char *buf = nn_toString(bufValue, &buf_size);
-    if (buf_size < sector_size) {
-        char padded[sector_size];
-        memset(padded, 0, sector_size);
-        memcpy(padded, buf, buf_size);
-        drive->writeSector(component, drive->userdata, sector, padded);
-    } else {
-        drive->writeSector(component, drive->userdata, sector, buf);
+    if (buf_size != sector_size) {
+        nn_setCError(computer, "bad argument #2 (expected buffer of length `sectorSize`)");
+        return;
     }
+    // we leave the +1 intentionally to compare the end of the real sector
+    if (sector < 1 || (sector * sector_size > drive->getCapacity(component, drive->userdata))) {
+        nn_setCError(computer, "bad argument #1 (sector out of range)");
+        return;
+    }
+    drive->writeSector(component, drive->userdata, sector, buf);
 }
 void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value offsetValue = nn_getArgument(computer, 0);
