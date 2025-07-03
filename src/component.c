@@ -95,7 +95,7 @@ bool nn_invokeComponentMethod(nn_component *component, const char *name) {
         if(strcmp(method.name, name) == 0) {
             nn_callCost(component->computer, NN_CALL_COST);
             if(!method.direct) {
-                nn_busySleep(NN_INDIRECT_CALL_LATENCY);
+                nn_triggerIndirect(component->computer);
             }
             method.method(component->statePtr, method.userdata, component, component->computer);
             return true;
@@ -104,4 +104,14 @@ bool nn_invokeComponentMethod(nn_component *component, const char *name) {
 
     // no such method
     return false;
+}
+
+void nn_simulateBufferedIndirect(nn_component *component, double amount, double amountPerTick) {
+    double maximum = 100.0;
+    double x = amount / amountPerTick * maximum;
+    component->indirectBufferProgress += x;
+    if(component->indirectBufferProgress >= maximum) {
+        component->indirectBufferProgress = 0;
+        nn_triggerIndirect(component->computer);
+    }
 }

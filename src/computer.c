@@ -219,24 +219,29 @@ bool nn_isUser(nn_computer *computer, const char *name) {
     return false;
 }
 
-void nn_setCallBudget(nn_computer *computer, size_t callBudget) {
+void nn_setCallBudget(nn_computer *computer, double callBudget) {
     computer->callBudget = callBudget;
 }
 
-size_t nn_getCallBudget(nn_computer *computer) {
+double nn_getCallBudget(nn_computer *computer) {
     return computer->callBudget;
 }
 
-void nn_callCost(nn_computer *computer, size_t cost) {
+void nn_callCost(nn_computer *computer, double cost) {
     computer->callCost += cost;
+    if(computer->callCost >= computer->callBudget) nn_triggerIndirect(computer);
 }
 
-size_t nn_getCallCost(nn_computer *computer) {
+double nn_getCallCost(nn_computer *computer) {
     return computer->callCost;
 }
 
 bool nn_isOverworked(nn_computer *computer) {
-    return computer->callCost >= computer->callBudget;
+    return computer->state == NN_STATE_OVERWORKED;
+}
+
+void nn_triggerIndirect(nn_computer *computer) {
+    computer->state = NN_STATE_OVERWORKED;
 }
 
 int nn_getState(nn_computer *computer) {

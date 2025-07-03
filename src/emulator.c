@@ -712,9 +712,6 @@ int main() {
         }
 
         int state = nn_tickComputer(computer);
-        if(nn_isOverworked(computer)) {
-            printf("Machine overworked.\n");
-        }
         if(state == NN_STATE_SWITCH) {
             nn_architecture *nextArch = nn_getNextArchitecture(computer);
             printf("Next architecture: %s\n", nextArch->archName);

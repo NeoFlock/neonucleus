@@ -25,6 +25,7 @@ typedef struct nn_componentTable {
 typedef struct nn_component {
     nn_address address;
     int slot;
+    float indirectBufferProgress;
     nn_componentTable *table;
     void *statePtr;
     nn_computer *computer;

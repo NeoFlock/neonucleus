@@ -69,7 +69,6 @@ extern "C" {
 #define NN_CALL_HEAT 0.05
 #define NN_CALL_COST 1
 #define NN_LABEL_SIZE 128
-#define NN_INDIRECT_CALL_LATENCY 0.0005
 
 typedef struct nn_guard nn_guard;
 typedef atomic_size_t nn_refc;
@@ -235,11 +234,12 @@ const char *nn_addUser(nn_computer *computer, const char *name);
 void nn_deleteUser(nn_computer *computer, const char *name);
 const char *nn_indexUser(nn_computer *computer, size_t idx);
 bool nn_isUser(nn_computer *computer, const char *name);
-void nn_setCallBudget(nn_computer *computer, size_t callBudget);
-size_t nn_getCallBudget(nn_computer *computer);
-void nn_callCost(nn_computer *computer, size_t cost);
-size_t nn_getCallCost(nn_computer *computer);
+void nn_setCallBudget(nn_computer *computer, double callBudget);
+double nn_getCallBudget(nn_computer *computer);
+void nn_callCost(nn_computer *computer, double cost);
+double nn_getCallCost(nn_computer *computer);
 bool nn_isOverworked(nn_computer *computer);
+void nn_triggerIndirect(nn_computer *computer);
 
 /* The memory returned can be freed with nn_free() */
 char *nn_serializeProgram(nn_computer *computer, size_t *len);
@@ -276,6 +276,9 @@ void nn_unlockComputer(nn_computer *computer);
 /// This state indciates that the runner should turn off the computer, to switch architectures.
 /// The architecture is returned by getNextArchitecture.
 #define NN_STATE_SWITCH 6
+
+/// The machine is overworked.
+#define NN_STATE_OVERWORKED 7
 
 int nn_getState(nn_computer *computer);
 void nn_setState(nn_computer *computer, int state);
@@ -346,6 +349,7 @@ const char *nn_methodDoc(nn_componentTable *table, const char *methodName);
 
 /* Returns false if the method does not exist */
 bool nn_invokeComponentMethod(nn_component *component, const char *name);
+void nn_simulateBufferedIndirect(nn_component *component, double amount, double amountPerTick);
 void nn_resetCall(nn_computer *computer);
 void nn_addArgument(nn_computer *computer, nn_value arg);
 void nn_return(nn_computer *computer, nn_value val);

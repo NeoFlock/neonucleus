@@ -40,8 +40,8 @@ typedef struct nn_computer {
     double temperature;
     double temperatureCoefficient;
     double roomTemperature;
-    size_t callCost;
-    size_t callBudget;
+    double callCost;
+    double callBudget;
 } nn_computer;
 
 #endif
