@@ -108,7 +108,7 @@ bool nn_invokeComponentMethod(nn_component *component, const char *name) {
 
 void nn_simulateBufferedIndirect(nn_component *component, double amount, double amountPerTick) {
     double maximum = 100.0;
-    double x = amount / amountPerTick * maximum;
+    double x = amount * maximum / amountPerTick;
     component->indirectBufferProgress += x;
     if(component->indirectBufferProgress >= maximum) {
         component->indirectBufferProgress = 0;

@@ -1,5 +1,8 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
+- get rid of nn_busySleep
+- rework literally all the costs to just be heat and amount per tick
+- change more methods to be direct but with buffered indirects.
 - `computer` component
 - `modem` component
 - `tunnel` component
@@ -15,11 +18,12 @@
 - `vt`, a virtual terminal with ANSI-like escapes. (and a function to get its resolution)
 - (maybe) `qpu` component, a Quantum Processing Unit for quantum computing.
 - `radio_controller` and `radio_tower` components, for radio telecommunications.
-- `clock` component for arbitrary precision time-keeping.
+- (maybe) `clock` component for arbitrary precision time-keeping.
+- `led` component for LED matrixes and/or LED lights.
 
 # Internal stuff
 
-- custom atomic and lock support
+- custom atomic, lock and improved custom clock support. Perhaps generalizing it to an nn_Context.
 - no longer depend on libc functions
 - no longer depend on libc headers
-- no longer link any libc when NN_BAREMETAL.
+- no longer link any libc when NN_BAREMETAL
