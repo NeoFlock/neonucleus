@@ -146,5 +146,5 @@ require("event").listen("term_available", debugprint)
 computer.pushSignal("init") -- so libs know components are initialized.
 require("event").pull(1, "init") -- Allow init processing.
 
-require("tty").bind(component.gpu)
+--require("tty").bind(component.gpu)
 _G.runlevel = 1
