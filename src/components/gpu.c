@@ -413,6 +413,9 @@ void nni_gpu_getViewport(nni_gpu *gpu, void *_, nn_component *component, nn_comp
     nn_return(computer, nn_values_integer(w));
     nn_return(computer, nn_values_integer(h));
 }
+void nni_gpu_getDepth(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    nn_return(computer, nn_values_integer(8));
+}
 
 void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_componentTable *gpuTable = nn_newComponentTable(nn_getAllocator(universe), "gpu", NULL, NULL, (void *)nni_gpuDeinit);
@@ -429,6 +432,7 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_defineMethod(gpuTable, "setForeground", true, (void *)nni_gpu_setForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
     nn_defineMethod(gpuTable, "getBackground", true, (void *)nni_gpu_getBackground, NULL, "setBackground(color: integer, isPalette: boolean): integer, integer? - Sets the current background color. Returns the old one and palette index if applicable.");
     nn_defineMethod(gpuTable, "getForeground", true, (void *)nni_gpu_getForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
+    nn_defineMethod(gpuTable, "getDepth", true, (void *)nni_gpu_getDepth, NULL, "getDepth(): number - The currently set color depth of the GPU/screen, in bits. Can be 1, 4 or 8.");
     nn_defineMethod(gpuTable, "fill", true, (void *)nni_gpu_fill, NULL, "fill(x: integer, y: integer, w: integer, h: integer, s: string)");
     nn_defineMethod(gpuTable, "copy", true, (void *)nni_gpu_copy, NULL, "copy(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer) - Copies stuff");
     nn_defineMethod(gpuTable, "getViewport", true, (void *)nni_gpu_getViewport, NULL, "getViewport(): integer, integer - Gets the current viewport resolution");

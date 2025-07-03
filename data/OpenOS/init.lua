@@ -14,13 +14,10 @@ do
 end
 
 while true do
-    debugprint("grabbing shell")
-  local result, reason = xpcall(assert(require("shell").getShell()), function(msg)
+  local result, reason = xpcall(require("shell").getShell(), function(msg)
     return tostring(msg).."\n"..debug.traceback()
   end)
-    debugprint("resumed", result, reason)
   if not result then
-    debugprint((reason ~= nil and tostring(reason) or "unknown error") .. "\n")
     io.stderr:write((reason ~= nil and tostring(reason) or "unknown error") .. "\n")
     io.write("Press any key to continue.\n")
     os.sleep(0.5)

@@ -1,14 +1,8 @@
-debugprint("loading cursor")
 local unicode = require("unicode")
-debugprint("loaded unicode")
 local kb = require("keyboard")
-debugprint("loaded keyboard")
 local tty = require("tty")
-debugprint("loaded tty")
 local text = require("text")
-debugprint("loaded text")
 local computer = require("computer")
-debugprint("loaded computer")
 local keys = kb.keys
 
 local core_cursor = {}
