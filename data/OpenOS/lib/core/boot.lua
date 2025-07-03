@@ -1,7 +1,7 @@
 -- called from /init.lua
 local raw_loadfile = ...
 
-_G._OSVERSION = "OpenOS 1.8.8"
+_G._OSVERSION = "OpenOS 1.8.9"
 
 -- luacheck: globals component computer unicode _OSVERSION
 local component = component
@@ -73,7 +73,12 @@ local function dofile(file)
   status("> " .. file)
   local program, reason = raw_loadfile(file)
   if program then
-    return program()
+    local result = table.pack(pcall(program))
+    if result[1] then
+      return table.unpack(result, 2, result.n)
+    else
+      error(result[2])
+    end
   else
     error(reason)
   end
@@ -139,12 +144,6 @@ end
 
 status("Initializing system...")
 
-require("event").listen("component_added", debugprint)
-require("event").listen("component_available", debugprint)
-require("event").listen("term_available", debugprint)
-
 computer.pushSignal("init") -- so libs know components are initialized.
 require("event").pull(1, "init") -- Allow init processing.
-
-require("tty").bind(component.gpu)
 _G.runlevel = 1

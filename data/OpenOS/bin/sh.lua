@@ -3,16 +3,11 @@ local tty = require("tty")
 local text = require("text")
 local sh = require("sh")
 
-debugprint("a")
-
 local args = shell.parse(...)
 
 shell.prime()
 
-debugprint("b")
-
 if #args == 0 then
-    debugprint("c")
   local has_profile
   local input_handler = {hint = sh.hintHandler}
   while true do
