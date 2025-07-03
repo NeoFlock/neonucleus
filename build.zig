@@ -63,20 +63,6 @@ fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVer
         .files = files.items,
     });
 }
-fn addRunArtifact(b: *std.Build, os: std.Target.Os.Tag, exe: *std.Build.Step.Compile) *std.Build.Step.Run {
-    if (os == .windows) {
-        // do this so that windows can find dll's
-        const installed = b.addInstallArtifact(exe, .{});
-
-        // run the installed executable by path
-        const exe_path = b.getInstallPath(.bin, exe.name);
-        const run_cmd = b.addSystemCommand(&[_][]const u8{exe_path});
-        run_cmd.step.dependOn(&installed.step);
-        return run_cmd;
-    } else {
-        return b.addRunArtifact(exe);
-    }
-}
 fn getSharedEngineName(os: std.Target.Os.Tag) []const u8 {
     if (os == .windows) {
         return "neonucleusdll";
@@ -125,10 +111,12 @@ pub fn build(b: *std.Build) void {
     emulator.linkLibC();
 
     if (os == .windows) {
-        // use the msvc win64 dll versions and copy them to raylib/ and lua/
+        // use the mingw-w64 version and copy files to raylib/
         // get raylib from https://github.com/raysan5/raylib/releases
         emulator.addIncludePath(b.path("raylib/include"));
-        emulator.addObjectFile(b.path("raylib/lib/raylibdll.lib"));
+        emulator.addObjectFile(b.path("raylib/lib/libraylib.a"));
+        emulator.linkSystemLibrary("GDI32");
+        emulator.linkSystemLibrary("WinMM");
     } else {
         emulator.linkSystemLibrary("raylib");
     }
@@ -147,11 +135,8 @@ pub fn build(b: *std.Build) void {
     const emulatorStep = b.step("emulator", "Builds the emulator");
     emulatorStep.dependOn(&emulator.step);
     emulatorStep.dependOn(&b.addInstallArtifact(emulator, .{}).step);
-    if (os == .windows) {
-        emulatorStep.dependOn(&b.addInstallBinFile(b.path("raylib/lib/raylib.dll"), "raylib.dll").step);
-    }
 
-    var run_cmd = addRunArtifact(b, os, emulator);
+    var run_cmd = b.addRunArtifact(emulator);
 
     if (b.args) |args| {
         run_cmd.addArgs(args);
