@@ -66,9 +66,13 @@ fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVer
 fn addRunArtifact(b: *std.Build, os: std.Target.Os.Tag, exe: *std.Build.Step.Compile) *std.Build.Step.Run {
     if (os == .windows) {
         // do this so that windows can find dll's
-        return b.addSystemCommand(&[_][]const u8{
-            b.getInstallPath(.bin, exe.name),
-        });
+        const installed = b.addInstallArtifact(exe, .{});
+
+        // run the installed executable by path
+        const exe_path = b.getInstallPath(.bin, exe.name);
+        const run_cmd = b.addSystemCommand(&[_][]const u8{exe_path});
+        run_cmd.step.dependOn(&installed.step);
+        return run_cmd;
     } else {
         return b.addRunArtifact(exe);
     }
