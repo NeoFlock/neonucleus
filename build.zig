@@ -31,11 +31,13 @@ const LuaVersion = enum {
     lua54,
 };
 
-fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, c: *std.Build.Step.Compile) void {
-    const raylib = b.dependency("raylib", .{});
+fn compileRaylib(b: *std.Build, target: std.Build.ResolvedTarget, c: *std.Build.Step.Compile) void {
+    const raylib = b.dependency("raylib", .{
+        .target = target,
+    });
     c.addIncludePath(raylib.path(raylib.builder.h_dir));
     c.linkLibrary(raylib.artifact("raylib"));
-    if (os == .windows) {
+    if (target.result.os.tag == .windows) {
         c.linkSystemLibrary("WinMM");
         c.linkSystemLibrary("GDI32");
     }
@@ -82,9 +84,9 @@ fn getSharedEngineName(os: std.Target.Os.Tag) []const u8 {
 }
 
 pub fn build(b: *std.Build) void {
-    const os = builtin.target.os.tag;
-
     const target = b.standardTargetOptions(.{});
+
+    const os = target.result.os.tag;
 
     const optimize = b.standardOptimizeOption(.{});
 
@@ -124,7 +126,7 @@ pub fn build(b: *std.Build) void {
     });
     emulator.linkLibC();
 
-    compileRaylib(b, os, emulator);
+    compileRaylib(b, target, emulator);
 
     const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua54;
     emulator.addCSourceFiles(.{
