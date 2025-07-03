@@ -31,6 +31,22 @@ const LuaVersion = enum {
     lua54,
 };
 
+fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, c: *std.Build.Step.Compile) void {
+    // TODO: find out how to send our target to this build cmd
+    const raylib = b.addSystemCommand(&.{ "zig", "build" });
+    raylib.setCwd(b.path("foreign/raylib/"));
+    raylib.stdio = .inherit;
+
+    c.step.dependOn(&raylib.step);
+    c.addIncludePath(b.path("foreign/raylib/zig-out/include/"));
+    c.addLibraryPath(b.path("foreign/raylib/zig-out/lib/"));
+    c.linkSystemLibrary("raylib");
+    if (os == .windows) {
+        c.linkSystemLibrary("WinMM");
+        c.linkSystemLibrary("GDI32");
+    }
+}
+
 // For the test architecture, we specify the target Lua version we so desire.
 // This can be checked for with Lua's _VERSION
 
@@ -110,16 +126,8 @@ pub fn build(b: *std.Build) void {
     });
     emulator.linkLibC();
 
-    if (os == .windows) {
-        // use the mingw-w64 version and copy files to raylib/
-        // get raylib from https://github.com/raysan5/raylib/releases
-        emulator.addIncludePath(b.path("raylib/include"));
-        emulator.addObjectFile(b.path("raylib/lib/libraylib.a"));
-        emulator.linkSystemLibrary("GDI32");
-        emulator.linkSystemLibrary("WinMM");
-    } else {
-        emulator.linkSystemLibrary("raylib");
-    }
+    compileRaylib(b, os, emulator);
+
     const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua54;
     emulator.addCSourceFiles(.{
         .files = &.{

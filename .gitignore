@@ -2,5 +2,4 @@
 zig-out/
 !data/.gitkeep
 .vscode/
-raylib/
 *.log

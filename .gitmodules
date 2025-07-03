@@ -10,3 +10,6 @@
 	path = foreign/lua54
 	url = https://github.com/lua/lua
 	branch = v5.4
+[submodule "foreign/raylib"]
+	path = foreign/raylib
+	url = https://github.com/raysan5/raylib
