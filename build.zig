@@ -37,15 +37,6 @@ fn compileRaylib(b: *std.Build, target: std.Build.ResolvedTarget, c: *std.Build.
     });
     c.addIncludePath(raylib.path(raylib.builder.h_dir));
     c.linkLibrary(raylib.artifact("raylib"));
-    if (target.result.os.tag == .windows) {
-        if (builtin.os.tag != .windows) {
-            // cross compiling
-            c.addLibraryPath(.{ .cwd_relative = "/usr/x86_64-w64-mingw32/lib" });
-            c.addSystemIncludePath(.{ .cwd_relative = "/usr/x86_64-w64-mingw32/include" });
-        }
-        c.linkSystemLibrary("winmm");
-        c.linkSystemLibrary("gdi32");
-    }
 }
 
 // For the test architecture, we specify the target Lua version we so desire.
