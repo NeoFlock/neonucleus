@@ -31,14 +31,6 @@ const LuaVersion = enum {
     lua54,
 };
 
-fn compileRaylib(b: *std.Build, target: std.Build.ResolvedTarget, c: *std.Build.Step.Compile) void {
-    const raylib = b.dependency("raylib", .{
-        .target = target,
-    });
-    c.addIncludePath(raylib.path(raylib.builder.h_dir));
-    c.linkLibrary(raylib.artifact("raylib"));
-}
-
 // For the test architecture, we specify the target Lua version we so desire.
 // This can be checked for with Lua's _VERSION
 
@@ -122,7 +114,9 @@ pub fn build(b: *std.Build) void {
     });
     emulator.linkLibC();
 
-    compileRaylib(b, target, emulator);
+    const raylib = b.dependency("raylib", .{ .target = target, .optimize = optimize });
+    emulator.addIncludePath(raylib.path(raylib.builder.h_dir));
+    emulator.linkLibrary(raylib.artifact("raylib"));
 
     const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua54;
     emulator.addCSourceFiles(.{
