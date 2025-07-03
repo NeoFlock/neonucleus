@@ -63,6 +63,13 @@ fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVer
         .files = files.items,
     });
 }
+fn getSharedEngineName(os: std.Target.Os.Tag) []const u8 {
+    if (os == .windows) {
+        return "neonucleusdll";
+    } else {
+        return "neonucleus";
+    }
+}
 
 pub fn build(b: *std.Build) void {
     const os = builtin.target.os.tag;
@@ -80,27 +87,21 @@ pub fn build(b: *std.Build) void {
 
     addEngineSources(engineStatic);
 
-    const install = b.getInstallStep();
-
-    b.installArtifact(engineStatic);
-
     const engineShared = b.addSharedLibrary(.{
-        .name = "neonucleus",
+        .name = getSharedEngineName(os),
         .target = target,
         .optimize = optimize,
     });
 
     addEngineSources(engineShared);
 
-    b.installArtifact(engineShared);
-
     const engineStep = b.step("engine", "Builds the engine as a static library");
     engineStep.dependOn(&engineStatic.step);
-    engineStep.dependOn(install);
+    engineStep.dependOn(&b.addInstallArtifact(engineStatic, .{}).step);
 
     const sharedStep = b.step("shared", "Builds the engine as a shared library");
     sharedStep.dependOn(&engineShared.step);
-    sharedStep.dependOn(install);
+    sharedStep.dependOn(&b.addInstallArtifact(engineShared, .{}).step);
 
     const emulator = b.addExecutable(.{
         .name = "neonucleus",
@@ -110,10 +111,12 @@ pub fn build(b: *std.Build) void {
     emulator.linkLibC();
 
     if (os == .windows) {
-        // use the msvc win64 dll versions and copy them to raylib/ and lua/
+        // use the mingw-w64 version and copy files to raylib/
         // get raylib from https://github.com/raysan5/raylib/releases
         emulator.addIncludePath(b.path("raylib/include"));
-        emulator.addObjectFile(b.path("raylib/lib/raylibdll.lib"));
+        emulator.addObjectFile(b.path("raylib/lib/libraylib.a"));
+        emulator.linkSystemLibrary("GDI32");
+        emulator.linkSystemLibrary("WinMM");
     } else {
         emulator.linkSystemLibrary("raylib");
     }
@@ -129,18 +132,18 @@ pub fn build(b: *std.Build) void {
     // forces us to link in everything too
     emulator.linkLibrary(engineStatic);
 
-    b.installArtifact(emulator);
-    b.step("emulator", "Builds the emulator").dependOn(&emulator.step);
+    const emulatorStep = b.step("emulator", "Builds the emulator");
+    emulatorStep.dependOn(&emulator.step);
+    emulatorStep.dependOn(&b.addInstallArtifact(emulator, .{}).step);
 
-    const run_cmd = b.addRunArtifact(emulator);
-
-    run_cmd.step.dependOn(install);
+    var run_cmd = b.addRunArtifact(emulator);
 
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
 
     const run_step = b.step("run", "Run the emulator");
+    run_step.dependOn(emulatorStep);
     run_step.dependOn(&run_cmd.step);
 
     const lib_unit_tests = b.addTest(.{

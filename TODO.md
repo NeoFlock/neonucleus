@@ -1,6 +1,5 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- Unmanaged drives (the `drive` component)
 - `computer` component
 - `modem` component
 - `tunnel` component

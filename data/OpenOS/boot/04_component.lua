@@ -73,7 +73,6 @@ end
 function component.setPrimary(componentType, address)
   checkArg(1, componentType, "string")
   checkArg(2, address, "string", "nil")
-  debugprint("setPrimary", componentType, address)
   if address ~= nil then
     address = component.get(address, componentType)
     assert(address, "no such component")
