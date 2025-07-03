@@ -94,6 +94,8 @@ pub fn build(b: *std.Build) void {
 
     const optimize = b.standardOptimizeOption(.{});
 
+    const includeFiles = b.addInstallHeaderFile(b.path("src/neonucleus.h"), "neonucleus.h");
+
     const engineStatic = b.addStaticLibrary(.{
         .name = "neonucleus",
         //.root_source_file = b.path("src/engine.zig"),
@@ -113,10 +115,12 @@ pub fn build(b: *std.Build) void {
 
     const engineStep = b.step("engine", "Builds the engine as a static library");
     engineStep.dependOn(&engineStatic.step);
+    engineStep.dependOn(&includeFiles.step);
     engineStep.dependOn(&b.addInstallArtifact(engineStatic, .{}).step);
 
     const sharedStep = b.step("shared", "Builds the engine as a shared library");
     sharedStep.dependOn(&engineShared.step);
+    sharedStep.dependOn(&includeFiles.step);
     sharedStep.dependOn(&b.addInstallArtifact(engineShared, .{}).step);
 
     const emulator = b.addExecutable(.{
