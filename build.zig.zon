@@ -1,0 +1,13 @@
+.{
+    .name = .neonucleus,
+    .fingerprint = 0xc9c7605b6b82f1a7,
+    .version = "0.0.1",
+    .paths = .{ "data", "build.zig", "build.zig.zon", "src" },
+
+    .dependencies = .{
+        .raylib = .{
+            .url = "https://github.com/raysan5/raylib/archive/46f01e315d07d0b1fedd1a3c388d1acaa9f6ccd6.tar.gz",
+            .hash = "raylib-5.5.0-whq8uO5uNgRDK_yuN0AGftGhWSVyctgPQNALENrZHt3k",
+        },
+    },
+}
