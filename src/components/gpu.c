@@ -110,7 +110,6 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
         nn_addHeat(computer, gpu->ctrl.pixelResetHeat * area);
         nn_callCost(computer, gpu->ctrl.pixelResetCost * area);
         nn_removeEnergy(computer, gpu->ctrl.pixelResetEnergy * area);
-        nn_busySleep(gpu->ctrl.pixelResetLatency * area);
     }
 
     gpu->currentScreen = screen;
@@ -122,7 +121,6 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     nn_addHeat(computer, gpu->ctrl.bindHeat);
     nn_callCost(computer, gpu->ctrl.bindCost);
     nn_removeEnergy(computer, gpu->ctrl.bindEnergy);
-    nn_busySleep(gpu->ctrl.bindLatency);
 
     nn_return(computer, nn_values_boolean(true));
 }
@@ -164,7 +162,8 @@ void nni_gpu_get(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
     nn_scrchr_t pxl = nn_getPixel(gpu->currentScreen, x, y);
 
     size_t l;
-    const char *chr = nn_unicode_codepointToChar(pxl.codepoint, &l);
+    char chr[NN_MAXIMUM_UNICODE_BUFFER];
+    nn_unicode_codepointToChar(chr, pxl.codepoint, &l);
 
     // TODO: gosh darn palettes
     nn_return(computer, nn_values_cstring(chr));
@@ -247,7 +246,6 @@ void nni_gpu_setBackground(nni_gpu *gpu, void *_, nn_component *component, nn_co
     nn_addHeat(computer, gpu->ctrl.colorChangeHeat);
     nn_callCost(computer, gpu->ctrl.colorChangeCost);
     nn_removeEnergy(computer, gpu->ctrl.colorChangeEnergy);
-    nn_busySleep(gpu->ctrl.colorChangeLatency);
 
     nn_return(computer, nn_values_integer(old));
     if(idx != -1) {
@@ -282,7 +280,6 @@ void nni_gpu_setForeground(nni_gpu *gpu, void *_, nn_component *component, nn_co
     nn_addHeat(computer, gpu->ctrl.colorChangeHeat);
     nn_callCost(computer, gpu->ctrl.colorChangeCost);
     nn_removeEnergy(computer, gpu->ctrl.colorChangeEnergy);
-    nn_busySleep(gpu->ctrl.colorChangeLatency);
 
     nn_return(computer, nn_values_integer(old));
     if(idx != -1) {
@@ -337,12 +334,10 @@ void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * changes);
     nn_callCost(computer, gpu->ctrl.pixelChangeCost * changes);
     nn_removeEnergy(computer, gpu->ctrl.pixelChangeEnergy * changes);
-    nn_busySleep(gpu->ctrl.pixelChangeLatency * changes);
     
     nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * clears);
     nn_callCost(computer, gpu->ctrl.pixelChangeCost * clears);
     nn_removeEnergy(computer, gpu->ctrl.pixelChangeEnergy * clears);
-    nn_busySleep(gpu->ctrl.pixelChangeLatency * clears);
 
     nn_return(computer, nn_values_boolean(true));
 }
@@ -397,12 +392,10 @@ void nni_gpu_copy(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * changes);
     nn_callCost(computer, gpu->ctrl.pixelChangeCost * changes);
     nn_removeEnergy(computer, gpu->ctrl.pixelChangeEnergy * changes);
-    nn_busySleep(gpu->ctrl.pixelChangeLatency * changes);
     
     nn_addHeat(computer, gpu->ctrl.pixelChangeHeat * clears);
     nn_callCost(computer, gpu->ctrl.pixelChangeCost * clears);
     nn_removeEnergy(computer, gpu->ctrl.pixelChangeEnergy * clears);
-    nn_busySleep(gpu->ctrl.pixelChangeLatency * clears);
 
     nn_return(computer, nn_values_boolean(true));
 }

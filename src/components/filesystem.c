@@ -34,16 +34,12 @@ size_t nn_fs_countChunks(nn_filesystem *fs, size_t bytes, nn_component *componen
 
 void nn_fs_readCost(nn_filesystem *fs, size_t count, nn_component *component, nn_computer *computer) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatencyPerChunk * count);
     nn_removeEnergy(computer, control.readEnergyCost * count);
     nn_callCost(computer, control.readCostPerChunk * count);
 }
 
 void nn_fs_writeCost(nn_filesystem *fs, size_t count, nn_component *component, nn_computer *computer) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.writeLatencyPerChunk * count);
     nn_removeEnergy(computer, control.writeEnergyCost * count);
     nn_addHeat(computer, control.writeHeatPerChunk * count);
     nn_callCost(computer, control.writeCostPerChunk * count);
@@ -55,8 +51,6 @@ void nn_fs_seekCost(nn_filesystem *fs, size_t count, nn_component *component, nn
     double rps = (double)control.pretendRPM / 60;
     double seekLatency = 1.0 / ((double)fs->spaceTotal(component, fs->userdata) / control.pretendChunkSize) / rps;
 
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(seekLatency * count);
     nn_removeEnergy(computer, control.writeEnergyCost * count);
     nn_addHeat(computer, control.writeHeatPerChunk * count);
     nn_callCost(computer, control.writeCostPerChunk * count);
@@ -74,8 +68,6 @@ void nn_fs_getLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
     
     // Latency, energy costs and stuff
     nn_filesystemControl control = nn_fs_getControl(component, fs);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatencyPerChunk);
     nn_removeEnergy(computer, control.readEnergyCost);
     nn_callCost(computer, control.readCostPerChunk);
 }

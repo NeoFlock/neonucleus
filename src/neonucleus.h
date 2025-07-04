@@ -4,7 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdatomic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -70,8 +69,14 @@ extern "C" {
 #define NN_CALL_COST 1
 #define NN_LABEL_SIZE 128
 
+#define NN_MAXIMUM_UNICODE_BUFFER 4
+
 typedef struct nn_guard nn_guard;
+#ifdef __STDC_NO_ATOMICS__
 typedef atomic_size_t nn_refc;
+#else
+typedef _Atomic(size_t) nn_refc;
+#endif
 typedef struct nn_universe nn_universe;
 typedef struct nn_computer nn_computer;
 typedef struct nn_component nn_component;
@@ -186,7 +191,7 @@ unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, size_t *len)
 size_t nn_unicode_len(const char *s);
 unsigned int nn_unicode_codepointAt(const char *s, size_t byteOffset);
 size_t nn_unicode_codepointSize(unsigned int codepoint);
-const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len);
+void nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], unsigned int codepoint, size_t *len);
 size_t nn_unicode_charWidth(unsigned int codepoint);
 size_t nn_unicode_wlen(const char *s);
 unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
@@ -198,10 +203,6 @@ char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
 
 double nn_realTime();
 double nn_realTimeClock(void *_);
-/* Will busy-loop until the time passes. This is meant for computed latencies in components. */
-void nn_busySleep(double t);
-// calls nn_busySleep with a random latency
-void nn_randomLatency(double min, double max);
 
 typedef double nn_clock_t(void *_);
 
@@ -419,20 +420,14 @@ nn_component *nn_mountKeyboard(nn_computer *computer, nn_address address, int sl
 
 // EEPROM
 typedef struct nn_eepromControl {
-    double readLatency;
-    double writeLatency;
+    double readHeatPerByte;
+    double writeHeatPerByte;
 
-    double readEnergyCost;
-    double writeEnergyCost;
+    double readEnergyCostPerByte;
+    double writeEnergyCostPerByte;
 
-    double writeHeatCost;
-
-    double randomLatencyMin;
-    double randomLatencyMax;
-
-    // Call costs
-    size_t readCost;
-    size_t writeCost;
+    double bytesReadPerTick;
+    double bytesWrittenPerTick;
 } nn_eepromControl;
 
 typedef struct nn_eeprom {

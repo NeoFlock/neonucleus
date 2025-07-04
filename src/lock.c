@@ -29,7 +29,7 @@ void nn_deleteGuard(nn_Alloc *alloc, nn_guard *guard) {
 }
 
 void nn_addRef(nn_refc *refc, size_t count) {
-    atomic_fetch_add(refc, count);
+    (*refc) += count;
 }
 
 void nn_incRef(nn_refc *refc) {
@@ -37,8 +37,8 @@ void nn_incRef(nn_refc *refc) {
 }
 
 bool nn_removeRef(nn_refc *refc, size_t count) {
-    size_t old = atomic_fetch_sub(refc, count);
-    return old == count;
+    (*refc) -= count;
+    return *refc == 0;
 }
 
 bool nn_decRef(nn_refc *refc) {

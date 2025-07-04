@@ -15,15 +15,12 @@ Color ne_processColor(unsigned int color) {
 
 nn_eepromControl ne_eeprom_getControl(nn_component *component, void *_) {
     return (nn_eepromControl) {
-        .randomLatencyMin = 0.001,
-        .randomLatencyMax = 0.012,
-        .readLatency = 0.03,
-        .writeLatency = 0.05,
-        .readCost = 3,
-        .writeCost = 5,
-        .readEnergyCost = 1,
-        .writeEnergyCost = 5,
-        .writeHeatCost = 0.2,
+        .readHeatPerByte = 0.0015,
+        .writeHeatPerByte = 0.03,
+        .readEnergyCostPerByte = 0.001,
+        .writeEnergyCostPerByte = 0.05,
+        .bytesReadPerTick = 32768,
+        .bytesWrittenPerTick = 4096,
     };
 }
     

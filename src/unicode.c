@@ -219,7 +219,8 @@ char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepoin
     for (size_t i = 0; i < codepointCount; i++) {
         int codepoint = codepoints[i];
         size_t codepointLen = 0;
-        const char *c = nn_unicode_codepointToChar(codepoint, &codepointLen);
+        char c[NN_MAXIMUM_UNICODE_BUFFER];
+        nn_unicode_codepointToChar(c, codepoint, &codepointLen);
         memcpy(buf + j, c, codepointLen);
         j += codepointLen;
     }
@@ -302,11 +303,10 @@ size_t nn_unicode_codepointSize(unsigned int codepoint) {
     return 1;
 }
 
-const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len) {
+void nn_unicode_codepointToChar(char *buffer, unsigned int codepoint, size_t *len) {
     size_t codepointSize = nn_unicode_codepointSize(codepoint);
     *len = codepointSize;
 
-    static char buffer[4];
     memset(buffer, 0, 4); // Clear static array
 
     if (codepointSize == 1) {
@@ -324,8 +324,6 @@ const char *nn_unicode_codepointToChar(unsigned int codepoint, size_t *len) {
         buffer[2] = 0b10000000 + ((codepoint >> 6) & 0b111111);
         buffer[3] = 0b10000000 + (codepoint & 0b111111);
     }
-
-    return buffer;
 }
 
 // copied straight from opencomputers and musl's libc

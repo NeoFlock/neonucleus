@@ -3,10 +3,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef NN_BAREMETAL
+
 #ifdef NN_POSIX
 #include <time.h>
 #else
 #include <windows.h>
+#endif
+
 #endif
 
 void *nn_alloc(nn_Alloc *alloc, size_t size) {
@@ -74,6 +78,14 @@ void nn_deallocStr(nn_Alloc *alloc, char *s) {
     nn_dealloc(alloc, s, strlen(s)+1);
 }
 
+#ifdef NN_BAREMETAL
+
+double nn_realTime() {
+    return 0;
+}
+
+#else
+
 #ifdef NN_POSIX
 
 double nn_realTime() {
@@ -96,19 +108,9 @@ double nn_realTime() {
 
 #endif
 
+#endif
+
 double nn_realTimeClock(void *_) {
     return nn_realTime();
-}
-
-void nn_busySleep(double t) {
-    return; // fuck sleep
-    double deadline = nn_realTime() + t;
-    while(nn_realTime() < deadline) {}
-}
-
-void nn_randomLatency(double min, double max) {
-    double t = (double)rand() / RAND_MAX;
-    double latency = min + t * (max - min);
-    nn_busySleep(latency);
 }
 

@@ -4,6 +4,24 @@ nn_eepromControl nn_eeprom_getControl(nn_component *component, nn_eeprom *eeprom
     return eeprom->control(component, eeprom->userdata);
 }
 
+static void nn_eeprom_readCost(nn_component *component, size_t bytesRead) {
+    nn_eepromControl control = nn_eeprom_getControl(component, nn_getComponentUserdata(component));
+    nn_computer *computer = nn_getComputerOfComponent(component);
+
+    nn_removeEnergy(computer, control.readEnergyCostPerByte * bytesRead);
+    nn_addHeat(computer, control.readHeatPerByte * bytesRead);
+    nn_simulateBufferedIndirect(component, bytesRead, control.bytesReadPerTick);
+}
+
+static void nn_eeprom_writeCost(nn_component *component, size_t bytesWritten) {
+    nn_eepromControl control = nn_eeprom_getControl(component, nn_getComponentUserdata(component));
+    nn_computer *computer = nn_getComputerOfComponent(component);
+
+    nn_removeEnergy(computer, control.writeEnergyCostPerByte * bytesWritten);
+    nn_addHeat(computer, control.writeHeatPerByte * bytesWritten);
+    nn_simulateBufferedIndirect(component, bytesWritten, control.bytesWrittenPerTick);
+}
+
 void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
     if(!nn_decRef(&eeprom->refc)) return;
 
@@ -14,24 +32,10 @@ void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
 
 void nn_eeprom_getSize(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_return(computer, nn_values_integer(eeprom->getSize(component, eeprom->userdata)));
-
-    // Latency, energy costs and stuff
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatency);
-    nn_removeEnergy(computer, control.readEnergyCost);
-    nn_callCost(computer, control.readCost);
 }
 
 void nn_eeprom_getDataSize(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_return(computer, nn_values_integer(eeprom->getDataSize(component, eeprom->userdata)));
-    
-    // Latency, energy costs and stuff
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatency);
-    nn_removeEnergy(computer, control.readEnergyCost);
-    nn_callCost(computer, control.readCost);
 }
 
 void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -45,11 +49,7 @@ void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
     }
     
     // Latency, energy costs and stuff
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatency);
-    nn_removeEnergy(computer, control.readEnergyCost);
-    nn_callCost(computer, control.readCost);
+    nn_eeprom_readCost(component, l);
 }
 
 void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -64,12 +64,7 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
     nn_return_string(computer, buf, l);
     
     // Latency, energy costs and stuff
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.writeLatency);
-    nn_removeEnergy(computer, control.writeEnergyCost);
-    nn_addHeat(computer, control.writeHeatCost);
-    nn_callCost(computer, control.writeCost);
+    nn_eeprom_writeCost(component, l);
 }
 
 void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -83,12 +78,8 @@ void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
     size_t len = eeprom->get(component, eeprom->userdata, buf);
     nn_return_string(computer, buf, len);
     nn_dealloc(alloc, buf, cap);
-    
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatency);
-    nn_removeEnergy(computer, control.readEnergyCost);
-    nn_callCost(computer, control.readCost);
+
+    nn_eeprom_readCost(component, len);
 }
 
 void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -110,12 +101,7 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
     }
     eeprom->set(component, eeprom->userdata, buf, len);
     
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.writeLatency);
-    nn_removeEnergy(computer, control.writeEnergyCost);
-    nn_addHeat(computer, control.writeHeatCost);
-    nn_callCost(computer, control.writeCost);
+    nn_eeprom_writeCost(component, len);
 }
 
 void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -134,11 +120,7 @@ void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
     }
     nn_dealloc(alloc, buf, cap);
     
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatency);
-    nn_removeEnergy(computer, control.readEnergyCost);
-    nn_callCost(computer, control.readCost);
+    nn_eeprom_readCost(component, len);
 }
 
 void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -159,22 +141,16 @@ void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
         return;
     }
     eeprom->setData(component, eeprom->userdata, buf, len);
+
+    nn_eeprom_writeCost(component, len);
 }
 
 void nn_eeprom_isReadOnly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_return(computer, nn_values_boolean(eeprom->isReadonly(component, eeprom->userdata)));
-    
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_removeEnergy(computer, control.readEnergyCost);
 }
 
 void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     eeprom->makeReadonly(component, eeprom->userdata);
-    
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_removeEnergy(computer, control.writeEnergyCost);
 }
 
 // TODO: make good
@@ -195,11 +171,7 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
 
     nn_return_string(computer, (void *)&sum, sizeof(sum));
     
-    nn_eepromControl control = nn_eeprom_getControl(component, eeprom);
-    nn_randomLatency(control.randomLatencyMin, control.randomLatencyMax);
-    nn_busySleep(control.readLatency);
-    nn_removeEnergy(computer, control.readEnergyCost);
-    nn_callCost(computer, control.readCost);
+    nn_eeprom_readCost(component, len);
 }
 
 void nn_loadEepromTable(nn_universe *universe) {
@@ -208,16 +180,16 @@ void nn_loadEepromTable(nn_universe *universe) {
 
     nn_defineMethod(eepromTable, "getSize", true, (void *)nn_eeprom_getSize, NULL, "getSize(): integer - Returns the maximum code capacity of the EEPROM.");
     nn_defineMethod(eepromTable, "getDataSize", true, (void *)nn_eeprom_getDataSize, NULL, "getDataSize(): integer - Returns the maximum data capacity of the EEPROM.");
-    nn_defineMethod(eepromTable, "getLabel", false, (void *)nn_eeprom_getLabel, NULL, "getLabel(): string - Returns the current label.");
-    nn_defineMethod(eepromTable, "setLabel", false, (void *)nn_eeprom_setLabel, NULL, "setLabel(label: string): string - Sets the new label. Returns the actual label set to, which may be truncated.");
-    nn_defineMethod(eepromTable, "get", false, (void *)nn_eeprom_get, NULL, "get(): string - Reads the current code contents.");
-    nn_defineMethod(eepromTable, "set", false, (void *)nn_eeprom_set, NULL, "set(data: string) - Sets the current code contents.");
-    nn_defineMethod(eepromTable, "getData", false, (void *)nn_eeprom_getData, NULL, "getData(): string - Reads the current data contents.");
-    nn_defineMethod(eepromTable, "setData", false, (void *)nn_eeprom_setData, NULL, "setData(data: string) - Sets the current data contents.");
-    nn_defineMethod(eepromTable, "isReadOnly", false, (void *)nn_eeprom_isReadOnly, NULL, "isReadOnly(): boolean - Returns whether this EEPROM is read-only.");
+    nn_defineMethod(eepromTable, "getLabel", true, (void *)nn_eeprom_getLabel, NULL, "getLabel(): string - Returns the current label.");
+    nn_defineMethod(eepromTable, "setLabel", true, (void *)nn_eeprom_setLabel, NULL, "setLabel(label: string): string - Sets the new label. Returns the actual label set to, which may be truncated.");
+    nn_defineMethod(eepromTable, "get", true, (void *)nn_eeprom_get, NULL, "get(): string - Reads the current code contents.");
+    nn_defineMethod(eepromTable, "set", true, (void *)nn_eeprom_set, NULL, "set(data: string) - Sets the current code contents.");
+    nn_defineMethod(eepromTable, "getData", true, (void *)nn_eeprom_getData, NULL, "getData(): string - Reads the current data contents.");
+    nn_defineMethod(eepromTable, "setData", true, (void *)nn_eeprom_setData, NULL, "setData(data: string) - Sets the current data contents.");
+    nn_defineMethod(eepromTable, "isReadOnly", true, (void *)nn_eeprom_isReadOnly, NULL, "isReadOnly(): boolean - Returns whether this EEPROM is read-only.");
     nn_defineMethod(eepromTable, "makeReadOnly", false, (void *)nn_eeprom_makeReadonly, NULL, "makeReadOnly() - Makes the current EEPROM read-only. Normally, this cannot be undone.");
     nn_defineMethod(eepromTable, "makeReadonly", false, (void *)nn_eeprom_makeReadonly, NULL, "makeReadonly() - Legacy alias to makeReadOnly()");
-    nn_defineMethod(eepromTable, "getChecksum", false, (void *)nn_eeprom_getChecksum, NULL, "getChecksum(): string - Returns a checksum of the data on the EEPROM.");
+    nn_defineMethod(eepromTable, "getChecksum", true, (void *)nn_eeprom_getChecksum, NULL, "getChecksum(): string - Returns a checksum of the data on the EEPROM.");
 }
 
 nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom) {
