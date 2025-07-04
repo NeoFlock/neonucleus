@@ -620,6 +620,14 @@ int nn_getPaletteCount(nn_screen *screen);
 int nn_maxDepth(nn_screen *screen);
 int nn_getDepth(nn_screen *screen);
 void nn_setDepth(nn_screen *screen, int depth);
+const char *nn_depthName(int depth);
+
+double nn_colorDistance(int colorA, int colorB);
+int nn_mapColor(int color, int *palette, int paletteSize);
+
+int nn_mapDepth(int color, int depth);
+void nn_getStd4BitPalette(int color[16]);
+void nn_getStd8BitPalette(int color[256]);
 
 void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel);
 nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y);
@@ -636,41 +644,25 @@ void nn_setOn(nn_screen *buffer, bool on);
 nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
 
 typedef struct nn_gpuControl {
-    // resolution and colors
-    int maxWidth;
-    int maxHeight;
-    int maxDepth;
-    
     // VRAM Buffers
     int totalVRAM;
 
-    // Energy costs
-    double bindEnergy;
-    double pixelChangeEnergy;
-    double pixelResetEnergy;
-    double colorChangeEnergy;
-    double vramByteChangeEnergy;
-    
+    // Calls per tick, only applicable to screens
+    double screenCopyPerTick;
+    double screenFillPerTick;
+    double screenSetsPerTick;
+    double screenColorChangesPerTick;
+    double bitbltPerTick; // for bitblit
+
     // Heat
-    double bindHeat;
-    double pixelChangeHeat;
-    double pixelResetHeat;
-    double colorChangeHeat;
-    double vramByteChangeHeat;
+    double heatPerPixelChange;
+    double heatPerPixelReset;
+    double heatPerVRAMChange;
 
-    // Call budgets
-    size_t bindCost;
-    size_t pixelChangeCost;
-    size_t pixelResetCost;
-    size_t colorChangeCost;
-    size_t vramByteChangeCost;
-
-    // Latencies
-    double bindLatency;
-    double pixelChangeLatency;
-    double pixelResetLatency;
-    double colorChangeLatency;
-    double vramByteChangeLatency;
+    // Energy
+    double energyPerPixelChange;
+    double energyPerPixelReset;
+    double energyPerVRAMChange;
 } nn_gpuControl;
 
 // the control is COPIED.

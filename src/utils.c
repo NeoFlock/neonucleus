@@ -114,3 +114,50 @@ double nn_realTimeClock(void *_) {
     return nn_realTime();
 }
 
+// TODO: use OKLAB the color space for more accurate results.
+
+typedef struct nn_rgbColor {
+    double r, g, b;
+} nn_rgbColor;
+
+nn_rgbColor nni_splitColorToRgb(int color) {
+    double r = (color & 0xFF0000) >> 16;
+    double g = (color & 0x00FF00) >> 8;
+    double b = color & 0x0000FF;
+
+    int max = 0xFF;
+    return (nn_rgbColor) {
+        .r = r / max,
+        .g = g / max,
+        .b = b / max,
+    };
+}
+
+double nn_colorDistance(int colorA, int colorB) {
+    if(colorA == colorB) return 0;
+    nn_rgbColor a = nni_splitColorToRgb(colorA);
+    nn_rgbColor b = nni_splitColorToRgb(colorB);
+
+    nn_rgbColor delta;
+    delta.r = a.r - b.r;
+    delta.g = a.g - b.g;
+    delta.b = a.b - b.b;
+
+    return delta.r*delta.r + delta.g*delta.g + delta.b*delta.b;
+}
+
+int nn_mapColor(int color, int *palette, int paletteSize) {
+    if(paletteSize <= 0) return color;
+    int bestColor = palette[0];
+    double fitness = nn_colorDistance(color, bestColor);
+
+    for(int i = 1; i < paletteSize; i++) {
+        double dist = nn_colorDistance(color, palette[i]);
+        if(dist < fitness) {
+            bestColor = palette[i];
+            fitness = dist;
+        }
+        if(bestColor == color) return color;
+    }
+    return bestColor;
+}

@@ -239,3 +239,74 @@ nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, 
     nn_componentTable *screenTable = nn_queryUserdata(nn_getUniverse(computer), "NN:SCREEN");
     return nn_newComponent(computer, address, slot, screenTable, screen);
 }
+
+void nn_getStd4BitPalette(int color[16]) {
+    color[0] = 0xFFF9FE; // white
+    color[1] = 0xF9801D; // orange
+    color[2] = 0xC74EBD; // magenta
+    color[3] = 0x3AB3DA; // lightblue
+    color[4] = 0xFED83D; // yellow
+    color[5] = 0x80C71F; // lime
+    color[6] = 0xF38BAA; // pink
+    color[7] = 0x474F52; // gray
+    color[8] = 0x9D9D97; // silver
+    color[9] = 0x169C9C; // cyan
+    color[10] = 0x8932B8; // purple
+    color[11] = 0x3C44AA; // blue
+    color[12] = 0x835432; // brown
+    color[13] = 0x5E7C16; // green
+    color[14] = 0xB02E26; // red
+    color[15] = 0x1D1D21; // black
+}
+
+void nn_getStd8BitPalette(int color[256]) {
+    // source: https://ocdoc.cil.li/component:gpu
+    int reds[6] = {0x00, 0x33, 0x66, 0x99, 0xCC, 0xFF};
+    int greens[8] = {0x00, 0x24, 0x49, 0x6D, 0x92, 0xB6, 0xDB, 0xFF};
+    int blues[5] = {0x00, 0x40, 0x80, 0xC0, 0xFF};
+
+    for(int r = 0; r < 6; r++) {
+        for(int g = 0; g < 8; g++) {
+            for(int b = 0; b < 5; b++) {
+                int i = r * 8 * 5 + g * 5 + b;
+                color[i] = (reds[r] << 16) | (greens[g] << 8) | (blues[b]);
+            }
+        }
+    }
+
+    // TODO: turn into an algorithm
+    color[240] = 0x0F0F0F;
+    color[241] = 0x1E1E1E;
+    color[242] = 0x2D2D2D;
+    color[243] = 0x3C3C3C;
+    color[244] = 0x4B4B4B;
+    color[245] = 0x5A5A5A;
+    color[246] = 0x696969;
+    color[247] = 0x787878;
+    color[248] = 0x878787;
+    color[249] = 0x969696;
+    color[250] = 0xA5A5A5;
+    color[251] = 0xB4B4B4;
+    color[252] = 0xC3C3C3;
+    color[253] = 0xD2D2D2;
+    color[254] = 0xE1E1E1;
+    color[255] = 0xF0F0F0;
+}
+
+int nn_mapDepth(int color, int depth) {
+    if(depth == 1) {
+        if(color == 0) return 0;
+        return 0xFFFFFF;
+    }
+    if(depth == 4) {
+        int palette[16];
+        nn_getStd4BitPalette(palette);
+        return nn_mapColor(color, palette, 16);
+    }
+    if(depth == 8) {
+        int palette[256];
+        nn_getStd8BitPalette(palette);
+        return nn_mapColor(color, palette, 256);
+    }
+    return color;
+}

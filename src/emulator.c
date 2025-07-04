@@ -597,31 +597,21 @@ int main() {
     nn_mountKeyboard(computer, "shitty keyboard", 2);
     nn_addScreen(computer, "Main Screen", 2, s);
 
+    // somewhat matches tier 3 in OC in terms of perTick
     nn_gpuControl gpuCtrl = {
-        .maxWidth = 240,
-        .maxHeight = 80,
-        .maxDepth = 16,
+        .totalVRAM = 16*1024,
+        .screenCopyPerTick = 4,
+        .screenFillPerTick = 8,
+        .screenSetsPerTick = 16,
+        .screenColorChangesPerTick = 8,
 
-        .totalVRAM = 32*1024,
-        .vramByteChangeCost = 0,
-        .vramByteChangeEnergy = 0,
-        .vramByteChangeHeat = 0,
-        .vramByteChangeLatency = 0,
+        .heatPerPixelChange = 0.0005,
+        .heatPerPixelReset = 0.0001,
+        .heatPerVRAMChange = 0.000015,
 
-        .pixelChangeCost = 0,
-        .pixelChangeEnergy = 0,
-        .pixelChangeHeat = 0,
-        .pixelChangeLatency = 0,
-        
-        .pixelResetCost = 0,
-        .pixelResetEnergy = 0,
-        .pixelResetHeat = 0,
-        .pixelResetLatency = 0,
-
-        .colorChangeLatency = 0,
-        .colorChangeCost = 0,
-        .colorChangeEnergy = 0,
-        .colorChangeHeat = 0,
+        .energyPerPixelChange = 0.05,
+        .energyPerPixelReset = 0.01,
+        .energyPerVRAMChange = 0.0015,
     };
 
     nn_addGPU(computer, "RTX 6090", 3, &gpuCtrl);
@@ -736,13 +726,15 @@ render:
         float spacing = (float)pixelHeight/10;
         int pixelWidth = MeasureTextEx(unscii, "A", pixelHeight, spacing).x;
 
+        int depth = nn_getDepth(s);
+
         for(size_t x = 0; x < scrW; x++) {
             for(size_t y = 0; y < scrH; y++) {
                 nn_scrchr_t p = nn_getPixel(s, x, y);
 
                 // fuck palettes
-                Color fgColor = ne_processColor(p.fg);
-                Color bgColor = ne_processColor(p.bg);
+                Color fgColor = ne_processColor(nn_mapDepth(p.fg, depth));
+                Color bgColor = ne_processColor(nn_mapDepth(p.bg, depth));
                 DrawRectangle(x * pixelWidth, y * pixelHeight, pixelWidth, pixelHeight, bgColor);
                 DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth, y * pixelHeight}, pixelHeight - 5, fgColor);
             }

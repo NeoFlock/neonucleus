@@ -1,8 +1,8 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- get rid of nn_busySleep
 - rework literally all the costs to just be heat and amount per tick
-- change more methods to be direct but with buffered indirects.
+- change more methods to be direct but with buffered indirects
+- complete the GPU implementation (screen buffers and missing methods)
 - `computer` component
 - `modem` component
 - `tunnel` component
@@ -10,6 +10,7 @@
 - `redstone` component
 - `hologram` component
 - `internet` component
+- use dynamic arrays for signals
 
 # Bugfixes
 
