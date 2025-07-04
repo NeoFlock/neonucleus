@@ -224,11 +224,24 @@ void nn_screenComp_getKeyboards(nn_screen *screen, void *_, nn_component *compon
     nn_return(computer, arr);
 }
 
+void nn_screenComp_getAspectRatio(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_lockScreen(screen);
+
+    int w, h;
+    nn_getAspectRatio(screen, &w, &h);
+
+    nn_unlockScreen(screen);
+
+    nn_return_integer(computer, w);
+    nn_return_integer(computer, h);
+}
+
 void nn_loadScreenTable(nn_universe *universe) {
     nn_componentTable *screenTable = nn_newComponentTable(nn_getAllocator(universe), "screen", NULL, NULL, (void *)nn_screenComp_destroy);
     nn_storeUserdata(universe, "NN:SCREEN", screenTable);
 
-    nn_defineMethod(screenTable, "getKeyboards", false, (void *)nn_screenComp_getKeyboards, NULL, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
+    nn_defineMethod(screenTable, "getKeyboards", true, (void *)nn_screenComp_getKeyboards, NULL, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
+    nn_defineMethod(screenTable, "getAspectRatio", true, (void *)nn_screenComp_getAspectRatio, NULL, "");
 }
 
 nn_componentTable *nn_getScreenTable(nn_universe *universe) {

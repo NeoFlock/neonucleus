@@ -162,7 +162,10 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
         nn_setCError(computer, "out of memory");
         return;
     }
-    size_t len = eeprom->getData(component, eeprom->userdata, buf);
+    int len = eeprom->getData(component, eeprom->userdata, buf);
+    if(len < 0) {
+        return;
+    }
     size_t sum = 0;
     for(size_t i = 0; i < len; i++) {
         sum += buf[i];

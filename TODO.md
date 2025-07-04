@@ -3,6 +3,7 @@
 - rework literally all the costs to just be heat and amount per tick
 - change more methods to be direct but with buffered indirects
 - complete the GPU implementation (screen buffers and missing methods)
+- complete the screen implementation (bunch of missing methods)
 - `computer` component
 - `modem` component
 - `tunnel` component

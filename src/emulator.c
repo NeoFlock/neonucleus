@@ -71,7 +71,7 @@ void ne_eeprom_set(nn_component *component, void *_, const char *buf, size_t len
 }
 
 int ne_eeprom_getData(nn_component *component, void *_, char *buf) {
-    return -1;
+    return 0;
 }
 
 void ne_eeprom_setData(nn_component *component, void *_, const char *buf, size_t len) {}
@@ -654,20 +654,20 @@ int main() {
 
     int maxWidth = 80, maxHeight = 32;
 
-    nn_screen *s = nn_newScreen(&alloc, maxWidth, maxHeight, 16, 16, 256);
+    nn_screen *s = nn_newScreen(&alloc, maxWidth, maxHeight, 24, 16, 256);
+    nn_setDepth(s, 4); // looks cool
     nn_addKeyboard(s, "shitty keyboard");
     nn_mountKeyboard(computer, "shitty keyboard", 2);
     nn_addScreen(computer, "Main Screen", 2, s);
 
     ne_premappedPixel *premap = ne_allocPremap(maxWidth, maxHeight);
 
-    // somewhat matches tier 3 in OC in terms of perTick
     nn_gpuControl gpuCtrl = {
         .totalVRAM = 16*1024,
         .screenCopyPerTick = 4,
         .screenFillPerTick = 8,
         .screenSetsPerTick = 16,
-        .screenColorChangesPerTick = 8,
+        .screenColorChangesPerTick = 64,
 
         .heatPerPixelChange = 0.0005,
         .heatPerPixelReset = 0.0001,
@@ -690,6 +690,8 @@ int main() {
     uint8_t release_check_ptr;
 
     SetExitKey(KEY_NULL);
+
+    SetTargetFPS(20); // match MC TPS
 
     while(true) {
         if(WindowShouldClose()) break;
@@ -807,6 +809,9 @@ render:
 
         int depth = nn_getDepth(s);
 
+        int offX = (GetScreenWidth() - scrW * pixelWidth) / 2;
+        int offY = (GetScreenHeight() - scrH * pixelHeight) / 2;
+
         for(size_t x = 0; x < scrW; x++) {
             for(size_t y = 0; y < scrH; y++) {
                 ne_premappedPixel p = ne_getPremap(premap, s, x, y);
@@ -814,8 +819,8 @@ render:
                 // fuck palettes
                 Color fgColor = ne_processColor(p.mappedFgRes);
                 Color bgColor = ne_processColor(p.mappedBgRes);
-                DrawRectangle(x * pixelWidth, y * pixelHeight, pixelWidth, pixelHeight, bgColor);
-                DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth, y * pixelHeight}, pixelHeight - 5, fgColor);
+                DrawRectangle(x * pixelWidth + offX, y * pixelHeight + offY, pixelWidth, pixelHeight, bgColor);
+                DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight - 5, fgColor);
             }
         }
         

@@ -459,6 +459,7 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_defineMethod(gpuTable, "getForeground", true, (void *)nni_gpu_getForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
     nn_defineMethod(gpuTable, "getDepth", true, (void *)nni_gpu_getDepth, NULL, "getDepth(): number - The currently set color depth of the screen, in bits. Can be 1, 4 or 8.");
     nn_defineMethod(gpuTable, "setDepth", true, (void *)nni_gpu_setDepth, NULL, "setDepth(depth: integer): string - Changes the screen depth. Valid values can be 1, 4, 8, 16 or 24, however check maxDepth for the maximum supported value of the screen. Using a depth higher than what is supported by the screen will error. Returns the name of the new depth.");
+    nn_defineMethod(gpuTable, "maxDepth", true, (void *)nni_gpu_maxDepth, NULL, "maxDepth(): number - The maximum supported depth of the screen.");
     nn_defineMethod(gpuTable, "fill", true, (void *)nni_gpu_fill, NULL, "fill(x: integer, y: integer, w: integer, h: integer, s: string)");
     nn_defineMethod(gpuTable, "copy", true, (void *)nni_gpu_copy, NULL, "copy(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer) - Copies stuff");
     nn_defineMethod(gpuTable, "getViewport", true, (void *)nni_gpu_getViewport, NULL, "getViewport(): integer, integer - Gets the current viewport resolution");
