@@ -502,6 +502,66 @@ int keycode_to_oc(int keycode) {
     return 0;
 }
 
+typedef struct ne_premappedPixel {
+    int codepoint;
+    int mappedDepth;
+    int mappedFgFor;
+    int mappedFgRes;
+    int mappedBgFor;
+    int mappedBgRes;
+} ne_premappedPixel;
+
+ne_premappedPixel ne_getPremap(ne_premappedPixel *pixels, nn_screen *screen, int x, int y) {
+    int maxW, maxH;
+    nn_maxResolution(screen, &maxW, &maxH);
+    int depth = nn_getDepth(screen);
+
+    int i = y * maxW + x;
+    ne_premappedPixel premapped = pixels[i];
+
+    nn_scrchr_t pixel = nn_getPixel(screen, x, y);
+    int fg = pixel.fg;
+    int bg = pixel.bg;
+
+    if(premapped.mappedDepth != depth) {
+        premapped.mappedDepth = depth;
+        premapped.mappedFgFor = -1;
+        premapped.mappedBgFor = -1;
+    }
+
+    bool miss = false;
+    if(premapped.mappedFgFor != fg) {
+        premapped.mappedFgFor = fg;
+        premapped.mappedFgRes = nn_mapDepth(fg, depth);
+        miss = true;
+    }
+    if(premapped.mappedBgFor != bg) {
+        premapped.mappedBgFor = bg;
+        premapped.mappedBgRes = nn_mapDepth(bg, depth);
+        miss = true;
+    }
+    premapped.codepoint = pixel.codepoint;
+
+    pixels[i] = premapped;
+    return premapped;
+}
+
+ne_premappedPixel *ne_allocPremap(int width, int height) {
+    int len = width * height;
+    ne_premappedPixel *pixels = malloc(sizeof(ne_premappedPixel) * len);
+    for(int i = 0; i < len; i++) pixels[i] = (ne_premappedPixel) {
+        .mappedDepth = -1,
+        .mappedFgFor = -1,
+        .mappedBgFor = -1,
+    };
+    return pixels;
+}
+
+typedef struct ne_pressedKey {
+    int charcode;
+    int keycode;
+} ne_pressedKey;
+
 int main() {
     printf("Setting up universe\n");
     nn_Alloc alloc = nn_libcAllocator();
@@ -592,10 +652,14 @@ int main() {
 
     nn_addDrive(computer, "drive.img", 4, &genericDrive);
 
-    nn_screen *s = nn_newScreen(&alloc, 80, 32, 16, 16, 256);
+    int maxWidth = 80, maxHeight = 32;
+
+    nn_screen *s = nn_newScreen(&alloc, maxWidth, maxHeight, 16, 16, 256);
     nn_addKeyboard(s, "shitty keyboard");
     nn_mountKeyboard(computer, "shitty keyboard", 2);
     nn_addScreen(computer, "Main Screen", 2, s);
+
+    ne_premappedPixel *premap = ne_allocPremap(maxWidth, maxHeight);
 
     // somewhat matches tier 3 in OC in terms of perTick
     nn_gpuControl gpuCtrl = {
@@ -621,16 +685,15 @@ int main() {
 
     Font unscii = LoadFont("unscii-16-full.ttf");
 
-    double lastTime = nn_realTime();
-
-    static int release_check_list[256];
-    memset(release_check_list, 0, sizeof(int)*256);
+    static ne_pressedKey release_check_list[256];
+    memset(release_check_list, 0, sizeof(ne_pressedKey)*256);
     uint8_t release_check_ptr;
 
     SetExitKey(KEY_NULL);
 
     while(true) {
         if(WindowShouldClose()) break;
+        nn_setEnergyInfo(computer, 5000, 5000);
 
         while (true) { // TODO: find out if we can check if the keycode and unicode are for the same key event or not
             int keycode = GetKeyPressed();
@@ -641,7 +704,9 @@ int main() {
             }
 
             if (keycode != 0) {
-                release_check_list[release_check_ptr++] = keycode;
+                release_check_list[release_check_ptr].keycode = keycode;
+                release_check_list[release_check_ptr].charcode = unicode;
+                release_check_ptr++;
             }
 
             nn_value values[5];
@@ -661,15 +726,15 @@ int main() {
         }
 
         for (int i = 0; i < 256; i++) {
-            int key = release_check_list[i];
-            if (key != 0) {
-                if (IsKeyReleased(key)) {
+            ne_pressedKey *key = release_check_list + i;
+            if (key->keycode != 0) {
+                if (IsKeyPressedRepeat(key->keycode)) {
                     // omg
                     nn_value values[5];
-                    values[0] = nn_values_cstring("key_up");
+                    values[0] = nn_values_cstring("key_down");
                     values[1] = nn_values_cstring("shitty keyboard");
-                    values[2] = nn_values_integer(0); // we can't really know, unless we store it, which i am way too lazy to do.
-                    values[3] = nn_values_integer(keycode_to_oc(key));
+                    values[2] = nn_values_integer(key->charcode);
+                    values[3] = nn_values_integer(keycode_to_oc(key->keycode));
                     values[4] = nn_values_cstring("USER");
 
                     const char* error = nn_pushSignal(computer, values, 5);
@@ -679,13 +744,27 @@ int main() {
                         printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
                     }
                 }
+                if (IsKeyReleased(key->keycode)) {
+                    // omg
+                    nn_value values[5];
+                    values[0] = nn_values_cstring("key_up");
+                    values[1] = nn_values_cstring("shitty keyboard");
+                    values[2] = nn_values_integer(key->charcode);
+                    values[3] = nn_values_integer(keycode_to_oc(key->keycode));
+                    values[4] = nn_values_cstring("USER");
+
+                    const char* error = nn_pushSignal(computer, values, 5);
+
+                    if (error != NULL) {
+                        // well fuck
+                        printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
+                    }
+                    key->keycode = 0;
+                }
             }
         }
 
-        double now = nn_realTime();
-        double dt = now - lastTime;
-        if(dt == 0) dt = 1.0/60;
-        lastTime = now;
+        double dt = GetFrameTime();
         
         double heat = nn_getTemperature(computer);
         double roomHeat = nn_getRoomTemperature(computer);
@@ -730,11 +809,11 @@ render:
 
         for(size_t x = 0; x < scrW; x++) {
             for(size_t y = 0; y < scrH; y++) {
-                nn_scrchr_t p = nn_getPixel(s, x, y);
+                ne_premappedPixel p = ne_getPremap(premap, s, x, y);
 
                 // fuck palettes
-                Color fgColor = ne_processColor(nn_mapDepth(p.fg, depth));
-                Color bgColor = ne_processColor(nn_mapDepth(p.bg, depth));
+                Color fgColor = ne_processColor(p.mappedFgRes);
+                Color bgColor = ne_processColor(p.mappedBgRes);
                 DrawRectangle(x * pixelWidth, y * pixelHeight, pixelWidth, pixelHeight, bgColor);
                 DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth, y * pixelHeight}, pixelHeight - 5, fgColor);
             }
@@ -748,6 +827,7 @@ render:
         size_t memTotal = nn_getComputerMemoryTotal(computer);
 
         DrawText(TextFormat("Heat: %.02lf Memory Used: %.2lf%%", heat, (double)memUsage / memTotal * 100), 10, GetScreenHeight() - 30, 20, heatColor);
+        DrawFPS(10, 10);
 
         EndDrawing();
     }
@@ -756,5 +836,6 @@ render:
     nn_deleteComputer(computer);
     nn_unsafeDeleteUniverse(universe);
     CloseWindow();
+    free(premap);
     return 0;
 }

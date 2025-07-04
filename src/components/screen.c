@@ -293,20 +293,29 @@ void nn_getStd8BitPalette(int color[256]) {
     color[255] = 0xF0F0F0;
 }
 
+static int nni_4bit_colors[16];
+static bool nni_4bit_did = false;
+static int nni_8bit_colors[256];
+static bool nni_8bit_did = false;
+
 int nn_mapDepth(int color, int depth) {
     if(depth == 1) {
         if(color == 0) return 0;
         return 0xFFFFFF;
     }
     if(depth == 4) {
-        int palette[16];
-        nn_getStd4BitPalette(palette);
-        return nn_mapColor(color, palette, 16);
+        if(!nni_4bit_did) {
+            nni_4bit_did = true;
+            nn_getStd4BitPalette(nni_4bit_colors);
+        }
+        return nn_mapColor(color, nni_4bit_colors, 16);
     }
     if(depth == 8) {
-        int palette[256];
-        nn_getStd8BitPalette(palette);
-        return nn_mapColor(color, palette, 256);
+        if(!nni_8bit_did) {
+            nni_8bit_did = true;
+            nn_getStd8BitPalette(nni_8bit_colors);
+        }
+        return nn_mapColor(color, nni_8bit_colors, 256);
     }
     return color;
 }
