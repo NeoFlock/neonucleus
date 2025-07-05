@@ -114,9 +114,14 @@ pub fn build(b: *std.Build) void {
     });
     emulator.linkLibC();
 
-    const raylib = b.dependency("raylib", .{ .target = target, .optimize = optimize });
-    emulator.addIncludePath(raylib.path(raylib.builder.h_dir));
-    emulator.linkLibrary(raylib.artifact("raylib"));
+    const sysraylib_flag = b.option(bool, "sysraylib", "Use the system raylib instead of compiling raylib") orelse false;
+    if (sysraylib_flag) {
+        emulator.linkSystemLibrary("raylib");
+    } else {
+        const raylib = b.dependency("raylib", .{ .target = target, .optimize = optimize });
+        emulator.addIncludePath(raylib.path(raylib.builder.h_dir));
+        emulator.linkLibrary(raylib.artifact("raylib"));
+    }
 
     const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua54;
     emulator.addCSourceFiles(.{
