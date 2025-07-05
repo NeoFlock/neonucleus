@@ -691,12 +691,27 @@ int main() {
 
     SetExitKey(KEY_NULL);
 
-    SetTargetFPS(20); // match MC TPS
+    double idleTime = 0;
+    int tps = 20; // mc TPS
+    double interval = 1.0/tps;
 
     while(true) {
         if(WindowShouldClose()) break;
         nn_setEnergyInfo(computer, 5000, 5000);
+        
+        double dt = GetFrameTime();
+        
+        double heat = nn_getTemperature(computer);
+        double roomHeat = nn_getRoomTemperature(computer);
 
+        double tx = 0.1;
+        
+        // remove some heat per second
+        nn_removeHeat(computer, dt * (rand() % 3) * tx * (heat - roomHeat));
+        if(nn_isOverheating(computer)) {
+            goto render;
+        }
+            
         while (true) { // TODO: find out if we can check if the keycode and unicode are for the same key event or not
             int keycode = GetKeyPressed();
             int unicode = GetCharPressed();
@@ -730,22 +745,6 @@ int main() {
         for (int i = 0; i < 256; i++) {
             ne_pressedKey *key = release_check_list + i;
             if (key->keycode != 0) {
-                if (IsKeyPressedRepeat(key->keycode)) {
-                    // omg
-                    nn_value values[5];
-                    values[0] = nn_values_cstring("key_down");
-                    values[1] = nn_values_cstring("shitty keyboard");
-                    values[2] = nn_values_integer(key->charcode);
-                    values[3] = nn_values_integer(keycode_to_oc(key->keycode));
-                    values[4] = nn_values_cstring("USER");
-
-                    const char* error = nn_pushSignal(computer, values, 5);
-
-                    if (error != NULL) {
-                        // well fuck
-                        printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
-                    }
-                }
                 if (IsKeyReleased(key->keycode)) {
                     // omg
                     nn_value values[5];
@@ -766,34 +765,49 @@ int main() {
             }
         }
 
-        double dt = GetFrameTime();
+        idleTime += dt;
+
+        if(idleTime >= interval) {
+            idleTime -= interval;
         
-        double heat = nn_getTemperature(computer);
-        double roomHeat = nn_getRoomTemperature(computer);
+            for (int i = 0; i < 256; i++) {
+                ne_pressedKey *key = release_check_list + i;
+                if (key->keycode != 0) {
+                    if (IsKeyPressedRepeat(key->keycode)) {
+                        // omg
+                        nn_value values[5];
+                        values[0] = nn_values_cstring("key_down");
+                        values[1] = nn_values_cstring("shitty keyboard");
+                        values[2] = nn_values_integer(key->charcode);
+                        values[3] = nn_values_integer(keycode_to_oc(key->keycode));
+                        values[4] = nn_values_cstring("USER");
 
-        double tx = 0.1;
+                        const char* error = nn_pushSignal(computer, values, 5);
 
-        // remove some heat per second
-        nn_removeHeat(computer, dt * (rand() % 3) * tx * (heat - roomHeat));
-        if(nn_isOverheating(computer)) {
-            goto render;
-        }
+                        if (error != NULL) {
+                            // well fuck
+                            printf("error happened when eventing the keyboarding: %s\n", error);;;;;;
+                        }
+                    }
+                }
+            }
 
-        int state = nn_tickComputer(computer);
-        if(state == NN_STATE_SWITCH) {
-            nn_architecture *nextArch = nn_getNextArchitecture(computer);
-            printf("Next architecture: %s\n", nextArch->archName);
-            break;
-        } else if(state == NN_STATE_CLOSING || state == NN_STATE_REPEAT) {
-            break;
-        } else if(state == NN_STATE_BLACKOUT) {
-            printf("blackout\n");
-            break;
-        }
-        const char *e = nn_getError(computer);
-        if(e != NULL) {
-            printf("Error: %s\n", e);
-            break;
+            int state = nn_tickComputer(computer);
+            if(state == NN_STATE_SWITCH) {
+                nn_architecture *nextArch = nn_getNextArchitecture(computer);
+                printf("Next architecture: %s\n", nextArch->archName);
+                break;
+            } else if(state == NN_STATE_CLOSING || state == NN_STATE_REPEAT) {
+                break;
+            } else if(state == NN_STATE_BLACKOUT) {
+                printf("blackout\n");
+                break;
+            }
+            const char *e = nn_getError(computer);
+            if(e != NULL) {
+                printf("Error: %s\n", e);
+                break;
+            }
         }
 
 render:

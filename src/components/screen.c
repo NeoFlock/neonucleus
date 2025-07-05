@@ -156,6 +156,7 @@ void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel) {
     if(x >= screen->width) return;
     if(y >= screen->height) return;
     screen->buffer[x + y * screen->maxWidth] = pixel;
+    screen->isDirty = true; // stuff changed
 }
 
 nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y) {
