@@ -4,14 +4,19 @@
 - change more methods to be direct but with buffered indirects
 - complete the GPU implementation (screen buffers and missing methods)
 - complete the screen implementation (bunch of missing methods)
+- in-memory version of `filesystem` and `drive`
+- `hologram` component
 - `computer` component
 - `modem` component
 - `tunnel` component
 - `data` component (with error correction codes)
 - `redstone` component
-- `hologram` component
 - `internet` component
-- use dynamic arrays for signals
+- `computer.getDeviceInfo()`, and subsequently, component device information
+- `computer.beep(frequency?: number, duration?: number, volume?: number)`, frequency between 20 and 2000 Hz, duration up to 5 seconds, volume from 0 to 1.
+Should use the *busy* machine state to let the sandbox suspend it until it is done playing
+- ensure the recursive locks are used correctly to prevent race conditions
+- use dynamic arrays for signals (and maybe components)
 
 # Bugfixes
 

@@ -452,6 +452,7 @@ local co = coroutine.create(f)
 while true do
     timeout = nextDeadline()
     bubbleYield = false
+    collectgarbage()
 
     local ok, err = coroutine.resume(co)
 
