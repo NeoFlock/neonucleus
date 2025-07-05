@@ -253,8 +253,11 @@ nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, 
     return nn_newComponent(computer, address, slot, screenTable, screen);
 }
 
+static const int nni_mcBlack = 0x1D1D21;
+static const int nni_mcWhite = 0xFFF9FE;
+
 void nn_getStd4BitPalette(int color[16]) {
-    color[0] = 0xFFF9FE; // white
+    color[0] = nni_mcWhite; // white
     color[1] = 0xF9801D; // orange
     color[2] = 0xC74EBD; // magenta
     color[3] = 0x3AB3DA; // lightblue
@@ -269,7 +272,7 @@ void nn_getStd4BitPalette(int color[16]) {
     color[12] = 0x835432; // brown
     color[13] = 0x5E7C16; // green
     color[14] = 0xB02E26; // red
-    color[15] = 0x1D1D21; // black
+    color[15] = nni_mcBlack; // black
 }
 
 void nn_getStd8BitPalette(int color[256]) {
@@ -313,8 +316,8 @@ static bool nni_8bit_did = false;
 
 int nn_mapDepth(int color, int depth) {
     if(depth == 1) {
-        if(color == 0) return 0;
-        return 0xFFFFFF;
+        if(color == 0) return nni_mcBlack;
+        return nni_mcWhite;
     }
     if(depth == 4) {
         if(!nni_4bit_did) {
