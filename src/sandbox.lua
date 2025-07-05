@@ -449,10 +449,18 @@ coroutine.yield() -- startup delay
 local f = bootstrap()
 local co = coroutine.create(f)
 
+local gcInterval = 0.25
+local lastGC = computer.uptime()
+
 while true do
     timeout = nextDeadline()
     bubbleYield = false
     collectgarbage()
+
+    if computer.uptime() - lastGC >= gcInterval then
+        collectgarbage("collect")
+        lastGC = computer.uptime()
+    end
 
     local ok, err = coroutine.resume(co)
 
