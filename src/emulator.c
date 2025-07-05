@@ -181,6 +181,20 @@ size_t ne_fs_read(nn_component *component, ne_fs *fs, int fd, char *buf, size_t 
     return fread(buf, sizeof(char), required, f);
 }
 
+size_t ne_fs_seek(nn_component *component, ne_fs *fs, int fd, const char *whence, int off, int *moved) {
+    FILE *f = fs->files[fd];
+    *moved = 0;
+    int w = SEEK_SET;
+    if(strcmp(whence, "cur") == 0) {
+        w = SEEK_CUR;
+    }
+    if(strcmp(whence, "end") == 0) {
+        w = SEEK_END;
+    }
+    fseek(f, w, off);
+    return ftell(f);
+}
+
 char **ne_fs_list(nn_Alloc *alloc, nn_component *component, ne_fs *fs, const char *path, size_t *len) {
     const char *p = ne_fs_diskPath(component, path);
     if(p[0] == '/') p++;
@@ -628,7 +642,7 @@ int main() {
         .close = (void *)ne_fs_close,
         .write = (void *)ne_fs_write,
         .read = (void *)ne_fs_read,
-        .seek = NULL,
+        .seek = (void *)ne_fs_seek,
     };
     nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
 

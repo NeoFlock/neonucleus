@@ -396,12 +396,13 @@ void nn_fs_seek(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     // size_t capacity = fs->spaceTotal(component, fs->userdata);
     int moved = 0;
 
-    /* size_t pos = */ fs->seek(component, fs->userdata, fd, whence, off, &moved);
+    size_t pos = fs->seek(component, fs->userdata, fd, whence, off, &moved);
     if(moved < 0) moved = -moved;
 
     // do not ask where it comes from, balance is hard
     nn_fs_readCost(fs, 1, component, computer);
     nn_fs_seekCost(fs, nn_fs_countChunks(fs, moved, component), component, computer);
+    nn_return_integer(computer, pos);
 }
 
 void nn_loadFilesystemTable(nn_universe *universe) {
