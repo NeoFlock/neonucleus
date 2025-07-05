@@ -560,6 +560,7 @@ ne_premappedPixel *ne_allocPremap(int width, int height) {
 typedef struct ne_pressedKey {
     int charcode;
     int keycode;
+    bool repeat;
 } ne_pressedKey;
 
 int main() {
@@ -664,9 +665,9 @@ int main() {
 
     nn_gpuControl gpuCtrl = {
         .totalVRAM = 16*1024,
-        .screenCopyPerTick = 4,
-        .screenFillPerTick = 8,
-        .screenSetsPerTick = 16,
+        .screenCopyPerTick = 8,
+        .screenFillPerTick = 16,
+        .screenSetsPerTick = 32,
         .screenColorChangesPerTick = 64,
 
         .heatPerPixelChange = 0.0005,
@@ -723,6 +724,7 @@ int main() {
             if (keycode != 0) {
                 release_check_list[release_check_ptr].keycode = keycode;
                 release_check_list[release_check_ptr].charcode = unicode;
+                release_check_list[release_check_ptr].repeat = false;
                 release_check_ptr++;
             }
 
@@ -745,6 +747,7 @@ int main() {
         for (int i = 0; i < 256; i++) {
             ne_pressedKey *key = release_check_list + i;
             if (key->keycode != 0) {
+                key->repeat = IsKeyPressedRepeat(key->keycode);
                 if (IsKeyReleased(key->keycode)) {
                     // omg
                     nn_value values[5];
@@ -773,7 +776,7 @@ int main() {
             for (int i = 0; i < 256; i++) {
                 ne_pressedKey *key = release_check_list + i;
                 if (key->keycode != 0) {
-                    if (IsKeyPressedRepeat(key->keycode)) {
+                    if (key->repeat) {
                         // omg
                         nn_value values[5];
                         values[0] = nn_values_cstring("key_down");
