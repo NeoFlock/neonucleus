@@ -579,8 +579,9 @@ typedef struct ne_pressedKey {
 
 int main() {
     printf("Setting up universe\n");
-    nn_Alloc alloc = nn_libcAllocator();
-    nn_universe *universe = nn_newUniverse(alloc);
+    nn_Context ctx = nn_libcContext();
+    nn_Alloc alloc = ctx.allocator;
+    nn_universe *universe = nn_newUniverse(ctx);
     if(universe == NULL) {
         printf("Failed to create universe\n");
         return 1;
@@ -669,7 +670,7 @@ int main() {
 
     int maxWidth = 80, maxHeight = 32;
 
-    nn_screen *s = nn_newScreen(&alloc, maxWidth, maxHeight, 24, 16, 256);
+    nn_screen *s = nn_newScreen(&ctx, maxWidth, maxHeight, 24, 16, 256);
     nn_setDepth(s, 4); // looks cool
     nn_addKeyboard(s, "shitty keyboard");
     nn_mountKeyboard(computer, "shitty keyboard", 2);

@@ -40,6 +40,8 @@ void nn_dealloc(nn_Alloc *alloc, void *memory, size_t size) {
     alloc->proc(alloc->userdata, memory, size, 0, NULL);
 }
 
+#ifndef NN_BAREMETAL
+
 static void *nn_libcAllocProc(void *_, void *ptr, size_t oldSize, size_t newSize, void *__) {
     if(newSize == 0) {
         //printf("Freed %lu bytes from %p\n", oldSize, ptr);
@@ -58,6 +60,15 @@ nn_Alloc nn_libcAllocator() {
         .proc = nn_libcAllocProc,
     };
 }
+
+nn_Context nn_libcContext() {
+    return (nn_Context) {
+        .allocator = nn_libcAllocator(),
+        .clock = nn_libcRealTime(),
+        .lockManager = nn_libcMutex(),
+    };
+}
+#endif
 
 // Utilities, both internal and external
 char *nn_strdup(nn_Alloc *alloc, const char *s) {
@@ -78,17 +89,11 @@ void nn_deallocStr(nn_Alloc *alloc, char *s) {
     nn_dealloc(alloc, s, strlen(s)+1);
 }
 
-#ifdef NN_BAREMETAL
-
-double nn_realTime() {
-    return 0;
-}
-
-#else
+#ifndef NN_BAREMETAL
 
 #ifdef NN_POSIX
 
-double nn_realTime() {
+static double nni_realTime() {
     struct timespec time;
     if(clock_gettime(CLOCK_MONOTONIC, &time) < 0) return 0; // oh no
     return time.tv_sec + ((double)time.tv_nsec) / 1e9;
@@ -96,7 +101,7 @@ double nn_realTime() {
 
 #else
 
-double nn_realTime() {
+static double nni_realTime() {
     LARGE_INTEGER frequency = {0};
     if(!QueryPerformanceFrequency(&frequency)) return 0;
 
@@ -108,11 +113,18 @@ double nn_realTime() {
 
 #endif
 
-#endif
-
-double nn_realTimeClock(void *_) {
-    return nn_realTime();
+static double nni_realTimeClock(void *_) {
+    return nni_realTime();
 }
+
+nn_Clock nn_libcRealTime() {
+    return (nn_Clock) {
+        .userdata = NULL,
+        .proc = nni_realTimeClock,
+    };
+}
+
+#endif
 
 // TODO: use OKLAB the color space for more accurate results.
 

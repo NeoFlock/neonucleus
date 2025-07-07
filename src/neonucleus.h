@@ -105,11 +105,45 @@ typedef struct nn_Alloc {
     nn_AllocProc *proc;
 } nn_Alloc;
 
+#define NN_LOCK_DEFAULT 0
+#define NN_LOCK_IMMEDIATE 1
+
+#define NN_LOCK_INIT 0
+#define NN_LOCK_DEINIT 1
+#define NN_LOCK_RETAIN 2
+#define NN_LOCK_RELEASE 3
+
+typedef bool nn_LockProc(void *userdata, void *lock, int action, int flags);
+
+typedef struct nn_LockManager {
+    void *userdata;
+    size_t lockSize;
+    nn_LockProc *proc;
+} nn_LockManager;
+
+typedef double nn_ClockProc(void *userdata);
+
+typedef struct nn_Clock {
+    void *userdata;
+    nn_ClockProc *proc;
+} nn_Clock;
+
+typedef struct nn_Context {
+    nn_Alloc allocator;
+    nn_LockManager lockManager;
+    nn_Clock clock;
+} nn_Context;
+
 // TODO: write a bunch of utils so this *can* work on baremetal.
 
 #ifndef NN_BAREMETAL
 nn_Alloc nn_libcAllocator();
+nn_Clock nn_libcRealTime();
+nn_LockManager nn_libcMutex();
+nn_Context nn_libcContext();
 #endif
+
+nn_LockManager nn_noMutex();
 
 // Values for architectures
 
@@ -171,10 +205,11 @@ char *nn_strdup(nn_Alloc *alloc, const char *s);
 void *nn_memdup(nn_Alloc *alloc, const void *buf, size_t len);
 void nn_deallocStr(nn_Alloc *alloc, char *s);
 
-nn_guard *nn_newGuard(nn_Alloc *alloc);
-void nn_lock(nn_guard *guard);
-void nn_unlock(nn_guard *guard);
-void nn_deleteGuard(nn_Alloc *alloc, nn_guard *guard);
+nn_guard *nn_newGuard(nn_Context *context);
+void nn_lock(nn_Context *context, nn_guard *guard);
+bool nn_tryLock(nn_Context *context, nn_guard *guard);
+void nn_unlock(nn_Context *context, nn_guard *guard);
+void nn_deleteGuard(nn_Context *context, nn_guard *guard);
 
 void nn_addRef(nn_refc *refc, size_t count);
 void nn_incRef(nn_refc *refc);
@@ -201,17 +236,16 @@ unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
 // returned string must be nn_deallocStr()'d
 char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
 
-double nn_realTime();
-double nn_realTimeClock(void *_);
 
-typedef double nn_clock_t(void *_);
 
-nn_universe *nn_newUniverse(nn_Alloc alloc);
+nn_universe *nn_newUniverse(nn_Context context);
+nn_Context *nn_getContext(nn_universe *universe);
 nn_Alloc *nn_getAllocator(nn_universe *universe);
+nn_Clock *nn_getClock(nn_universe *universe);
+nn_LockManager *nn_getLockManager(nn_universe *universe);
 void nn_unsafeDeleteUniverse(nn_universe *universe);
 void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
-void nn_setClock(nn_universe *universe, nn_clock_t *clock, void *userdata);
 double nn_getTime(nn_universe *universe);
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
@@ -587,7 +621,7 @@ typedef struct nn_scrchr_t {
     bool isBgPalette;
 } nn_scrchr_t;
 
-nn_screen *nn_newScreen(nn_Alloc *alloc, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
+nn_screen *nn_newScreen(nn_Context *context, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
 nn_componentTable *nn_getScreenTable(nn_universe *universe);
 
 void nn_retainScreen(nn_screen *screen);
