@@ -61,11 +61,25 @@ nn_Alloc nn_libcAllocator() {
     };
 }
 
+static size_t nni_rand(void *userdata) {
+    return rand();
+}
+
+nn_Rng nn_libcRng() {
+    srand(time(NULL));
+    return (nn_Rng) {
+        .userdata = NULL,
+        .maximum = RAND_MAX,
+        .proc = nni_rand,
+    };
+}
+
 nn_Context nn_libcContext() {
     return (nn_Context) {
         .allocator = nn_libcAllocator(),
         .clock = nn_libcRealTime(),
         .lockManager = nn_libcMutex(),
+        .rng = nn_libcRng(),
     };
 }
 #endif
@@ -87,6 +101,23 @@ void *nn_memdup(nn_Alloc *alloc, const void *buf, size_t len) {
 void nn_deallocStr(nn_Alloc *alloc, char *s) {
     if(s == NULL) return;
     nn_dealloc(alloc, s, strlen(s)+1);
+}
+
+size_t nn_rand(nn_Rng *rng) {
+    return rng->proc(rng->userdata);
+}
+
+// returns from 0 to 1 (inclusive)
+double nn_randf(nn_Rng *rng) {
+    double x = nn_rand(rng);
+    return x / rng->maximum;
+}
+
+// returns from 0 to 1 (exclusive)
+double nn_randfe(nn_Rng *rng) {
+    double x = nn_rand(rng);
+    if(x >= rng->maximum) return 0;
+    return x / rng->maximum;
 }
 
 #ifndef NN_BAREMETAL

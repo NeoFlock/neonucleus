@@ -128,10 +128,25 @@ typedef struct nn_Clock {
     nn_ClockProc *proc;
 } nn_Clock;
 
+typedef size_t nn_RngProc(void *userdata);
+
+typedef struct nn_Rng {
+    void *userdata;
+    size_t maximum;
+    nn_RngProc *proc;
+} nn_Rng;
+
+size_t nn_rand(nn_Rng *rng);
+// returns from 0 to 1 (inclusive)
+double nn_randf(nn_Rng *rng);
+// returns from 0 to 1 (exclusive)
+double nn_randfe(nn_Rng *rng);
+
 typedef struct nn_Context {
     nn_Alloc allocator;
     nn_LockManager lockManager;
     nn_Clock clock;
+    nn_Rng rng;
 } nn_Context;
 
 // TODO: write a bunch of utils so this *can* work on baremetal.
@@ -140,6 +155,7 @@ typedef struct nn_Context {
 nn_Alloc nn_libcAllocator();
 nn_Clock nn_libcRealTime();
 nn_LockManager nn_libcMutex();
+nn_Rng nn_libcRng();
 nn_Context nn_libcContext();
 #endif
 
@@ -283,6 +299,7 @@ nn_Context *nn_getContext(nn_universe *universe);
 nn_Alloc *nn_getAllocator(nn_universe *universe);
 nn_Clock *nn_getClock(nn_universe *universe);
 nn_LockManager *nn_getLockManager(nn_universe *universe);
+nn_Rng *nn_getRng(nn_universe *universe);
 void nn_unsafeDeleteUniverse(nn_universe *universe);
 void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
