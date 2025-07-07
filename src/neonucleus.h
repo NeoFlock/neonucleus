@@ -218,6 +218,8 @@ bool nn_removeRef(nn_refc *refc, size_t count);
 /* Returns true if the object should be freed */
 bool nn_decRef(nn_refc *refc);
 
+// Unicode (more specifically, UTF-8) stuff
+
 bool nn_unicode_validate(const char *s);
 // returned string must be nn_deallocStr()'d
 char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepointCount);
@@ -236,7 +238,45 @@ unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
 // returned string must be nn_deallocStr()'d
 char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
 
+// Data card stuff
 
+// Hashing
+void nn_data_crc32(const char *inBuf, size_t buflen, char outBuf[4]);
+void nn_data_md5(const char *inBuf, size_t buflen, char outBuf[16]);
+void nn_data_sha256(const char *inBuf, size_t buflen, char outBuf[32]);
+
+// Base64
+
+// The initial value of *len is the size of buf, with the new value being the length of the returned buffer.
+char *nn_data_decode64(nn_Alloc *alloc, const char *buf, size_t *len);
+char *nn_data_encode64(nn_Alloc *alloc, const char *buf, size_t *len);
+
+// Deflate/inflate
+
+char *nn_data_deflate(nn_Alloc *alloc, const char *buf, size_t *len);
+char *nn_data_inflate(nn_Alloc *alloc, const char *buf, size_t *len);
+
+// AES
+char *nn_data_aes_encrypt(nn_Alloc *alloc, const char *buf, size_t *len, const char key[16], const char iv[16]);
+char *nn_data_aes_decrypt(nn_Alloc *alloc, const char *buf, size_t *len, const char key[16], const char iv[16]);
+
+// ECDH
+
+// if longKeys is on, instead of taking 32 bytes, the keys take up 48 bytes.
+size_t nn_data_ecdh_keylen(bool longKeys);
+// use nn_data_ecdh_keylen to figure out the expected length for the buffers
+void nn_data_ecdh_generateKeyPair(nn_Context *context, bool longKeys, char *publicKey, char *privateKey);
+
+bool nn_data_ecdsa_check(bool longKeys, const char *buf, size_t buflen, const char *sig, size_t siglen);
+char *nn_data_ecdsa_sign(nn_Alloc *alloc, const char *buf, size_t *buflen, const char *key, bool longKeys);
+
+char *nn_data_ecdh_getSharedKey(nn_Alloc *alloc, size_t *len, const char *privateKey, const char *publicKey, bool longKeys);
+
+// ECC
+char *nn_data_hamming_encode(nn_Alloc *alloc, const char *buf, size_t *len);
+char *nn_data_hamming_decode(nn_Alloc *alloc, const char *buf, size_t *len);
+
+// Universe stuff
 
 nn_universe *nn_newUniverse(nn_Context context);
 nn_Context *nn_getContext(nn_universe *universe);
