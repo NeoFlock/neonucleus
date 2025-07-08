@@ -1,7 +1,19 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-fn addEngineSources(c: *std.Build.Step.Compile) void {
+fn addEngineSources(b: *std.Build, c: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const dataMod = b.createModule(.{
+        .root_source_file = b.path("src/data.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const zigObj = b.addObject(.{
+        .name = "zig_wrappers",
+        .root_module = dataMod,
+        .pic = true,
+    });
+    c.addObject(zigObj);
+    
     c.linkLibC(); // we need a libc
 
     c.addCSourceFiles(.{
@@ -23,6 +35,8 @@ fn addEngineSources(c: *std.Build.Step.Compile) void {
             "src/components/keyboard.c",
         },
     });
+
+    c.addIncludePath(b.path("src"));
 }
 
 const LuaVersion = enum {
@@ -87,7 +101,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    addEngineSources(engineStatic);
+    addEngineSources(b, engineStatic, target, optimize);
 
     const engineShared = b.addSharedLibrary(.{
         .name = getSharedEngineName(os),
@@ -95,7 +109,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    addEngineSources(engineShared);
+    addEngineSources(b, engineShared, target, optimize);
 
     const engineStep = b.step("engine", "Builds the engine as a static library");
     engineStep.dependOn(&engineStatic.step);

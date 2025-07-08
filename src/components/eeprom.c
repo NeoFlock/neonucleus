@@ -153,7 +153,6 @@ void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component,
     eeprom->makeReadonly(component, eeprom->userdata);
 }
 
-// TODO: make good
 void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     size_t cap = eeprom->getDataSize(component, eeprom->userdata);
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
@@ -166,13 +165,11 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
     if(len < 0) {
         return;
     }
-    size_t sum = 0;
-    for(size_t i = 0; i < len; i++) {
-        sum += buf[i];
-    }
+    char hash[4] = {1, 0, 0, 1};
+    nn_data_crc32(buf, len, hash);
     nn_dealloc(alloc, buf, cap);
 
-    nn_return_string(computer, (void *)&sum, sizeof(sum));
+    nn_return_string(computer, hash, sizeof(hash));
     
     nn_eeprom_readCost(component, len);
 }
