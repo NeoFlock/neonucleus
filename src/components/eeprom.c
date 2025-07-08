@@ -154,24 +154,31 @@ void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component,
 }
 
 void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    size_t cap = eeprom->getDataSize(component, eeprom->userdata);
+    size_t dataCap = eeprom->getDataSize(component, eeprom->userdata);
+    size_t codeCap = eeprom->getSize(component, eeprom->userdata);
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
-    char *buf = nn_alloc(alloc, cap);
+    char *buf = nn_alloc(alloc, dataCap + codeCap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
     }
-    int len = eeprom->getData(component, eeprom->userdata, buf);
-    if(len < 0) {
+    int dataLen = eeprom->getData(component, eeprom->userdata, buf);
+    if(dataLen < 0) {
+        nn_dealloc(alloc, buf, dataCap + codeCap);
         return;
     }
-    char hash[4] = {1, 0, 0, 1};
-    nn_data_crc32(buf, len, hash);
-    nn_dealloc(alloc, buf, cap);
+    int codeLen = eeprom->get(component, eeprom->userdata, buf + dataLen);
+    if(codeLen < 0) {
+        nn_dealloc(alloc, buf, dataCap + codeCap);
+        return;
+    }
+    char hash[4];
+    nn_data_crc32(buf, dataLen + codeLen, hash);
+    nn_dealloc(alloc, buf, dataCap + codeCap);
 
     nn_return_string(computer, hash, sizeof(hash));
     
-    nn_eeprom_readCost(component, len);
+    nn_eeprom_readCost(component, dataLen + codeLen);
 }
 
 void nn_loadEepromTable(nn_universe *universe) {
