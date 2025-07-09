@@ -156,6 +156,9 @@ pub fn build(b: *std.Build) void {
             "src/testLuaArch.c",
             "src/emulator.c",
         },
+        .flags = &.{
+            if(opts.baremetal) "-DNN_BAREMETAL" else "",
+        },
     });
     compileTheRightLua(b, emulator, luaVer) catch unreachable;
 

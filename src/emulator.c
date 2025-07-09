@@ -8,6 +8,88 @@
 #include "testLuaArch.h"
 #include <raylib.h>
 
+#ifdef NN_BAREMETAL
+
+#ifdef NN_POSIX
+
+#include <time.h>
+
+static double nni_realTime() {
+    struct timespec time;
+    if(clock_gettime(CLOCK_MONOTONIC, &time) < 0) return 0; // oh no
+    return time.tv_sec + ((double)time.tv_nsec) / 1e9;
+}
+
+#else
+
+#include <windows.h>
+
+static double nni_realTime() {
+    LARGE_INTEGER frequency = {0};
+    if(!QueryPerformanceFrequency(&frequency)) return 0;
+
+    LARGE_INTEGER now = {0};
+    if(!QueryPerformanceCounter(&now)) return 0;
+
+    return (double)now.QuadPart / frequency.QuadPart;
+}
+
+#endif
+
+static double nni_realTimeClock(void *_) {
+    return nni_realTime();
+}
+
+nn_Clock nn_libcRealTime() {
+    return (nn_Clock) {
+        .userdata = NULL,
+        .proc = nni_realTimeClock,
+    };
+}
+
+static void *nn_libcAllocProc(void *_, void *ptr, nn_size_t oldSize, nn_size_t newSize, void *__) {
+    if(newSize == 0) {
+        //printf("Freed %lu bytes from %p\n", oldSize, ptr);
+        free(ptr);
+        return NULL;
+    } else {
+        void *rptr = realloc(ptr, newSize);
+        //printf("Allocated %lu bytes for %p\n", newSize - oldSize, rptr);
+        return rptr;
+    }
+}
+
+nn_Alloc nn_libcAllocator() {
+    return (nn_Alloc) {
+        .userdata = NULL,
+        .proc = nn_libcAllocProc,
+    };
+}
+
+static nn_size_t nni_rand(void *userdata) {
+    return rand();
+}
+
+nn_Rng nn_libcRng() {
+    srand(time(NULL));
+    return (nn_Rng) {
+        .userdata = NULL,
+        .maximum = RAND_MAX,
+        .proc = nni_rand,
+    };
+}
+
+nn_Context nn_libcContext() {
+    return (nn_Context) {
+        .allocator = nn_libcAllocator(),
+        .clock = nn_libcRealTime(),
+        .lockManager = nn_noMutex(),
+        .rng = nn_libcRng(),
+    };
+}
+
+#endif
+
 Color ne_processColor(unsigned int color) {
     color <<= 8;
     color |= 0xFF;
