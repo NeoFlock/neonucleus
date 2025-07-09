@@ -3,7 +3,37 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#ifndef NN_NEONUCLEUS
 #include <stdbool.h>
+#endif
+
+#ifdef bool
+typedef bool nn_bool_t;
+#else
+typedef unsigned char nn_bool_t;
+#define bool nn_bool_t
+#endif
+
+#ifdef true
+
+#define NN_TRUE true
+
+#else
+
+#define NN_TRUE 1
+#define true NN_TRUE
+
+#endif
+
+#ifdef false
+#define NN_FALSE false
+#else
+
+#define NN_FALSE 0
+#define false NN_FALSE
+
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -113,7 +143,7 @@ typedef struct nn_Alloc {
 #define NN_LOCK_RETAIN 2
 #define NN_LOCK_RELEASE 3
 
-typedef bool nn_LockProc(void *userdata, void *lock, int action, int flags);
+typedef nn_bool_t nn_LockProc(void *userdata, void *lock, int action, int flags);
 
 typedef struct nn_LockManager {
     void *userdata;
@@ -152,6 +182,9 @@ typedef struct nn_Context {
 // libc-like utils
 
 void nn_memset(void *buf, unsigned char byte, size_t len);
+void nn_memcpy(void *dest, const void *src, size_t len);
+char *nn_strcpy(char *dest, const char *src);
+const char *nn_strchr(const char *str, int ch);
 int nn_strcmp(const char *a, const char *b);
 size_t nn_strlen(const char *a);
 
@@ -202,7 +235,7 @@ typedef struct nn_value {
     union {
         intptr_t integer;
         double number;
-        bool boolean;
+        nn_bool_t boolean;
         const char *cstring;
         nn_string *string;
         nn_array *array;
@@ -227,20 +260,20 @@ void nn_deallocStr(nn_Alloc *alloc, char *s);
 
 nn_guard *nn_newGuard(nn_Context *context);
 void nn_lock(nn_Context *context, nn_guard *guard);
-bool nn_tryLock(nn_Context *context, nn_guard *guard);
+nn_bool_t nn_tryLock(nn_Context *context, nn_guard *guard);
 void nn_unlock(nn_Context *context, nn_guard *guard);
 void nn_deleteGuard(nn_Context *context, nn_guard *guard);
 
 void nn_addRef(nn_refc *refc, size_t count);
 void nn_incRef(nn_refc *refc);
 /* Returns true if the object should be freed */
-bool nn_removeRef(nn_refc *refc, size_t count);
+nn_bool_t nn_removeRef(nn_refc *refc, size_t count);
 /* Returns true if the object should be freed */
-bool nn_decRef(nn_refc *refc);
+nn_bool_t nn_decRef(nn_refc *refc);
 
 // Unicode (more specifically, UTF-8) stuff
 
-bool nn_unicode_validate(const char *s);
+nn_bool_t nn_unicode_validate(const char *s);
 // returned string must be nn_deallocStr()'d
 char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepointCount);
 // returned array must be nn_dealloc()'d
@@ -283,14 +316,14 @@ char *nn_data_aes_decrypt(nn_Alloc *alloc, const char *buf, size_t *len, const c
 // ECDH
 
 // if longKeys is on, instead of taking 32 bytes, the keys take up 48 bytes.
-size_t nn_data_ecdh_keylen(bool longKeys);
+size_t nn_data_ecdh_keylen(nn_bool_t longKeys);
 // use nn_data_ecdh_keylen to figure out the expected length for the buffers
-void nn_data_ecdh_generateKeyPair(nn_Context *context, bool longKeys, char *publicKey, char *privateKey);
+void nn_data_ecdh_generateKeyPair(nn_Context *context, nn_bool_t longKeys, char *publicKey, char *privateKey);
 
-bool nn_data_ecdsa_check(bool longKeys, const char *buf, size_t buflen, const char *sig, size_t siglen);
-char *nn_data_ecdsa_sign(nn_Alloc *alloc, const char *buf, size_t *buflen, const char *key, bool longKeys);
+nn_bool_t nn_data_ecdsa_check(nn_bool_t longKeys, const char *buf, size_t buflen, const char *sig, size_t siglen);
+char *nn_data_ecdsa_sign(nn_Alloc *alloc, const char *buf, size_t *buflen, const char *key, nn_bool_t longKeys);
 
-char *nn_data_ecdh_getSharedKey(nn_Alloc *alloc, size_t *len, const char *privateKey, const char *publicKey, bool longKeys);
+char *nn_data_ecdh_getSharedKey(nn_Alloc *alloc, size_t *len, const char *privateKey, const char *publicKey, nn_bool_t longKeys);
 
 // ECC
 char *nn_data_hamming_encode(nn_Alloc *alloc, const char *buf, size_t *len);
@@ -329,12 +362,12 @@ void nn_popSignal(nn_computer *computer);
 const char *nn_addUser(nn_computer *computer, const char *name);
 void nn_deleteUser(nn_computer *computer, const char *name);
 const char *nn_indexUser(nn_computer *computer, size_t idx);
-bool nn_isUser(nn_computer *computer, const char *name);
+nn_bool_t nn_isUser(nn_computer *computer, const char *name);
 void nn_setCallBudget(nn_computer *computer, double callBudget);
 double nn_getCallBudget(nn_computer *computer);
 void nn_callCost(nn_computer *computer, double cost);
 double nn_getCallCost(nn_computer *computer);
-bool nn_isOverworked(nn_computer *computer);
+nn_bool_t nn_isOverworked(nn_computer *computer);
 void nn_triggerIndirect(nn_computer *computer);
 
 /* The memory returned can be freed with nn_free() */
@@ -394,7 +427,7 @@ void nn_setRoomTemperature(nn_computer *computer, double roomTemperature);
 void nn_addHeat(nn_computer *computer, double heat);
 void nn_removeHeat(nn_computer *computer, double heat);
 /* Checks against NN_OVERHEAT_MIN */
-bool nn_isOverheating(nn_computer *computer);
+nn_bool_t nn_isOverheating(nn_computer *computer);
 
 // NULL if there is no error.
 const char *nn_getError(nn_computer *computer);
@@ -437,14 +470,14 @@ typedef void nn_componentMethod(void *componentUserdata, void *methodUserdata, n
 
 nn_componentTable *nn_newComponentTable(nn_Alloc *alloc, const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
 void nn_destroyComponentTable(nn_componentTable *table);
-void nn_defineMethod(nn_componentTable *table, const char *methodName, bool direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc);
-const char *nn_getTableMethod(nn_componentTable *table, size_t idx, bool *outDirect);
+void nn_defineMethod(nn_componentTable *table, const char *methodName, nn_bool_t direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc);
+const char *nn_getTableMethod(nn_componentTable *table, size_t idx, nn_bool_t *outDirect);
 const char *nn_methodDoc(nn_componentTable *table, const char *methodName);
 
 // Component calling
 
 /* Returns false if the method does not exist */
-bool nn_invokeComponentMethod(nn_component *component, const char *name);
+nn_bool_t nn_invokeComponentMethod(nn_component *component, const char *name);
 void nn_simulateBufferedIndirect(nn_component *component, double amount, double amountPerTick);
 void nn_resetCall(nn_computer *computer);
 void nn_addArgument(nn_computer *computer, nn_value arg);
@@ -459,7 +492,7 @@ size_t nn_getReturnCount(nn_computer *computer);
 nn_value nn_values_nil();
 nn_value nn_values_integer(intptr_t integer);
 nn_value nn_values_number(double num);
-nn_value nn_values_boolean(bool boolean);
+nn_value nn_values_boolean(nn_bool_t boolean);
 nn_value nn_values_cstring(const char *string);
 nn_value nn_values_string(nn_Alloc *alloc, const char *string, size_t len);
 nn_value nn_values_array(nn_Alloc *alloc, size_t len);
@@ -468,7 +501,7 @@ nn_value nn_values_table(nn_Alloc *alloc, size_t pairCount);
 void nn_return_nil(nn_computer *computer);
 void nn_return_integer(nn_computer *computer, intptr_t integer);
 void nn_return_number(nn_computer *computer, double number);
-void nn_return_boolean(nn_computer *computer, bool boolean);
+void nn_return_boolean(nn_computer *computer, nn_bool_t boolean);
 void nn_return_cstring(nn_computer *computer, const char *cstr);
 void nn_return_string(nn_computer *computer, const char *str, size_t len);
 nn_value nn_return_array(nn_computer *computer, size_t len);
@@ -486,7 +519,7 @@ nn_pair nn_values_getPair(nn_value obj, size_t idx);
 
 intptr_t nn_toInt(nn_value val);
 double nn_toNumber(nn_value val);
-bool nn_toBoolean(nn_value val);
+nn_bool_t nn_toBoolean(nn_value val);
 const char *nn_toCString(nn_value val);
 const char *nn_toString(nn_value val, size_t *len);
 
@@ -541,7 +574,7 @@ typedef struct nn_eeprom {
     void (*set)(nn_component *component, void *userdata, const char *buf, size_t len);
     int (*getData)(nn_component *component, void *userdata, char *buf);
     void (*setData)(nn_component *component, void *userdata, const char *buf, size_t len);
-    bool (*isReadonly)(nn_component *component, void *userdata);
+    nn_bool_t (*isReadonly)(nn_component *component, void *userdata);
     void (*makeReadonly)(nn_component *component, void *userdata);
 } nn_eeprom;
 nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom);
@@ -589,18 +622,18 @@ typedef struct nn_filesystem {
 
     size_t (*spaceUsed)(nn_component *component, void *userdata);
     size_t (*spaceTotal)(nn_component *component, void *userdata);
-    bool (*isReadOnly)(nn_component *component, void *userdata);
+    nn_bool_t (*isReadOnly)(nn_component *component, void *userdata);
 
     // general operations
     size_t (*size)(nn_component *component, void *userdata, const char *path);
-    bool (*remove)(nn_component *component, void *userdata, const char *path);
+    nn_bool_t (*remove)(nn_component *component, void *userdata, const char *path);
     size_t (*lastModified)(nn_component *component, void *userdata, const char *path);
     size_t (*rename)(nn_component *component, void *userdata, const char *from, const char *to);
-    bool (*exists)(nn_component *component, void *userdata, const char *path);
+    nn_bool_t (*exists)(nn_component *component, void *userdata, const char *path);
 
     // directory operations
-    bool (*isDirectory)(nn_component *component, void *userdata, const char *path);
-    bool (*makeDirectory)(nn_component *component, void *userdata, const char *path);
+    nn_bool_t (*isDirectory)(nn_component *component, void *userdata, const char *path);
+    nn_bool_t (*makeDirectory)(nn_component *component, void *userdata, const char *path);
     // The returned array should be allocated with the supplied allocator.
     // The strings should be null terminated. Use nn_strdup for the allocation to guarantee nn_deallocStr deallocates it correctly.
     // For the array, the *exact* size of the allocation should be sizeof(char *) * (*len),
@@ -611,8 +644,8 @@ typedef struct nn_filesystem {
 
     // file operations
     size_t (*open)(nn_component *component, void *userdata, const char *path, const char *mode);
-    bool (*close)(nn_component *component, void *userdata, int fd);
-    bool (*write)(nn_component *component, void *userdata, int fd, const char *buf, size_t len);
+    nn_bool_t (*close)(nn_component *component, void *userdata, int fd);
+    nn_bool_t (*write)(nn_component *component, void *userdata, int fd, const char *buf, size_t len);
     size_t (*read)(nn_component *component, void *userdata, int fd, char *buf, size_t required);
     // moved is an out pointer that says how many bytes the pointer moved.
     size_t (*seek)(nn_component *component, void *userdata, int fd, const char *whence, int off, int *moved);
@@ -678,8 +711,8 @@ typedef struct nn_scrchr_t {
     unsigned int codepoint;
     int fg;
     int bg;
-    bool isFgPalette;
-    bool isBgPalette;
+    nn_bool_t isFgPalette;
+    nn_bool_t isBgPalette;
 } nn_scrchr_t;
 
 nn_screen *nn_newScreen(nn_Context *context, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
@@ -727,14 +760,14 @@ void nn_getStd8BitPalette(int color[256]);
 void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel);
 nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y);
 
-bool nn_isDirty(nn_screen *screen);
-void nn_setDirty(nn_screen *screen, bool dirty);
-bool nn_isPrecise(nn_screen *screen);
-void nn_setPrecise(nn_screen *screen, bool precise);
-bool nn_isTouchModeInverted(nn_screen *screen);
-void nn_setTouchModeInverted(nn_screen *screen, bool touchModeInverted);
-bool nn_isOn(nn_screen *buffer);
-void nn_setOn(nn_screen *buffer, bool on);
+nn_bool_t nn_isDirty(nn_screen *screen);
+void nn_setDirty(nn_screen *screen, nn_bool_t dirty);
+nn_bool_t nn_isPrecise(nn_screen *screen);
+void nn_setPrecise(nn_screen *screen, nn_bool_t precise);
+nn_bool_t nn_isTouchModeInverted(nn_screen *screen);
+void nn_setTouchModeInverted(nn_screen *screen, nn_bool_t touchModeInverted);
+nn_bool_t nn_isOn(nn_screen *buffer);
+void nn_setOn(nn_screen *buffer, nn_bool_t on);
 
 nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
 

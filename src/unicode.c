@@ -1,5 +1,4 @@
 #include "neonucleus.h"
-#include <string.h>
 
 // both tables copied from: https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/scala/li/cil/oc/util/FontUtils.scala
 
@@ -159,11 +158,11 @@ static const unsigned char nn_unicode_charWidth_wide_table[] = {
     0, 15, 7, 7, 0, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static bool nn_unicode_is_continuation(unsigned char byte) {
+static nn_bool_t nn_unicode_is_continuation(unsigned char byte) {
     return (byte >> 6) == 0b10;
 }
 
-bool nn_unicode_validate(const char *b) {
+nn_bool_t nn_unicode_validate(const char *b) {
     const unsigned char* s = (const unsigned char*)b;
     while (*s) {
         if(s[0] <= 0x7F) {
@@ -219,7 +218,7 @@ char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepoin
         size_t codepointLen = 0;
         char c[NN_MAXIMUM_UNICODE_BUFFER];
         nn_unicode_codepointToChar(c, codepoint, &codepointLen);
-        memcpy(buf + j, c, codepointLen);
+        nn_memcpy(buf + j, c, codepointLen);
         j += codepointLen;
     }
     buf[j] = '\0';
@@ -302,7 +301,7 @@ void nn_unicode_codepointToChar(char *buffer, unsigned int codepoint, size_t *le
     size_t codepointSize = nn_unicode_codepointSize(codepoint);
     *len = codepointSize;
 
-    memset(buffer, 0, 4); // Clear static array
+    nn_memset(buffer, 0, 4); // Clear static array
 
     if (codepointSize == 1) {
         buffer[0] = (char)codepoint;

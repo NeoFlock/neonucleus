@@ -30,7 +30,7 @@ void nn_destroyComponentTable(nn_componentTable *table) {
     nn_dealloc(&alloc, table, sizeof(nn_componentTable));
 }
 
-void nn_defineMethod(nn_componentTable *table, const char *methodName, bool direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc) {
+void nn_defineMethod(nn_componentTable *table, const char *methodName, nn_bool_t direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc) {
     if(table->methodCount == NN_MAX_METHODS) return;
     nn_method method;
     method.method = methodFunc;
@@ -47,7 +47,7 @@ void nn_defineMethod(nn_componentTable *table, const char *methodName, bool dire
     table->methodCount++;
 }
 
-const char *nn_getTableMethod(nn_componentTable *table, size_t idx, bool *outDirect) {
+const char *nn_getTableMethod(nn_componentTable *table, size_t idx, nn_bool_t *outDirect) {
     if(idx >= table->methodCount) return NULL;
     nn_method method = table->methods[idx];
     if(outDirect != NULL) *outDirect = method.direct;
@@ -87,7 +87,7 @@ void *nn_getComponentUserdata(nn_component *component) {
     return component->statePtr;
 }
 
-bool nn_invokeComponentMethod(nn_component *component, const char *name) {
+nn_bool_t nn_invokeComponentMethod(nn_component *component, const char *name) {
     nn_componentTable *table = component->table;
     for(size_t i = 0; i < table->methodCount; i++) {
         nn_method method = table->methods[i];

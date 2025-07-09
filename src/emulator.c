@@ -76,7 +76,7 @@ int ne_eeprom_getData(nn_component *component, void *_, char *buf) {
 
 void ne_eeprom_setData(nn_component *component, void *_, const char *buf, size_t len) {}
     
-bool ne_eeprom_isReadonly(nn_component *component, void *userdata) {
+nn_bool_t ne_eeprom_isReadonly(nn_component *component, void *userdata) {
     return false;
 }
 

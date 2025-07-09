@@ -1,5 +1,4 @@
 #include "../neonucleus.h"
-#include <string.h>
 
 void nn_drive_destroy(void *_, nn_component *component, nn_drive *drive) {
     if(!nn_decRef(&drive->refc)) return;

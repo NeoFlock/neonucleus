@@ -173,35 +173,35 @@ nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y) {
     return screen->buffer[x + y * screen->maxWidth];
 }
 
-bool nn_isDirty(nn_screen *screen) {
+nn_bool_t nn_isDirty(nn_screen *screen) {
     return screen->isDirty;
 }
 
-void nn_setDirty(nn_screen *screen, bool dirty) {
+void nn_setDirty(nn_screen *screen, nn_bool_t dirty) {
     screen->isDirty = dirty;
 }
 
-bool nn_isPrecise(nn_screen *screen) {
+nn_bool_t nn_isPrecise(nn_screen *screen) {
     return screen->isPrecise;
 }
 
-void nn_setPrecise(nn_screen *screen, bool precise) {
+void nn_setPrecise(nn_screen *screen, nn_bool_t precise) {
     screen->isPrecise = precise;
 }
 
-bool nn_isTouchModeInverted(nn_screen *screen) {
+nn_bool_t nn_isTouchModeInverted(nn_screen *screen) {
     return screen->isTouchModeInverted;
 }
 
-void nn_setTouchModeInverted(nn_screen *screen, bool touchModeInverted) {
+void nn_setTouchModeInverted(nn_screen *screen, nn_bool_t touchModeInverted) {
     screen->isTouchModeInverted = touchModeInverted;
 }
 
-bool nn_isOn(nn_screen *buffer) {
+nn_bool_t nn_isOn(nn_screen *buffer) {
     return buffer->isOn;
 }
 
-void nn_setOn(nn_screen *buffer, bool on) {
+void nn_setOn(nn_screen *buffer, nn_bool_t on) {
     buffer->isOn = on;
 }
 
@@ -310,9 +310,9 @@ void nn_getStd8BitPalette(int color[256]) {
 }
 
 static int nni_4bit_colors[16];
-static bool nni_4bit_did = false;
+static nn_bool_t nni_4bit_did = false;
 static int nni_8bit_colors[256];
-static bool nni_8bit_did = false;
+static nn_bool_t nni_8bit_did = false;
 
 int nn_mapDepth(int color, int depth) {
     if(depth == 1) {

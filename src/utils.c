@@ -1,7 +1,4 @@
 #include "neonucleus.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #ifndef NN_BAREMETAL
 
@@ -41,6 +38,8 @@ void nn_dealloc(nn_Alloc *alloc, void *memory, size_t size) {
 }
 
 #ifndef NN_BAREMETAL
+
+#include <stdlib.h>
 
 static void *nn_libcAllocProc(void *_, void *ptr, size_t oldSize, size_t newSize, void *__) {
     if(newSize == 0) {
@@ -86,21 +85,22 @@ nn_Context nn_libcContext() {
 
 // Utilities, both internal and external
 char *nn_strdup(nn_Alloc *alloc, const char *s) {
-    size_t l = strlen(s);
+    size_t l = nn_strlen(s);
     char *m = nn_alloc(alloc, l+1);
     if(m == NULL) return m;
-    return strcpy(m, s);
+    return nn_strcpy(m, s);
 }
 
 void *nn_memdup(nn_Alloc *alloc, const void *buf, size_t len) {
     char *m = nn_alloc(alloc, len);
     if(m == NULL) return m;
-    return memcpy(m, buf, len);
+    nn_memcpy(m, buf, len);
+    return m;
 }
 
 void nn_deallocStr(nn_Alloc *alloc, char *s) {
     if(s == NULL) return;
-    nn_dealloc(alloc, s, strlen(s)+1);
+    nn_dealloc(alloc, s, nn_strlen(s)+1);
 }
 
 size_t nn_rand(nn_Rng *rng) {
@@ -210,9 +210,27 @@ void nn_memset(void *buf, unsigned char byte, size_t len) {
     for(size_t i = 0; i < len; i++) bytes[i] = byte;
 }
 
+void nn_memcpy(void *dest, const void *src, size_t len) {
+    char *destBytes = dest;
+    const char *srcBytes = src;
+    for(size_t i = 0; i < len; i++) {
+        destBytes[i] = srcBytes[i];
+    }
+}
+
+char *nn_strcpy(char *dest, const char *src) {
+    size_t i = 0;
+    while(src[i]) {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = 0;
+    return dest;
+}
+
 int nn_strcmp(const char *a, const char *b) {
     size_t i = 0;
-    while(true) {
+    while(NN_TRUE) {
         unsigned char ca = a[i];
         unsigned char cb = b[i];
 
@@ -225,6 +243,15 @@ int nn_strcmp(const char *a, const char *b) {
         if(ca == 0 && cb == 0) { // reached terminator
             return 0;
         }
+        i++;
+    }
+}
+
+const char *nn_strchr(const char *str, int ch) {
+    size_t i = 0;
+    while(NN_TRUE) {
+        if(str[i] == ch) return str + i;
+        if(str[i] == 0) return NULL;
         i++;
     }
 }

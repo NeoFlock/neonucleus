@@ -1,6 +1,5 @@
 #include "neonucleus.h"
 #include "universe.h"
-#include <string.h>
 
 nn_universe *nn_newUniverse(nn_Context ctx) {
     nn_universe *u = nn_alloc(&ctx.allocator, sizeof(nn_universe));
@@ -24,7 +23,7 @@ void nn_unsafeDeleteUniverse(nn_universe *universe) {
 
 void *nn_queryUserdata(nn_universe *universe, const char *name) {
     for(size_t i = 0; i < universe->udataLen; i++) {
-        if(strcmp(universe->udata[i].name, name) == 0) {
+        if(nn_strcmp(universe->udata[i].name, name) == 0) {
             return universe->udata[i].userdata;
         }
     }

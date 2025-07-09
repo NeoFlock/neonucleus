@@ -1,5 +1,4 @@
 #include "../neonucleus.h"
-#include <string.h>
 
 void nn_fs_destroy(void *_, nn_component *component, nn_filesystem *fs) {
     if(!nn_decRef(&fs->refc)) return;
@@ -9,12 +8,12 @@ void nn_fs_destroy(void *_, nn_component *component, nn_filesystem *fs) {
     }
 }
 
-bool nn_fs_illegalPath(const char *path) {
+nn_bool_t nn_fs_illegalPath(const char *path) {
     // absolute disaster
     const char *illegal = "\"\\:*?<>|";
 
     for(size_t i = 0; illegal[i] != '\0'; i++) {
-        if(strchr(path, illegal[i]) != NULL) return true;
+        if(nn_strchr(path, illegal[i]) != NULL) return true;
     }
     return false;
 }
@@ -271,7 +270,7 @@ void nn_fs_list(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         // operation succeeded
         nn_value arr = nn_values_array(alloc, fileCount);
         for(size_t i = 0; i < fileCount; i++) {
-            nn_values_set(arr, i, nn_values_string(alloc, files[i], strlen(files[i])));
+            nn_values_set(arr, i, nn_values_string(alloc, files[i], nn_strlen(files[i])));
             nn_deallocStr(alloc, files[i]);
         }
         nn_dealloc(alloc, files, sizeof(char *) * fileCount);
@@ -310,7 +309,7 @@ void nn_fs_close(nn_filesystem *fs, void *_, nn_component *component, nn_compute
     nn_value fdValue = nn_getArgument(computer, 0);
     size_t fd = nn_toInt(fdValue);
 
-    bool closed = fs->close(component, fs->userdata, fd);
+    nn_bool_t closed = fs->close(component, fs->userdata, fd);
     nn_return(computer, nn_values_boolean(closed));
 
     // do not ask where it comes from, balance is hard
@@ -331,7 +330,7 @@ void nn_fs_write(nn_filesystem *fs, void *_, nn_component *component, nn_compute
         return;
     }
 
-    bool closed = fs->write(component, fs->userdata, fd, buf, len);
+    nn_bool_t closed = fs->write(component, fs->userdata, fd, buf, len);
     nn_return(computer, nn_values_boolean(closed));
 
     // do not ask where it comes from, balance is hard
@@ -368,11 +367,11 @@ void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     nn_fs_seekCost(fs, nn_fs_countChunks(fs, readLen, component), component, computer);
 }
 
-bool nn_fs_validWhence(const char *s) {
+nn_bool_t nn_fs_validWhence(const char *s) {
     return
-        strcmp(s, "set") == 0 ||
-        strcmp(s, "cur") == 0 ||
-        strcmp(s, "end") == 0;
+        nn_strcmp(s, "set") == 0 ||
+        nn_strcmp(s, "cur") == 0 ||
+        nn_strcmp(s, "end") == 0;
 }
 
 void nn_fs_seek(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {

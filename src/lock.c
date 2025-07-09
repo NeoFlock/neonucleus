@@ -3,7 +3,7 @@
 #ifndef NN_BAREMETAL
 #include "tinycthread.h"
 
-static bool nni_libcLock(void *_, mtx_t *lock, int action, int flags) {
+static nn_bool_t nni_libcLock(void *_, mtx_t *lock, int action, int flags) {
     if(action == NN_LOCK_INIT) {
         mtx_init(lock, mtx_recursive);
     } else if(action == NN_LOCK_DEINIT) {
@@ -16,7 +16,7 @@ static bool nni_libcLock(void *_, mtx_t *lock, int action, int flags) {
     } else if(action == NN_LOCK_RELEASE) {
         mtx_unlock(lock);
     }
-    return true;
+    return NN_TRUE;
 }
 
 nn_LockManager nn_libcMutex() {
@@ -29,8 +29,8 @@ nn_LockManager nn_libcMutex() {
 
 #endif
 
-static bool nni_noLock(void *_, void *__, int action, int flags) {
-    return true;
+static nn_bool_t nni_noLock(void *_, void *__, int action, int flags) {
+    return NN_TRUE;
 }
 
 nn_LockManager nn_noMutex() {
@@ -53,8 +53,8 @@ void nn_lock(nn_Context *context, nn_guard *guard) {
     context->lockManager.proc(context->lockManager.userdata, guard, NN_LOCK_RETAIN, NN_LOCK_DEFAULT);
 }
 
-bool nn_tryLock(nn_Context *context, nn_guard *guard) {
-    if(guard == NULL) return true;
+nn_bool_t nn_tryLock(nn_Context *context, nn_guard *guard) {
+    if(guard == NULL) return NN_TRUE;
     return context->lockManager.proc(context->lockManager.userdata, guard, NN_LOCK_RETAIN, NN_LOCK_IMMEDIATE);
 }
 
@@ -77,10 +77,10 @@ void nn_incRef(nn_refc *refc) {
     nn_addRef(refc, 1);
 }
 
-bool nn_removeRef(nn_refc *refc, size_t count) {
+nn_bool_t nn_removeRef(nn_refc *refc, size_t count) {
     return ((*refc) -= count) == 0;
 }
 
-bool nn_decRef(nn_refc *refc) {
+nn_bool_t nn_decRef(nn_refc *refc) {
     return nn_removeRef(refc, 1);
 }

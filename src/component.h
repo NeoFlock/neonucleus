@@ -9,7 +9,7 @@ typedef struct nn_method {
     nn_componentMethod *method;
     void *userdata;
     char *doc;
-    bool direct;
+    nn_bool_t direct;
 } nn_method;
 
 typedef struct nn_componentTable {

@@ -10,7 +10,7 @@ typedef struct nn_signal {
 
 typedef struct nn_computer {
     char state;
-    bool allocatedError;
+    nn_bool_t allocatedError;
     char *err;
     void *userdata;
     nn_guard *lock;

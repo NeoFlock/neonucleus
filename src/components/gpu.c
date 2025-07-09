@@ -8,12 +8,12 @@ typedef struct nni_gpu {
     nn_gpuControl ctrl;
     int currentFg;
     int currentBg;
-    bool isFgPalette;
-    bool isBgPalette;
+    nn_bool_t isFgPalette;
+    nn_bool_t isBgPalette;
     // TODO: think about buffers and stuff
 } nni_gpu;
 
-bool nni_samePixel(nn_scrchr_t a, nn_scrchr_t b) {
+nn_bool_t nni_samePixel(nn_scrchr_t a, nn_scrchr_t b) {
     return
         a.codepoint == b.codepoint &&
         a.fg == b.fg &&
@@ -23,7 +23,7 @@ bool nni_samePixel(nn_scrchr_t a, nn_scrchr_t b) {
         ;
 }
 
-bool nni_inBounds(nni_gpu *gpu, int x, int y) {
+nn_bool_t nni_inBounds(nni_gpu *gpu, int x, int y) {
     if(gpu->currentScreen == NULL) return false;
     return
         x >= 0 &&
@@ -77,7 +77,7 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
         nn_setCError(computer, "bad argument #1 (address expected)");
         return;
     }
-    bool reset = false;
+    nn_bool_t reset = false;
     if(resetVal.tag == NN_VALUE_BOOL) reset = nn_toBoolean(resetVal);
 
     nn_component *c = nn_findComponent(computer, (nn_address)addr);
@@ -124,7 +124,7 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
     int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
     int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     const char *s = nn_toCString(nn_getArgument(computer, 2));
-    bool isVertical = nn_toBoolean(nn_getArgument(computer, 3));
+    nn_bool_t isVertical = nn_toBoolean(nn_getArgument(computer, 3));
 
     if(s == NULL) {
         nn_setCError(computer, "bad argument #3 (string expected in set)");
@@ -201,7 +201,7 @@ void nni_gpu_setResolution(nni_gpu *gpu, void *_, nn_component *component, nn_co
     int w = nn_toInt(nn_getArgument(computer, 0));
     int h = nn_toInt(nn_getArgument(computer, 1));
 
-    bool changed = w != lw || h != lh;
+    nn_bool_t changed = w != lw || h != lh;
 
     if(w <= 0) w = 1;
     if(h <= 0) h = 1;
@@ -224,7 +224,7 @@ void nni_gpu_setResolution(nni_gpu *gpu, void *_, nn_component *component, nn_co
 void nni_gpu_setBackground(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
     int color = nn_toInt(nn_getArgument(computer, 0));
-    bool isPalette = nn_toBoolean(nn_getArgument(computer, 1));
+    nn_bool_t isPalette = nn_toBoolean(nn_getArgument(computer, 1));
 
     if(isPalette && (color < 0 || color >= gpu->currentScreen->paletteColors)) {
         nn_setCError(computer, "invalid palette index");
@@ -256,7 +256,7 @@ void nni_gpu_getBackground(nni_gpu *gpu, void *_, nn_component *component, nn_co
 void nni_gpu_setForeground(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
     int color = nn_toInt(nn_getArgument(computer, 0));
-    bool isPalette = nn_toBoolean(nn_getArgument(computer, 1));
+    nn_bool_t isPalette = nn_toBoolean(nn_getArgument(computer, 1));
 
     if(isPalette && (color < 0 || color >= gpu->currentScreen->paletteColors)) {
         nn_setCError(computer, "invalid palette index");

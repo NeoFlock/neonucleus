@@ -1,5 +1,4 @@
 #include "neonucleus.h"
-#include <string.h>
 
 nn_value nn_values_nil() {
     return (nn_value) {.tag = NN_VALUE_NIL};
@@ -13,7 +12,7 @@ nn_value nn_values_number(double num) {
     return (nn_value) {.tag = NN_VALUE_NUMBER, .number = num};
 }
 
-nn_value nn_values_boolean(bool boolean) {
+nn_value nn_values_boolean(nn_bool_t boolean) {
     return (nn_value) {.tag = NN_VALUE_BOOL, .boolean = boolean};
 }
 
@@ -26,7 +25,7 @@ nn_value nn_values_string(nn_Alloc *alloc, const char *string, size_t len) {
     if(buf == NULL) {
         return nn_values_nil();
     }
-    memcpy(buf, string, len);
+    nn_memcpy(buf, string, len);
     buf[len] = '\0';
 
     nn_string *s = nn_alloc(alloc, sizeof(nn_string));
@@ -171,7 +170,7 @@ double nn_toNumber(nn_value val) {
     return 0;
 }
 
-bool nn_toBoolean(nn_value val) {
+nn_bool_t nn_toBoolean(nn_value val) {
     if(val.tag == NN_VALUE_NIL) return false;
     if(val.tag == NN_VALUE_BOOL) return val.boolean;
     return true;
@@ -189,7 +188,7 @@ const char *nn_toString(nn_value val, size_t *len) {
 
     if(val.tag == NN_VALUE_CSTR) {
         c = val.cstring;
-        l = strlen(c);
+        l = nn_strlen(c);
     }
     if(val.tag == NN_VALUE_STR) {
         c = val.string->data;
@@ -212,7 +211,7 @@ size_t nn_measurePacketSize(nn_value *vals, size_t len) {
             if(len == 0) len = 1; // ask OC
             size += len;
         } else if(val.tag == NN_VALUE_CSTR) {
-            size_t len = strlen(val.cstring);
+            size_t len = nn_strlen(val.cstring);
             if(len == 0) len = 1; // ask OC
             size += len;
         } else if(val.tag == NN_VALUE_BOOL || val.tag == NN_VALUE_NIL) {

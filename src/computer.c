@@ -211,7 +211,7 @@ const char *nn_indexUser(nn_computer *computer, size_t idx) {
     return computer->users[idx];
 }
 
-bool nn_isUser(nn_computer *computer, const char *name) {
+nn_bool_t nn_isUser(nn_computer *computer, const char *name) {
     if(computer->userCount == 0) return true;
     for(size_t i = 0; i < computer->userCount; i++) {
         if(nn_strcmp(computer->users[i], name) == 0) return true;
@@ -236,7 +236,7 @@ double nn_getCallCost(nn_computer *computer) {
     return computer->callCost;
 }
 
-bool nn_isOverworked(nn_computer *computer) {
+nn_bool_t nn_isOverworked(nn_computer *computer) {
     return computer->state == NN_STATE_OVERWORKED;
 }
 
@@ -319,7 +319,7 @@ void nn_removeHeat(nn_computer *computer, double heat) {
     if(computer->temperature < computer->roomTemperature) computer->temperature = computer->roomTemperature;
 }
 
-bool nn_isOverheating(nn_computer *computer) {
+nn_bool_t nn_isOverheating(nn_computer *computer) {
     return computer->temperature > NN_OVERHEAT_MIN;
 }
 
@@ -486,7 +486,7 @@ void nn_return_number(nn_computer *computer, double number) {
     nn_return(computer, nn_values_number(number));
 }
 
-void nn_return_boolean(nn_computer *computer, bool boolean) {
+void nn_return_boolean(nn_computer *computer, nn_bool_t boolean) {
     nn_return(computer, nn_values_boolean(boolean));
 }
 
