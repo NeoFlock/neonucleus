@@ -225,6 +225,7 @@ int nn_strcmp(const char *a, const char *b) {
         if(ca == 0 && cb == 0) { // reached terminator
             return 0;
         }
+        i++;
     }
 }
 

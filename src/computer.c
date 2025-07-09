@@ -2,7 +2,6 @@
 #include "component.h"
 #include "universe.h"
 #include "neonucleus.h"
-#include <string.h>
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit) {
     nn_Alloc *alloc = &universe->ctx.allocator;
@@ -197,7 +196,7 @@ void nn_deleteUser(nn_computer *computer, const char *name) {
     size_t j = 0;
     for(size_t i = 0; i < computer->userCount; i++) {
         char *user = computer->users[i];
-        if(strcmp(user, name) == 0) {
+        if(nn_strcmp(user, name) == 0) {
             nn_deallocStr(&computer->universe->ctx.allocator, user);
         } else {
             computer->users[j] = user;
@@ -215,7 +214,7 @@ const char *nn_indexUser(nn_computer *computer, size_t idx) {
 bool nn_isUser(nn_computer *computer, const char *name) {
     if(computer->userCount == 0) return true;
     for(size_t i = 0; i < computer->userCount; i++) {
-        if(strcmp(computer->users[i], name) == 0) return true;
+        if(nn_strcmp(computer->users[i], name) == 0) return true;
     }
     return false;
 }
@@ -383,7 +382,7 @@ nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slo
 
 void nn_removeComponent(nn_computer *computer, nn_address address) {
     for(size_t i = 0; i < computer->componentLen; i++) {
-        if(strcmp(computer->components[i].address, address) == 0) {
+        if(nn_strcmp(computer->components[i].address, address) == 0) {
             nn_destroyComponent(computer->components + i);
         }
     }
@@ -400,7 +399,7 @@ void nn_destroyComponent(nn_component *component) {
 nn_component *nn_findComponent(nn_computer *computer, nn_address address) {
     for(size_t i = 0; i < computer->componentLen; i++) {
         if(computer->components[i].address == NULL) continue; // empty slot
-        if(strcmp(computer->components[i].address, address) == 0) {
+        if(nn_strcmp(computer->components[i].address, address) == 0) {
             return computer->components + i;
         }
     }
