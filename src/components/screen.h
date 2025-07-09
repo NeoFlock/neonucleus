@@ -26,7 +26,7 @@ typedef struct nn_screen {
     nn_bool_t isPrecise;
     nn_bool_t isDirty;
     nn_address keyboards[NN_MAX_SCREEN_KEYBOARDS];
-    size_t keyboardCount;
+    nn_size_t keyboardCount;
 } nn_screen;
 
 #endif

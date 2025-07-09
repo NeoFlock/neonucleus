@@ -15,14 +15,14 @@ nn_Alloc *nn_getAllocator(nn_universe *universe) {
 }
 
 void nn_unsafeDeleteUniverse(nn_universe *universe) {
-    for(size_t i = 0; i < universe->udataLen; i++) {
+    for(nn_size_t i = 0; i < universe->udataLen; i++) {
         nn_deallocStr(&universe->ctx.allocator, universe->udata[i].name);
     }
     nn_dealloc(&universe->ctx.allocator, universe, sizeof(nn_universe));
 }
 
 void *nn_queryUserdata(nn_universe *universe, const char *name) {
-    for(size_t i = 0; i < universe->udataLen; i++) {
+    for(nn_size_t i = 0; i < universe->udataLen; i++) {
         if(nn_strcmp(universe->udata[i].name, name) == 0) {
             return universe->udata[i].userdata;
         }
@@ -33,7 +33,7 @@ void *nn_queryUserdata(nn_universe *universe, const char *name) {
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data) {
     if(universe->udataLen == NN_MAX_USERDATA) return; // prevent overflow
 
-    size_t idx = universe->udataLen;
+    nn_size_t idx = universe->udataLen;
     char *allocName = nn_strdup(&universe->ctx.allocator, name);
     if(allocName == NULL) return;
 

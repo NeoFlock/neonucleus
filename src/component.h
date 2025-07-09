@@ -19,7 +19,7 @@ typedef struct nn_componentTable {
     nn_componentConstructor *constructor;
     nn_componentDestructor *destructor;
     nn_method methods[NN_MAX_METHODS];
-    size_t methodCount;
+    nn_size_t methodCount;
 } nn_componentTable;
 
 typedef struct nn_component {

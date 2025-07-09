@@ -4,7 +4,7 @@ nn_eepromControl nn_eeprom_getControl(nn_component *component, nn_eeprom *eeprom
     return eeprom->control(component, eeprom->userdata);
 }
 
-static void nn_eeprom_readCost(nn_component *component, size_t bytesRead) {
+static void nn_eeprom_readCost(nn_component *component, nn_size_t bytesRead) {
     nn_eepromControl control = nn_eeprom_getControl(component, nn_getComponentUserdata(component));
     nn_computer *computer = nn_getComputerOfComponent(component);
 
@@ -13,7 +13,7 @@ static void nn_eeprom_readCost(nn_component *component, size_t bytesRead) {
     nn_simulateBufferedIndirect(component, bytesRead, control.bytesReadPerTick);
 }
 
-static void nn_eeprom_writeCost(nn_component *component, size_t bytesWritten) {
+static void nn_eeprom_writeCost(nn_component *component, nn_size_t bytesWritten) {
     nn_eepromControl control = nn_eeprom_getControl(component, nn_getComponentUserdata(component));
     nn_computer *computer = nn_getComputerOfComponent(component);
 
@@ -40,7 +40,7 @@ void nn_eeprom_getDataSize(nn_eeprom *eeprom, void *_, nn_component *component, 
 
 void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     char buf[NN_LABEL_SIZE];
-    size_t l = NN_LABEL_SIZE;
+    nn_size_t l = NN_LABEL_SIZE;
     eeprom->getLabel(component, eeprom->userdata, buf, &l);
     if(l == 0) {
         nn_return(computer, nn_values_nil());
@@ -53,7 +53,7 @@ void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
 }
 
 void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    size_t l = 0;
+    nn_size_t l = 0;
     nn_value label = nn_getArgument(computer, 0);
     const char *buf = nn_toString(label, &l);
     if(buf == NULL) {
@@ -68,14 +68,14 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
 }
 
 void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    size_t cap = eeprom->getSize(component, eeprom->userdata);
+    nn_size_t cap = eeprom->getSize(component, eeprom->userdata);
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     char *buf = nn_alloc(alloc, cap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
     }
-    size_t len = eeprom->get(component, eeprom->userdata, buf);
+    nn_size_t len = eeprom->get(component, eeprom->userdata, buf);
     nn_return_string(computer, buf, len);
     nn_dealloc(alloc, buf, cap);
 
@@ -84,7 +84,7 @@ void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
 
 void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_value data = nn_getArgument(computer, 0);
-    size_t len;
+    nn_size_t len;
     const char *buf = nn_toString(data, &len);
     if(len > eeprom->getSize(component, eeprom->userdata)) {
         nn_setCError(computer, "out of space");
@@ -105,7 +105,7 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
 }
 
 void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    size_t cap = eeprom->getDataSize(component, eeprom->userdata);
+    nn_size_t cap = eeprom->getDataSize(component, eeprom->userdata);
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     char *buf = nn_alloc(alloc, cap);
     if(buf == NULL) {
@@ -125,7 +125,7 @@ void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
 
 void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     nn_value data = nn_getArgument(computer, 0);
-    size_t len = 0;
+    nn_size_t len = 0;
     const char *buf = nn_toString(data, &len);
     if(buf == NULL) {
         if(data.tag == NN_VALUE_NIL) {
@@ -154,8 +154,8 @@ void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component,
 }
 
 void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    size_t dataCap = eeprom->getDataSize(component, eeprom->userdata);
-    size_t codeCap = eeprom->getSize(component, eeprom->userdata);
+    nn_size_t dataCap = eeprom->getDataSize(component, eeprom->userdata);
+    nn_size_t codeCap = eeprom->getSize(component, eeprom->userdata);
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     char *buf = nn_alloc(alloc, dataCap + codeCap);
     if(buf == NULL) {

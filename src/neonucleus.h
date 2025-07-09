@@ -1,11 +1,31 @@
 #ifndef NEONUCLEUS_H
 #define NEONUCLEUS_H
 
+#ifndef NULL
+#ifdef __cplusplus
+#define NULL nullptr
+#else
+#define NULL ((void *)0)
+#endif
+#endif
+
+#ifdef NN_BAREMETAL
+#if defined(__LP64__) || defined(_LP64)
+    // long is ptr sized
+    typedef long nn_intptr_t;
+    typedef unsigned long nn_size_t;
+#else
+    typedef long long nn_intptr_t;
+    typedef unsigned long long nn_size_t;
+#endif
+#else
+#include <stdbool.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
-#ifndef NN_NEONUCLEUS
-#include <stdbool.h>
+typedef intptr_t nn_intptr_t;
+typedef size_t nn_size_t;
 #endif
 
 #ifdef bool
@@ -33,10 +53,6 @@ typedef unsigned char nn_bool_t;
 #define NN_FALSE 0
 #define false NN_FALSE
 
-#endif
-
-#ifdef __cplusplus
-extern "C" {
 #endif
 
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
@@ -76,6 +92,11 @@ extern "C" {
     #define NN_POSIX
 #endif
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // The entire C API, in one header
 
 // Magic limits
@@ -103,9 +124,9 @@ extern "C" {
 
 typedef struct nn_guard nn_guard;
 #ifdef __STDC_NO_ATOMICS__
-typedef atomic_size_t nn_refc;
+typedef size_t nn_refc;
 #else
-typedef _Atomic(size_t) nn_refc;
+typedef _Atomic(nn_size_t) nn_refc;
 #endif
 typedef struct nn_universe nn_universe;
 typedef struct nn_computer nn_computer;
@@ -116,11 +137,11 @@ typedef struct nn_architecture {
     const char *archName;
     void *(*setup)(nn_computer *computer, void *userdata);
     void (*teardown)(nn_computer *computer, void *state, void *userdata);
-    size_t (*getMemoryUsage)(nn_computer *computer, void *state, void *userdata);
+    nn_size_t (*getMemoryUsage)(nn_computer *computer, void *state, void *userdata);
     void (*tick)(nn_computer *computer, void *state, void *userdata);
     /* Pointer returned should be allocated with nn_malloc or nn_realloc, so it can be freed with nn_free */
-    char *(*serialize)(nn_computer *computer, void *state, void *userdata, size_t *len);
-    void (*deserialize)(nn_computer *computer, const char *data, size_t len, void *state, void *userdata);
+    char *(*serialize)(nn_computer *computer, void *state, void *userdata, nn_size_t *len);
+    void (*deserialize)(nn_computer *computer, const char *data, nn_size_t len, void *state, void *userdata);
 } nn_architecture;
 typedef char *nn_address;
 
@@ -128,7 +149,7 @@ typedef char *nn_address;
 // A zero malloc is never called, the proc address itself is returned, which is ignored when freeing.
 // A free is a non-null ptr, with a non-zero oldSize, but a newSize of 0.
 // A realloc is a non-null ptr, with a non-zero oldSize, and a non-zero newSize.
-typedef void *nn_AllocProc(void *userdata, void *ptr, size_t oldSize, size_t newSize, void *extra);
+typedef void *nn_AllocProc(void *userdata, void *ptr, nn_size_t oldSize, nn_size_t newSize, void *extra);
 
 typedef struct nn_Alloc {
     void *userdata;
@@ -147,7 +168,7 @@ typedef nn_bool_t nn_LockProc(void *userdata, void *lock, int action, int flags)
 
 typedef struct nn_LockManager {
     void *userdata;
-    size_t lockSize;
+    nn_size_t lockSize;
     nn_LockProc *proc;
 } nn_LockManager;
 
@@ -158,15 +179,15 @@ typedef struct nn_Clock {
     nn_ClockProc *proc;
 } nn_Clock;
 
-typedef size_t nn_RngProc(void *userdata);
+typedef nn_size_t nn_RngProc(void *userdata);
 
 typedef struct nn_Rng {
     void *userdata;
-    size_t maximum;
+    nn_size_t maximum;
     nn_RngProc *proc;
 } nn_Rng;
 
-size_t nn_rand(nn_Rng *rng);
+nn_size_t nn_rand(nn_Rng *rng);
 // returns from 0 to 1 (inclusive)
 double nn_randf(nn_Rng *rng);
 // returns from 0 to 1 (exclusive)
@@ -181,12 +202,12 @@ typedef struct nn_Context {
 
 // libc-like utils
 
-void nn_memset(void *buf, unsigned char byte, size_t len);
-void nn_memcpy(void *dest, const void *src, size_t len);
+void nn_memset(void *buf, unsigned char byte, nn_size_t len);
+void nn_memcpy(void *dest, const void *src, nn_size_t len);
 char *nn_strcpy(char *dest, const char *src);
 const char *nn_strchr(const char *str, int ch);
 int nn_strcmp(const char *a, const char *b);
-size_t nn_strlen(const char *a);
+nn_size_t nn_strlen(const char *a);
 
 #ifndef NN_BAREMETAL
 nn_Alloc nn_libcAllocator();
@@ -211,29 +232,29 @@ nn_LockManager nn_noMutex();
 
 typedef struct nn_string {
     char *data;
-    size_t len;
-    size_t refc;
+    nn_size_t len;
+    nn_size_t refc;
     nn_Alloc alloc;
 } nn_string;
 
 typedef struct nn_array {
     struct nn_value *values;
-    size_t len;
-    size_t refc;
+    nn_size_t len;
+    nn_size_t refc;
     nn_Alloc alloc;
 } nn_array;
 
 typedef struct nn_object {
     struct nn_pair *pairs;
-    size_t len;
-    size_t refc;
+    nn_size_t len;
+    nn_size_t refc;
     nn_Alloc alloc;
 } nn_table;
 
 typedef struct nn_value {
-    size_t tag;
+    nn_size_t tag;
     union {
-        intptr_t integer;
+        nn_intptr_t integer;
         double number;
         nn_bool_t boolean;
         const char *cstring;
@@ -249,13 +270,13 @@ typedef struct nn_pair {
 } nn_pair;
 
 // we expose the allocator because of some utilities
-void *nn_alloc(nn_Alloc *alloc, size_t size);
-void *nn_resize(nn_Alloc *alloc, void *memory, size_t oldSize, size_t newSize);
-void nn_dealloc(nn_Alloc *alloc, void *memory, size_t size);
+void *nn_alloc(nn_Alloc *alloc, nn_size_t size);
+void *nn_resize(nn_Alloc *alloc, void *memory, nn_size_t oldSize, nn_size_t newSize);
+void nn_dealloc(nn_Alloc *alloc, void *memory, nn_size_t size);
 
 // Utilities, both internal and external
 char *nn_strdup(nn_Alloc *alloc, const char *s);
-void *nn_memdup(nn_Alloc *alloc, const void *buf, size_t len);
+void *nn_memdup(nn_Alloc *alloc, const void *buf, nn_size_t len);
 void nn_deallocStr(nn_Alloc *alloc, char *s);
 
 nn_guard *nn_newGuard(nn_Context *context);
@@ -264,10 +285,10 @@ nn_bool_t nn_tryLock(nn_Context *context, nn_guard *guard);
 void nn_unlock(nn_Context *context, nn_guard *guard);
 void nn_deleteGuard(nn_Context *context, nn_guard *guard);
 
-void nn_addRef(nn_refc *refc, size_t count);
+void nn_addRef(nn_refc *refc, nn_size_t count);
 void nn_incRef(nn_refc *refc);
 /* Returns true if the object should be freed */
-nn_bool_t nn_removeRef(nn_refc *refc, size_t count);
+nn_bool_t nn_removeRef(nn_refc *refc, nn_size_t count);
 /* Returns true if the object should be freed */
 nn_bool_t nn_decRef(nn_refc *refc);
 
@@ -275,15 +296,15 @@ nn_bool_t nn_decRef(nn_refc *refc);
 
 nn_bool_t nn_unicode_validate(const char *s);
 // returned string must be nn_deallocStr()'d
-char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepointCount);
+char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, nn_size_t codepointCount);
 // returned array must be nn_dealloc()'d
-unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, size_t *len);
-size_t nn_unicode_len(const char *s);
-unsigned int nn_unicode_codepointAt(const char *s, size_t byteOffset);
-size_t nn_unicode_codepointSize(unsigned int codepoint);
-void nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], unsigned int codepoint, size_t *len);
-size_t nn_unicode_charWidth(unsigned int codepoint);
-size_t nn_unicode_wlen(const char *s);
+unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, nn_size_t *len);
+nn_size_t nn_unicode_len(const char *s);
+unsigned int nn_unicode_codepointAt(const char *s, nn_size_t byteOffset);
+nn_size_t nn_unicode_codepointSize(unsigned int codepoint);
+void nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], unsigned int codepoint, nn_size_t *len);
+nn_size_t nn_unicode_charWidth(unsigned int codepoint);
+nn_size_t nn_unicode_wlen(const char *s);
 unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
 // returned string must be nn_deallocStr()'d
 char *nn_unicode_upper(nn_Alloc *alloc, const char *s);
@@ -294,40 +315,40 @@ char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
 // Data card stuff
 
 // Hashing
-void nn_data_crc32(const char *inBuf, size_t buflen, char outBuf[4]);
-void nn_data_md5(const char *inBuf, size_t buflen, char outBuf[16]);
-void nn_data_sha256(const char *inBuf, size_t buflen, char outBuf[32]);
+void nn_data_crc32(const char *inBuf, nn_size_t buflen, char outBuf[4]);
+void nn_data_md5(const char *inBuf, nn_size_t buflen, char outBuf[16]);
+void nn_data_sha256(const char *inBuf, nn_size_t buflen, char outBuf[32]);
 
 // Base64
 
 // The initial value of *len is the size of buf, with the new value being the length of the returned buffer.
-char *nn_data_decode64(nn_Alloc *alloc, const char *buf, size_t *len);
-char *nn_data_encode64(nn_Alloc *alloc, const char *buf, size_t *len);
+char *nn_data_decode64(nn_Alloc *alloc, const char *buf, nn_size_t *len);
+char *nn_data_encode64(nn_Alloc *alloc, const char *buf, nn_size_t *len);
 
 // Deflate/inflate
 
-char *nn_data_deflate(nn_Alloc *alloc, const char *buf, size_t *len);
-char *nn_data_inflate(nn_Alloc *alloc, const char *buf, size_t *len);
+char *nn_data_deflate(nn_Alloc *alloc, const char *buf, nn_size_t *len);
+char *nn_data_inflate(nn_Alloc *alloc, const char *buf, nn_size_t *len);
 
 // AES
-char *nn_data_aes_encrypt(nn_Alloc *alloc, const char *buf, size_t *len, const char key[16], const char iv[16]);
-char *nn_data_aes_decrypt(nn_Alloc *alloc, const char *buf, size_t *len, const char key[16], const char iv[16]);
+char *nn_data_aes_encrypt(nn_Alloc *alloc, const char *buf, nn_size_t *len, const char key[16], const char iv[16]);
+char *nn_data_aes_decrypt(nn_Alloc *alloc, const char *buf, nn_size_t *len, const char key[16], const char iv[16]);
 
 // ECDH
 
 // if longKeys is on, instead of taking 32 bytes, the keys take up 48 bytes.
-size_t nn_data_ecdh_keylen(nn_bool_t longKeys);
+nn_size_t nn_data_ecdh_keylen(nn_bool_t longKeys);
 // use nn_data_ecdh_keylen to figure out the expected length for the buffers
 void nn_data_ecdh_generateKeyPair(nn_Context *context, nn_bool_t longKeys, char *publicKey, char *privateKey);
 
-nn_bool_t nn_data_ecdsa_check(nn_bool_t longKeys, const char *buf, size_t buflen, const char *sig, size_t siglen);
-char *nn_data_ecdsa_sign(nn_Alloc *alloc, const char *buf, size_t *buflen, const char *key, nn_bool_t longKeys);
+nn_bool_t nn_data_ecdsa_check(nn_bool_t longKeys, const char *buf, nn_size_t buflen, const char *sig, nn_size_t siglen);
+char *nn_data_ecdsa_sign(nn_Alloc *alloc, const char *buf, nn_size_t *buflen, const char *key, nn_bool_t longKeys);
 
-char *nn_data_ecdh_getSharedKey(nn_Alloc *alloc, size_t *len, const char *privateKey, const char *publicKey, nn_bool_t longKeys);
+char *nn_data_ecdh_getSharedKey(nn_Alloc *alloc, nn_size_t *len, const char *privateKey, const char *publicKey, nn_bool_t longKeys);
 
 // ECC
-char *nn_data_hamming_encode(nn_Alloc *alloc, const char *buf, size_t *len);
-char *nn_data_hamming_decode(nn_Alloc *alloc, const char *buf, size_t *len);
+char *nn_data_hamming_encode(nn_Alloc *alloc, const char *buf, nn_size_t *len);
+char *nn_data_hamming_decode(nn_Alloc *alloc, const char *buf, nn_size_t *len);
 
 // Universe stuff
 
@@ -342,26 +363,26 @@ void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
 double nn_getTime(nn_universe *universe);
 
-nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit);
+nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, nn_size_t memoryLimit, nn_size_t componentLimit);
 nn_universe *nn_getUniverse(nn_computer *computer);
 int nn_tickComputer(nn_computer *computer);
 double nn_getUptime(nn_computer *computer);
-size_t nn_getComputerMemoryUsed(nn_computer *computer);
-size_t nn_getComputerMemoryTotal(nn_computer *computer);
+nn_size_t nn_getComputerMemoryUsed(nn_computer *computer);
+nn_size_t nn_getComputerMemoryTotal(nn_computer *computer);
 void *nn_getComputerUserData(nn_computer *computer);
 void nn_addSupportedArchitecture(nn_computer *computer, nn_architecture *arch);
-nn_architecture *nn_getSupportedArchitecture(nn_computer *computer, size_t idx);
+nn_architecture *nn_getSupportedArchitecture(nn_computer *computer, nn_size_t idx);
 nn_architecture *nn_getArchitecture(nn_computer *computer);
 nn_architecture *nn_getNextArchitecture(nn_computer *computer);
 void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch);
 void nn_deleteComputer(nn_computer *computer);
-const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len);
-nn_value nn_fetchSignalValue(nn_computer *computer, size_t index);
-size_t nn_signalSize(nn_computer *computer);
+const char *nn_pushSignal(nn_computer *computer, nn_value *values, nn_size_t len);
+nn_value nn_fetchSignalValue(nn_computer *computer, nn_size_t index);
+nn_size_t nn_signalSize(nn_computer *computer);
 void nn_popSignal(nn_computer *computer);
 const char *nn_addUser(nn_computer *computer, const char *name);
 void nn_deleteUser(nn_computer *computer, const char *name);
-const char *nn_indexUser(nn_computer *computer, size_t idx);
+const char *nn_indexUser(nn_computer *computer, nn_size_t idx);
 nn_bool_t nn_isUser(nn_computer *computer, const char *name);
 void nn_setCallBudget(nn_computer *computer, double callBudget);
 double nn_getCallBudget(nn_computer *computer);
@@ -371,8 +392,8 @@ nn_bool_t nn_isOverworked(nn_computer *computer);
 void nn_triggerIndirect(nn_computer *computer);
 
 /* The memory returned can be freed with nn_free() */
-char *nn_serializeProgram(nn_computer *computer, size_t *len);
-void nn_deserializeProgram(nn_computer *computer, const char *memory, size_t len);
+char *nn_serializeProgram(nn_computer *computer, nn_size_t *len);
+void nn_deserializeProgram(nn_computer *computer, const char *memory, nn_size_t len);
 
 void nn_lockComputer(nn_computer *computer);
 void nn_unlockComputer(nn_computer *computer);
@@ -460,7 +481,7 @@ nn_component *nn_findComponent(nn_computer *computer, nn_address address);
 // an internal structure. YOU SHOULD NOT ADD OR REMOVE COMPONENTS WHILE ITERATING.
 // the internalIndex SHOULD BE INITIALIZED TO 0.
 // Returns NULL at the end
-nn_component *nn_iterComponent(nn_computer *computer, size_t *internalIndex);
+nn_component *nn_iterComponent(nn_computer *computer, nn_size_t *internalIndex);
 
 // Component VTable stuff
 
@@ -471,7 +492,7 @@ typedef void nn_componentMethod(void *componentUserdata, void *methodUserdata, n
 nn_componentTable *nn_newComponentTable(nn_Alloc *alloc, const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
 void nn_destroyComponentTable(nn_componentTable *table);
 void nn_defineMethod(nn_componentTable *table, const char *methodName, nn_bool_t direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc);
-const char *nn_getTableMethod(nn_componentTable *table, size_t idx, nn_bool_t *outDirect);
+const char *nn_getTableMethod(nn_componentTable *table, nn_size_t idx, nn_bool_t *outDirect);
 const char *nn_methodDoc(nn_componentTable *table, const char *methodName);
 
 // Component calling
@@ -482,52 +503,52 @@ void nn_simulateBufferedIndirect(nn_component *component, double amount, double 
 void nn_resetCall(nn_computer *computer);
 void nn_addArgument(nn_computer *computer, nn_value arg);
 void nn_return(nn_computer *computer, nn_value val);
-nn_value nn_getArgument(nn_computer *computer, size_t idx);
-nn_value nn_getReturn(nn_computer *computer, size_t idx);
-size_t nn_getArgumentCount(nn_computer *computer);
-size_t nn_getReturnCount(nn_computer *computer);
+nn_value nn_getArgument(nn_computer *computer, nn_size_t idx);
+nn_value nn_getReturn(nn_computer *computer, nn_size_t idx);
+nn_size_t nn_getArgumentCount(nn_computer *computer);
+nn_size_t nn_getReturnCount(nn_computer *computer);
 
 // Value stuff
 
 nn_value nn_values_nil();
-nn_value nn_values_integer(intptr_t integer);
+nn_value nn_values_integer(nn_intptr_t integer);
 nn_value nn_values_number(double num);
 nn_value nn_values_boolean(nn_bool_t boolean);
 nn_value nn_values_cstring(const char *string);
-nn_value nn_values_string(nn_Alloc *alloc, const char *string, size_t len);
-nn_value nn_values_array(nn_Alloc *alloc, size_t len);
-nn_value nn_values_table(nn_Alloc *alloc, size_t pairCount);
+nn_value nn_values_string(nn_Alloc *alloc, const char *string, nn_size_t len);
+nn_value nn_values_array(nn_Alloc *alloc, nn_size_t len);
+nn_value nn_values_table(nn_Alloc *alloc, nn_size_t pairCount);
 
 void nn_return_nil(nn_computer *computer);
-void nn_return_integer(nn_computer *computer, intptr_t integer);
+void nn_return_integer(nn_computer *computer, nn_intptr_t integer);
 void nn_return_number(nn_computer *computer, double number);
 void nn_return_boolean(nn_computer *computer, nn_bool_t boolean);
 void nn_return_cstring(nn_computer *computer, const char *cstr);
-void nn_return_string(nn_computer *computer, const char *str, size_t len);
-nn_value nn_return_array(nn_computer *computer, size_t len);
-nn_value nn_return_table(nn_computer *computer, size_t len);
+void nn_return_string(nn_computer *computer, const char *str, nn_size_t len);
+nn_value nn_return_array(nn_computer *computer, nn_size_t len);
+nn_value nn_return_table(nn_computer *computer, nn_size_t len);
 
-size_t nn_values_getType(nn_value val);
+nn_size_t nn_values_getType(nn_value val);
 nn_value nn_values_retain(nn_value val);
 void nn_values_drop(nn_value val);
 
-void nn_values_set(nn_value arr, size_t idx, nn_value val);
-nn_value nn_values_get(nn_value arr, size_t idx);
+void nn_values_set(nn_value arr, nn_size_t idx, nn_value val);
+nn_value nn_values_get(nn_value arr, nn_size_t idx);
 
-void nn_values_setPair(nn_value obj, size_t idx, nn_value key, nn_value val);
-nn_pair nn_values_getPair(nn_value obj, size_t idx);
+void nn_values_setPair(nn_value obj, nn_size_t idx, nn_value key, nn_value val);
+nn_pair nn_values_getPair(nn_value obj, nn_size_t idx);
 
-intptr_t nn_toInt(nn_value val);
+nn_intptr_t nn_toInt(nn_value val);
 double nn_toNumber(nn_value val);
 nn_bool_t nn_toBoolean(nn_value val);
 const char *nn_toCString(nn_value val);
-const char *nn_toString(nn_value val, size_t *len);
+const char *nn_toString(nn_value val, nn_size_t *len);
 
 /*
  * Computes the "packet size" of the values, using the same algorithm as OC.
  * This is used by pushSignal to check the size
  */
-size_t nn_measurePacketSize(nn_value *vals, size_t len);
+nn_size_t nn_measurePacketSize(nn_value *vals, nn_size_t len);
 
 // COMPONENTS
 
@@ -566,14 +587,14 @@ typedef struct nn_eeprom {
     nn_eepromControl (*control)(nn_component *component, void *userdata);
 
     // methods
-    size_t (*getSize)(nn_component *component, void *userdata);
-    size_t (*getDataSize)(nn_component *component, void *userdata);
-    void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
-    size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
-    size_t (*get)(nn_component *component, void *userdata, char *buf);
-    void (*set)(nn_component *component, void *userdata, const char *buf, size_t len);
+    nn_size_t (*getSize)(nn_component *component, void *userdata);
+    nn_size_t (*getDataSize)(nn_component *component, void *userdata);
+    void (*getLabel)(nn_component *component, void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, nn_size_t buflen);
+    nn_size_t (*get)(nn_component *component, void *userdata, char *buf);
+    void (*set)(nn_component *component, void *userdata, const char *buf, nn_size_t len);
     int (*getData)(nn_component *component, void *userdata, char *buf);
-    void (*setData)(nn_component *component, void *userdata, const char *buf, size_t len);
+    void (*setData)(nn_component *component, void *userdata, const char *buf, nn_size_t len);
     nn_bool_t (*isReadonly)(nn_component *component, void *userdata);
     void (*makeReadonly)(nn_component *component, void *userdata);
 } nn_eeprom;
@@ -601,9 +622,9 @@ typedef struct nn_filesystemControl {
     double writeHeatPerChunk;
     
     // call budget
-    size_t readCostPerChunk;
-    size_t writeCostPerChunk;
-    size_t seekCostPerChunk;
+    nn_size_t readCostPerChunk;
+    nn_size_t writeCostPerChunk;
+    nn_size_t seekCostPerChunk;
 
     // energy cost
     double readEnergyCost;
@@ -617,18 +638,18 @@ typedef struct nn_filesystem {
     void (*deinit)(nn_component *component, void *userdata);
 
     nn_filesystemControl (*control)(nn_component *component, void *userdata);
-    void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
-    size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
+    void (*getLabel)(nn_component *component, void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, nn_size_t buflen);
 
-    size_t (*spaceUsed)(nn_component *component, void *userdata);
-    size_t (*spaceTotal)(nn_component *component, void *userdata);
+    nn_size_t (*spaceUsed)(nn_component *component, void *userdata);
+    nn_size_t (*spaceTotal)(nn_component *component, void *userdata);
     nn_bool_t (*isReadOnly)(nn_component *component, void *userdata);
 
     // general operations
-    size_t (*size)(nn_component *component, void *userdata, const char *path);
+    nn_size_t (*size)(nn_component *component, void *userdata, const char *path);
     nn_bool_t (*remove)(nn_component *component, void *userdata, const char *path);
-    size_t (*lastModified)(nn_component *component, void *userdata, const char *path);
-    size_t (*rename)(nn_component *component, void *userdata, const char *from, const char *to);
+    nn_size_t (*lastModified)(nn_component *component, void *userdata, const char *path);
+    nn_size_t (*rename)(nn_component *component, void *userdata, const char *from, const char *to);
     nn_bool_t (*exists)(nn_component *component, void *userdata, const char *path);
 
     // directory operations
@@ -640,18 +661,18 @@ typedef struct nn_filesystem {
     // If it is not, the behavior is undefined.
     // We recommend first computing len then allocating, though if that is not doable or practical,
     // consider nn_resize()ing it to the correct size to guarantee a correct deallocation.
-    char **(*list)(nn_Alloc *alloc, nn_component *component, void *userdata, const char *path, size_t *len);
+    char **(*list)(nn_Alloc *alloc, nn_component *component, void *userdata, const char *path, nn_size_t *len);
 
     // file operations
-    size_t (*open)(nn_component *component, void *userdata, const char *path, const char *mode);
+    nn_size_t (*open)(nn_component *component, void *userdata, const char *path, const char *mode);
     nn_bool_t (*close)(nn_component *component, void *userdata, int fd);
-    nn_bool_t (*write)(nn_component *component, void *userdata, int fd, const char *buf, size_t len);
-    size_t (*read)(nn_component *component, void *userdata, int fd, char *buf, size_t required);
+    nn_bool_t (*write)(nn_component *component, void *userdata, int fd, const char *buf, nn_size_t len);
+    nn_size_t (*read)(nn_component *component, void *userdata, int fd, char *buf, nn_size_t required);
     // moved is an out pointer that says how many bytes the pointer moved.
-    size_t (*seek)(nn_component *component, void *userdata, int fd, const char *whence, int off, int *moved);
+    nn_size_t (*seek)(nn_component *component, void *userdata, int fd, const char *whence, int off, int *moved);
 } nn_filesystem;
 
-nn_filesystem *nn_volatileFileSystem(size_t capacity, nn_filesystemControl *control);
+nn_filesystem *nn_volatileFileSystem(nn_size_t capacity, nn_filesystemControl *control);
 nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int slot, nn_filesystem *filesystem);
 
 // Drive
@@ -675,9 +696,9 @@ typedef struct nn_driveControl {
     double writeEnergyCost;
     
     // call budget
-    size_t readCostPerSector;
-    size_t writeCostPerSector;
-    size_t seekCostPerSector;
+    nn_size_t readCostPerSector;
+    nn_size_t writeCostPerSector;
+    nn_size_t seekCostPerSector;
 } nn_driveControl;
 
 typedef struct nn_drive {
@@ -686,12 +707,12 @@ typedef struct nn_drive {
     void (*deinit)(nn_component *component, void *userdata);
     
     nn_driveControl (*control)(nn_component *component, void *userdata);
-    void (*getLabel)(nn_component *component, void *userdata, char *buf, size_t *buflen);
-    size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, size_t buflen);
+    void (*getLabel)(nn_component *component, void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, nn_size_t buflen);
 
-    size_t (*getPlatterCount)(nn_component *component, void *userdata);
-    size_t (*getCapacity)(nn_component *component, void *userdata);
-    size_t (*getSectorSize)(nn_component *component, void *userdata);
+    nn_size_t (*getPlatterCount)(nn_component *component, void *userdata);
+    nn_size_t (*getCapacity)(nn_component *component, void *userdata);
+    nn_size_t (*getSectorSize)(nn_component *component, void *userdata);
 
     // sectors start at 1 as per OC.
     void (*readSector)(nn_component *component, void *userdata, int sector, char *buf);
@@ -701,7 +722,7 @@ typedef struct nn_drive {
     // Also makes the interface less redundant
 } nn_drive;
 
-nn_drive *nn_volatileDrive(size_t capacity, size_t platterCount, nn_driveControl *control);
+nn_drive *nn_volatileDrive(nn_size_t capacity, nn_size_t platterCount, nn_driveControl *control);
 nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive);
 
 // Screens and GPUs
@@ -736,8 +757,8 @@ void nn_setAspectRatio(nn_screen *screen, int width, int height);
 
 void nn_addKeyboard(nn_screen *screen, nn_address address);
 void nn_removeKeyboard(nn_screen *screen, nn_address address);
-nn_address nn_getKeyboard(nn_screen *screen, size_t idx);
-size_t nn_getKeyboardCount(nn_screen *screen);
+nn_address nn_getKeyboard(nn_screen *screen, nn_size_t idx);
+nn_size_t nn_getKeyboardCount(nn_screen *screen);
 
 void nn_setEditableColors(nn_screen *screen, int count);
 int nn_getEditableColors(nn_screen *screen);

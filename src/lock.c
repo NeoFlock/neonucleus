@@ -69,7 +69,7 @@ void nn_deleteGuard(nn_Context *context, nn_guard *guard) {
     nn_dealloc(&context->allocator, guard, context->lockManager.lockSize);
 }
 
-void nn_addRef(nn_refc *refc, size_t count) {
+void nn_addRef(nn_refc *refc, nn_size_t count) {
     (*refc) += count;
 }
 
@@ -77,7 +77,7 @@ void nn_incRef(nn_refc *refc) {
     nn_addRef(refc, 1);
 }
 
-nn_bool_t nn_removeRef(nn_refc *refc, size_t count) {
+nn_bool_t nn_removeRef(nn_refc *refc, nn_size_t count) {
     return ((*refc) -= count) == 0;
 }
 

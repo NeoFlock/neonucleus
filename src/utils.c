@@ -10,12 +10,12 @@
 
 #endif
 
-void *nn_alloc(nn_Alloc *alloc, size_t size) {
+void *nn_alloc(nn_Alloc *alloc, nn_size_t size) {
     if(size == 0) return alloc->proc;
     return alloc->proc(alloc->userdata, NULL, 0, size, NULL);
 }
 
-void *nn_resize(nn_Alloc *alloc, void *memory, size_t oldSize, size_t newSize) {
+void *nn_resize(nn_Alloc *alloc, void *memory, nn_size_t oldSize, nn_size_t newSize) {
     if(oldSize == newSize) return memory;
     if(newSize == 0) {
         nn_dealloc(alloc, memory, oldSize);
@@ -31,7 +31,7 @@ void *nn_resize(nn_Alloc *alloc, void *memory, size_t oldSize, size_t newSize) {
     return alloc->proc(alloc->userdata, memory, oldSize, newSize, NULL);
 }
 
-void nn_dealloc(nn_Alloc *alloc, void *memory, size_t size) {
+void nn_dealloc(nn_Alloc *alloc, void *memory, nn_size_t size) {
     if(memory == NULL) return; // matches free()
     if(memory == alloc->proc) return; // 0-sized memory
     alloc->proc(alloc->userdata, memory, size, 0, NULL);
@@ -41,7 +41,7 @@ void nn_dealloc(nn_Alloc *alloc, void *memory, size_t size) {
 
 #include <stdlib.h>
 
-static void *nn_libcAllocProc(void *_, void *ptr, size_t oldSize, size_t newSize, void *__) {
+static void *nn_libcAllocProc(void *_, void *ptr, nn_size_t oldSize, nn_size_t newSize, void *__) {
     if(newSize == 0) {
         //printf("Freed %lu bytes from %p\n", oldSize, ptr);
         free(ptr);
@@ -60,7 +60,7 @@ nn_Alloc nn_libcAllocator() {
     };
 }
 
-static size_t nni_rand(void *userdata) {
+static nn_size_t nni_rand(void *userdata) {
     return rand();
 }
 
@@ -85,13 +85,13 @@ nn_Context nn_libcContext() {
 
 // Utilities, both internal and external
 char *nn_strdup(nn_Alloc *alloc, const char *s) {
-    size_t l = nn_strlen(s);
+    nn_size_t l = nn_strlen(s);
     char *m = nn_alloc(alloc, l+1);
     if(m == NULL) return m;
     return nn_strcpy(m, s);
 }
 
-void *nn_memdup(nn_Alloc *alloc, const void *buf, size_t len) {
+void *nn_memdup(nn_Alloc *alloc, const void *buf, nn_size_t len) {
     char *m = nn_alloc(alloc, len);
     if(m == NULL) return m;
     nn_memcpy(m, buf, len);
@@ -103,7 +103,7 @@ void nn_deallocStr(nn_Alloc *alloc, char *s) {
     nn_dealloc(alloc, s, nn_strlen(s)+1);
 }
 
-size_t nn_rand(nn_Rng *rng) {
+nn_size_t nn_rand(nn_Rng *rng) {
     return rng->proc(rng->userdata);
 }
 
@@ -205,21 +205,21 @@ int nn_mapColor(int color, int *palette, int paletteSize) {
     return bestColor;
 }
 
-void nn_memset(void *buf, unsigned char byte, size_t len) {
+void nn_memset(void *buf, unsigned char byte, nn_size_t len) {
     unsigned char *bytes = buf;
-    for(size_t i = 0; i < len; i++) bytes[i] = byte;
+    for(nn_size_t i = 0; i < len; i++) bytes[i] = byte;
 }
 
-void nn_memcpy(void *dest, const void *src, size_t len) {
+void nn_memcpy(void *dest, const void *src, nn_size_t len) {
     char *destBytes = dest;
     const char *srcBytes = src;
-    for(size_t i = 0; i < len; i++) {
+    for(nn_size_t i = 0; i < len; i++) {
         destBytes[i] = srcBytes[i];
     }
 }
 
 char *nn_strcpy(char *dest, const char *src) {
-    size_t i = 0;
+    nn_size_t i = 0;
     while(src[i]) {
         dest[i] = src[i];
         i++;
@@ -229,7 +229,7 @@ char *nn_strcpy(char *dest, const char *src) {
 }
 
 int nn_strcmp(const char *a, const char *b) {
-    size_t i = 0;
+    nn_size_t i = 0;
     while(NN_TRUE) {
         unsigned char ca = a[i];
         unsigned char cb = b[i];
@@ -248,7 +248,7 @@ int nn_strcmp(const char *a, const char *b) {
 }
 
 const char *nn_strchr(const char *str, int ch) {
-    size_t i = 0;
+    nn_size_t i = 0;
     while(NN_TRUE) {
         if(str[i] == ch) return str + i;
         if(str[i] == 0) return NULL;
@@ -256,8 +256,8 @@ const char *nn_strchr(const char *str, int ch) {
     }
 }
 
-size_t nn_strlen(const char *a) {
-    size_t l = 0;
+nn_size_t nn_strlen(const char *a) {
+    nn_size_t l = 0;
     while(a[l]) l++;
     return l;
 }

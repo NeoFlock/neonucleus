@@ -4,7 +4,7 @@ nn_value nn_values_nil() {
     return (nn_value) {.tag = NN_VALUE_NIL};
 }
 
-nn_value nn_values_integer(intptr_t integer) {
+nn_value nn_values_integer(nn_intptr_t integer) {
     return (nn_value) {.tag = NN_VALUE_INT, .integer = integer};
 }
 
@@ -20,7 +20,7 @@ nn_value nn_values_cstring(const char *string) {
     return (nn_value) {.tag = NN_VALUE_CSTR, .cstring = string};
 }
 
-nn_value nn_values_string(nn_Alloc *alloc, const char *string, size_t len) {
+nn_value nn_values_string(nn_Alloc *alloc, const char *string, nn_size_t len) {
     char *buf = nn_alloc(alloc, len+1);
     if(buf == NULL) {
         return nn_values_nil();
@@ -41,7 +41,7 @@ nn_value nn_values_string(nn_Alloc *alloc, const char *string, size_t len) {
     return (nn_value) {.tag = NN_VALUE_STR, .string = s};
 }
 
-nn_value nn_values_array(nn_Alloc *alloc, size_t len) {
+nn_value nn_values_array(nn_Alloc *alloc, nn_size_t len) {
     nn_array *arr = nn_alloc(alloc, sizeof(nn_array));
     if(arr == NULL) {
         return nn_values_nil();
@@ -54,14 +54,14 @@ nn_value nn_values_array(nn_Alloc *alloc, size_t len) {
         nn_dealloc(alloc, arr, sizeof(nn_array));
         return nn_values_nil();
     }
-    for(size_t i = 0; i < len; i++) {
+    for(nn_size_t i = 0; i < len; i++) {
         values[i] = nn_values_nil();
     }
     arr->values = values;
     return (nn_value) {.tag = NN_VALUE_ARRAY, .array = arr};
 }
 
-nn_value nn_values_table(nn_Alloc *alloc, size_t pairCount) {
+nn_value nn_values_table(nn_Alloc *alloc, nn_size_t pairCount) {
     nn_table *table = nn_alloc(alloc, sizeof(nn_table));
     if(table == NULL) {
         return nn_values_nil();
@@ -74,7 +74,7 @@ nn_value nn_values_table(nn_Alloc *alloc, size_t pairCount) {
         nn_dealloc(alloc, table, sizeof(nn_table));
         return nn_values_nil();
     }
-    for(size_t i = 0; i < pairCount; i++) {
+    for(nn_size_t i = 0; i < pairCount; i++) {
         pairs[i].key = nn_values_nil();
         pairs[i].val = nn_values_nil();
     }
@@ -82,7 +82,7 @@ nn_value nn_values_table(nn_Alloc *alloc, size_t pairCount) {
     return (nn_value) {.tag = NN_VALUE_TABLE, .table = table};
 }
 
-size_t nn_values_getType(nn_value val) {
+nn_size_t nn_values_getType(nn_value val) {
     return val.tag;
 }
 
@@ -108,7 +108,7 @@ void nn_values_drop(nn_value val) {
     } else if(val.tag == NN_VALUE_ARRAY) {
         val.array->refc--;
         if(val.array->refc == 0) {
-            for(size_t i = 0; i < val.array->len; i++) {
+            for(nn_size_t i = 0; i < val.array->len; i++) {
                 nn_values_drop(val.array->values[i]);
             }
             nn_Alloc *a = &val.array->alloc;
@@ -118,7 +118,7 @@ void nn_values_drop(nn_value val) {
     } else if(val.tag == NN_VALUE_TABLE) {
         val.table->refc--;
         if(val.table->refc == 0) {
-            for(size_t i = 0; i < val.table->len; i++) {
+            for(nn_size_t i = 0; i < val.table->len; i++) {
                 nn_values_drop(val.table->pairs[i].key);
                 nn_values_drop(val.table->pairs[i].val);
             }
@@ -129,20 +129,20 @@ void nn_values_drop(nn_value val) {
     }
 }
 
-void nn_values_set(nn_value arr, size_t idx, nn_value val) {
+void nn_values_set(nn_value arr, nn_size_t idx, nn_value val) {
     if(arr.tag != NN_VALUE_ARRAY) return;
     if(idx >= arr.array->len) return;
     nn_values_drop(arr.array->values[idx]);
     arr.array->values[idx] = val;
 }
 
-nn_value nn_values_get(nn_value arr, size_t idx) {
+nn_value nn_values_get(nn_value arr, nn_size_t idx) {
     if(arr.tag != NN_VALUE_ARRAY) return nn_values_nil();
     if(idx >= arr.array->len) return nn_values_nil();
     return arr.array->values[idx];
 }
 
-void nn_values_setPair(nn_value obj, size_t idx, nn_value key, nn_value val) {
+void nn_values_setPair(nn_value obj, nn_size_t idx, nn_value key, nn_value val) {
     if(obj.tag != NN_VALUE_TABLE) return;
     if(idx >= obj.table->len) return;
     nn_values_drop(obj.table->pairs[idx].key);
@@ -151,14 +151,14 @@ void nn_values_setPair(nn_value obj, size_t idx, nn_value key, nn_value val) {
     obj.table->pairs[idx].val = val;
 }
 
-nn_pair nn_values_getPair(nn_value obj, size_t idx) {
+nn_pair nn_values_getPair(nn_value obj, nn_size_t idx) {
     nn_pair badPair = {.key = nn_values_nil(), .val = nn_values_nil()};
     if(obj.tag != NN_VALUE_TABLE) return badPair;
     if(idx >= obj.table->len) return badPair;
     return obj.table->pairs[idx];
 }
 
-intptr_t nn_toInt(nn_value val) {
+nn_intptr_t nn_toInt(nn_value val) {
     if(val.tag == NN_VALUE_INT) return val.integer;
     if(val.tag == NN_VALUE_NUMBER) return val.number;
     return 0;
@@ -182,8 +182,8 @@ const char *nn_toCString(nn_value val) {
     return NULL;
 }
 
-const char *nn_toString(nn_value val, size_t *len) {
-    size_t l = 0;
+const char *nn_toString(nn_value val, nn_size_t *len) {
+    nn_size_t l = 0;
     const char *c = NULL;
 
     if(val.tag == NN_VALUE_CSTR) {
@@ -199,26 +199,28 @@ const char *nn_toString(nn_value val, size_t *len) {
     return c;
 }
 
-size_t nn_measurePacketSize(nn_value *vals, size_t len) {
-    size_t size = 0;
-    for(size_t i = 0; i < len; i++) {
+nn_size_t nn_measurePacketSize(nn_value *vals, nn_size_t len) {
+    nn_size_t size = 0;
+    for(nn_size_t i = 0; i < len; i++) {
         nn_value val = vals[i];
         size += 2;
         if(val.tag == NN_VALUE_INT || val.tag == NN_VALUE_NUMBER) {
             size += 8;
         } else if(val.tag == NN_VALUE_STR) {
-            size_t len = val.string->len;
+            nn_size_t len = val.string->len;
             if(len == 0) len = 1; // ask OC
             size += len;
         } else if(val.tag == NN_VALUE_CSTR) {
-            size_t len = nn_strlen(val.cstring);
+            nn_size_t len = nn_strlen(val.cstring);
             if(len == 0) len = 1; // ask OC
             size += len;
         } else if(val.tag == NN_VALUE_BOOL || val.tag == NN_VALUE_NIL) {
             size += 4;
         } else {
             // yeah no fuck off
-            return SIZE_MAX;
+            // we abuse 2's complement
+            // TODO: NN_SIZE_MAX
+            return -1;
         }
     }
     return size;

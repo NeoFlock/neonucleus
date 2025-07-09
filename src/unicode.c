@@ -202,9 +202,9 @@ nn_bool_t nn_unicode_validate(const char *b) {
 // It is used to power the Lua architecture's Unicode API re-implementation.
 // It can also just be used to deal with unicode.
 
-char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepointCount) {
-    size_t len = 0;
-    for (size_t i = 0; i < codepointCount; i++) {
+char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, nn_size_t codepointCount) {
+    nn_size_t len = 0;
+    for (nn_size_t i = 0; i < codepointCount; i++) {
         unsigned int codepoint = codepoints[i];
         len += nn_unicode_codepointSize(codepoint);
     }
@@ -212,10 +212,10 @@ char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepoin
     char *buf = nn_alloc(alloc, len+1);
     if (buf == NULL) return buf;
 
-    size_t j = 0;
-    for (size_t i = 0; i < codepointCount; i++) {
+    nn_size_t j = 0;
+    for (nn_size_t i = 0; i < codepointCount; i++) {
         int codepoint = codepoints[i];
-        size_t codepointLen = 0;
+        nn_size_t codepointLen = 0;
         char c[NN_MAXIMUM_UNICODE_BUFFER];
         nn_unicode_codepointToChar(c, codepoint, &codepointLen);
         nn_memcpy(buf + j, c, codepointLen);
@@ -226,13 +226,13 @@ char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepoin
     return buf;
 }
 
-unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, size_t *len) {
-    size_t l = nn_unicode_len(s);
+unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, nn_size_t *len) {
+    nn_size_t l = nn_unicode_len(s);
     unsigned int *buf = nn_alloc(alloc, sizeof(unsigned int) * l);
     if(buf == NULL) return NULL;
     if(len != NULL) *len = l;
-    size_t cur = 0;
-    size_t bufidx = 0;
+    nn_size_t cur = 0;
+    nn_size_t bufidx = 0;
     while(s[cur] != 0) {
         unsigned int point = nn_unicode_codepointAt(s, cur);
         cur += nn_unicode_codepointSize(point);
@@ -241,8 +241,8 @@ unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, size_t *len)
     return buf;
 }
 
-size_t nn_unicode_len(const char *b) {
-    size_t count = 0;
+nn_size_t nn_unicode_len(const char *b) {
+    nn_size_t count = 0;
     const unsigned char* s = (const unsigned char*)b;
     while (*s) {
         count++;
@@ -259,7 +259,7 @@ size_t nn_unicode_len(const char *b) {
     return count;
 }
 
-unsigned int nn_unicode_codepointAt(const char *s, size_t byteOffset) {
+unsigned int nn_unicode_codepointAt(const char *s, nn_size_t byteOffset) {
     unsigned int point = 0;
     const unsigned char *b = (const unsigned char *)s + byteOffset;
 
@@ -283,7 +283,7 @@ unsigned int nn_unicode_codepointAt(const char *s, size_t byteOffset) {
     return point;
 }
 
-size_t nn_unicode_codepointSize(unsigned int codepoint) {
+nn_size_t nn_unicode_codepointSize(unsigned int codepoint) {
     if (codepoint <= 0x007f) {
         return 1;
     } else if (codepoint <= 0x07ff) {
@@ -297,8 +297,8 @@ size_t nn_unicode_codepointSize(unsigned int codepoint) {
     return 1;
 }
 
-void nn_unicode_codepointToChar(char *buffer, unsigned int codepoint, size_t *len) {
-    size_t codepointSize = nn_unicode_codepointSize(codepoint);
+void nn_unicode_codepointToChar(char *buffer, unsigned int codepoint, nn_size_t *len) {
+    nn_size_t codepointSize = nn_unicode_codepointSize(codepoint);
     *len = codepointSize;
 
     nn_memset(buffer, 0, 4); // Clear static array
@@ -323,7 +323,7 @@ void nn_unicode_codepointToChar(char *buffer, unsigned int codepoint, size_t *le
 // copied straight from opencomputers and musl's libc
 // https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/scala/li/cil/oc/util/FontUtils.scala#L205
 // https://git.musl-libc.org/cgit/musl/tree/src/ctype/wcwidth.c
-size_t nn_unicode_charWidth(unsigned int codepoint) {
+nn_size_t nn_unicode_charWidth(unsigned int codepoint) {
     if (codepoint < 0xff) {
         if (((codepoint + 1) & 0x7f) >= 0x21) {
             return 1;
@@ -344,11 +344,11 @@ size_t nn_unicode_charWidth(unsigned int codepoint) {
     return 1;
 }
 
-size_t nn_unicode_wlen(const char *s) {
-    size_t wlen = 0;
+nn_size_t nn_unicode_wlen(const char *s) {
+    nn_size_t wlen = 0;
     while (*s) {
         unsigned int codepoint = nn_unicode_codepointAt(s, 0);
-        size_t codepointSize = nn_unicode_codepointSize(codepoint);
+        nn_size_t codepointSize = nn_unicode_codepointSize(codepoint);
         wlen += nn_unicode_charWidth(codepoint);
         s += codepointSize;
     }

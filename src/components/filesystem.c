@@ -12,7 +12,7 @@ nn_bool_t nn_fs_illegalPath(const char *path) {
     // absolute disaster
     const char *illegal = "\"\\:*?<>|";
 
-    for(size_t i = 0; illegal[i] != '\0'; i++) {
+    for(nn_size_t i = 0; illegal[i] != '\0'; i++) {
         if(nn_strchr(path, illegal[i]) != NULL) return true;
     }
     return false;
@@ -22,28 +22,28 @@ nn_filesystemControl nn_fs_getControl(nn_component *component, nn_filesystem *fs
     return fs->control(component, fs->userdata);
 }
 
-size_t nn_fs_countChunks(nn_filesystem *fs, size_t bytes, nn_component *component) {
+nn_size_t nn_fs_countChunks(nn_filesystem *fs, nn_size_t bytes, nn_component *component) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
 
-    size_t chunks = bytes / control.pretendChunkSize;
+    nn_size_t chunks = bytes / control.pretendChunkSize;
     if(bytes % control.pretendChunkSize != 0) chunks++;
     return chunks;
 }
 
-void nn_fs_readCost(nn_filesystem *fs, size_t count, nn_component *component, nn_computer *computer) {
+void nn_fs_readCost(nn_filesystem *fs, nn_size_t count, nn_component *component, nn_computer *computer) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
     nn_removeEnergy(computer, control.readEnergyCost * count);
     nn_callCost(computer, control.readCostPerChunk * count);
 }
 
-void nn_fs_writeCost(nn_filesystem *fs, size_t count, nn_component *component, nn_computer *computer) {
+void nn_fs_writeCost(nn_filesystem *fs, nn_size_t count, nn_component *component, nn_computer *computer) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
     nn_removeEnergy(computer, control.writeEnergyCost * count);
     nn_addHeat(computer, control.writeHeatPerChunk * count);
     nn_callCost(computer, control.writeCostPerChunk * count);
 }
 
-void nn_fs_seekCost(nn_filesystem *fs, size_t count, nn_component *component, nn_computer *computer) {
+void nn_fs_seekCost(nn_filesystem *fs, nn_size_t count, nn_component *component, nn_computer *computer) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
     if(control.pretendRPM == 0) return; // disabled, likely SSD
     double rps = (double)control.pretendRPM / 60;
@@ -56,7 +56,7 @@ void nn_fs_seekCost(nn_filesystem *fs, size_t count, nn_component *component, nn
 
 void nn_fs_getLabel(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     char buf[NN_LABEL_SIZE];
-    size_t l = NN_LABEL_SIZE;
+    nn_size_t l = NN_LABEL_SIZE;
     fs->getLabel(component, fs->userdata, buf, &l);
     if(l == 0) {
         nn_return(computer, nn_values_nil());
@@ -71,7 +71,7 @@ void nn_fs_getLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
 }
 
 void nn_fs_setLabel(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
-    size_t l = 0;
+    nn_size_t l = 0;
     nn_value label = nn_getArgument(computer, 0);
     const char *buf = nn_toString(label, &l);
     if(buf == NULL) {
@@ -85,14 +85,14 @@ void nn_fs_setLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
 }
 
 void nn_fs_spaceUsed(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
-    size_t space = fs->spaceUsed(component, fs->userdata);
+    nn_size_t space = fs->spaceUsed(component, fs->userdata);
     nn_return(computer, nn_values_integer(space));
     
     nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_spaceTotal(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
-    size_t space = fs->spaceUsed(component, fs->userdata);
+    nn_size_t space = fs->spaceUsed(component, fs->userdata);
     nn_return(computer, nn_values_integer(space));
     
     nn_fs_readCost(fs, 1, component, computer);
@@ -116,7 +116,7 @@ void nn_fs_size(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         return;
     }
 
-    size_t byteSize = fs->size(component, fs->userdata, path);
+    nn_size_t byteSize = fs->size(component, fs->userdata, path);
 
     nn_return(computer, nn_values_integer(byteSize));
     
@@ -154,7 +154,7 @@ void nn_fs_lastModified(nn_filesystem *fs, void *_, nn_component *component, nn_
         return;
     }
 
-    size_t t = fs->lastModified(component, fs->userdata, path);
+    nn_size_t t = fs->lastModified(component, fs->userdata, path);
 
     // OpenOS does BULLSHIT with this thing, dividing it by 1000 and expecting it to be
     // fucking usable as a date, meaning it needs to be an int.
@@ -189,7 +189,7 @@ void nn_fs_rename(nn_filesystem *fs, void *_, nn_component *component, nn_comput
         return;
     }
 
-    size_t movedCount = fs->rename(component, fs->userdata, from, to);
+    nn_size_t movedCount = fs->rename(component, fs->userdata, from, to);
     nn_return(computer, nn_values_boolean(movedCount > 0));
    
     // Considered 2 safety checks + 1 read per file + 1 write per file
@@ -263,13 +263,13 @@ void nn_fs_list(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
 
-    size_t fileCount = 0;
+    nn_size_t fileCount = 0;
     char **files = fs->list(alloc, component, fs->userdata, path, &fileCount);
 
     if(files != NULL) {
         // operation succeeded
         nn_value arr = nn_values_array(alloc, fileCount);
-        for(size_t i = 0; i < fileCount; i++) {
+        for(nn_size_t i = 0; i < fileCount; i++) {
             nn_values_set(arr, i, nn_values_string(alloc, files[i], nn_strlen(files[i])));
             nn_deallocStr(alloc, files[i]);
         }
@@ -298,7 +298,7 @@ void nn_fs_open(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         mode = "r";
     }
 
-    size_t fd = fs->open(component, fs->userdata, path, mode);
+    nn_size_t fd = fs->open(component, fs->userdata, path, mode);
     nn_return(computer, nn_values_integer(fd));
 
     // 1 safety check
@@ -307,7 +307,7 @@ void nn_fs_open(nn_filesystem *fs, void *_, nn_component *component, nn_computer
 
 void nn_fs_close(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     nn_value fdValue = nn_getArgument(computer, 0);
-    size_t fd = nn_toInt(fdValue);
+    nn_size_t fd = nn_toInt(fdValue);
 
     nn_bool_t closed = fs->close(component, fs->userdata, fd);
     nn_return(computer, nn_values_boolean(closed));
@@ -318,12 +318,12 @@ void nn_fs_close(nn_filesystem *fs, void *_, nn_component *component, nn_compute
 
 void nn_fs_write(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     nn_value fdValue = nn_getArgument(computer, 0);
-    size_t fd = nn_toInt(fdValue);
+    nn_size_t fd = nn_toInt(fdValue);
 
     // size_t spaceRemaining = fs->spaceTotal(component, fs->userdata) - fs->spaceUsed(component, fs->userdata);
 
     nn_value bufferValue = nn_getArgument(computer, 1);
-    size_t len = 0;
+    nn_size_t len = 0;
     const char *buf = nn_toString(bufferValue, &len);
     if(buf == NULL) {
         nn_setCError(computer, "bad buffer (string expected)");
@@ -344,9 +344,9 @@ void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer
 
     nn_value lenValue = nn_getArgument(computer, 1);
     double len = nn_toNumber(lenValue);
-    size_t capacity = fs->spaceTotal(component, fs->userdata);
+    nn_size_t capacity = fs->spaceTotal(component, fs->userdata);
     if(len > capacity) len = capacity;
-    size_t byteLen = len;
+    nn_size_t byteLen = len;
 
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     char *buf = nn_alloc(alloc, byteLen);
@@ -355,7 +355,7 @@ void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         return;
     }
 
-    size_t readLen = fs->read(component, fs->userdata, fd, buf, byteLen);
+    nn_size_t readLen = fs->read(component, fs->userdata, fd, buf, byteLen);
     if(readLen > 0) {
         // Nothing read means EoF.
         nn_return_string(computer, buf, readLen);
@@ -375,7 +375,7 @@ nn_bool_t nn_fs_validWhence(const char *s) {
 }
 
 void nn_fs_seek(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
-    size_t fd = nn_toInt(nn_getArgument(computer, 0));
+    nn_size_t fd = nn_toInt(nn_getArgument(computer, 0));
 
     const char *whence = nn_toCString(nn_getArgument(computer, 1));
 
@@ -394,7 +394,7 @@ void nn_fs_seek(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     // size_t capacity = fs->spaceTotal(component, fs->userdata);
     int moved = 0;
 
-    size_t pos = fs->seek(component, fs->userdata, fd, whence, off, &moved);
+    nn_size_t pos = fs->seek(component, fs->userdata, fd, whence, off, &moved);
     if(moved < 0) moved = -moved;
 
     // do not ask where it comes from, balance is hard

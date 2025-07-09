@@ -3,7 +3,7 @@
 #include "universe.h"
 #include "neonucleus.h"
 
-nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, size_t memoryLimit, size_t componentLimit) {
+nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, nn_size_t memoryLimit, nn_size_t componentLimit) {
     nn_Alloc *alloc = &universe->ctx.allocator;
     nn_computer *c = nn_alloc(alloc, sizeof(nn_computer));
     c->components = nn_alloc(alloc, sizeof(nn_component) * componentLimit);
@@ -90,11 +90,11 @@ double nn_getUptime(nn_computer *computer) {
     return nn_getTime(computer->universe) - computer->timeOffset;
 }
 
-size_t nn_getComputerMemoryUsed(nn_computer *computer) {
+nn_size_t nn_getComputerMemoryUsed(nn_computer *computer) {
     return computer->arch->getMemoryUsage(computer, computer->archState, computer->arch->userdata);
 }
 
-size_t nn_getComputerMemoryTotal(nn_computer *computer) {
+nn_size_t nn_getComputerMemoryTotal(nn_computer *computer) {
     return computer->memoryTotal;
 }
 
@@ -108,7 +108,7 @@ void nn_addSupportedArchitecture(nn_computer *computer, nn_architecture *arch) {
     computer->supportedArchCount++;
 }
 
-nn_architecture *nn_getSupportedArchitecture(nn_computer *computer, size_t idx) {
+nn_architecture *nn_getSupportedArchitecture(nn_computer *computer, nn_size_t idx) {
     if(idx >= computer->supportedArchCount) return NULL;
     return computer->supportedArch[idx];
 }
@@ -132,7 +132,7 @@ void nn_deleteComputer(nn_computer *computer) {
         nn_popSignal(computer);
     }
     nn_Alloc *a = &computer->universe->ctx.allocator;
-    for(size_t i = 0; i < computer->userCount; i++) {
+    for(nn_size_t i = 0; i < computer->userCount; i++) {
         nn_deallocStr(a, computer->users[i]);
     }
     computer->arch->teardown(computer, computer->archState, computer->arch->userdata);
@@ -143,7 +143,7 @@ void nn_deleteComputer(nn_computer *computer) {
     nn_dealloc(a, computer, sizeof(nn_computer));
 }
 
-const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len) {
+const char *nn_pushSignal(nn_computer *computer, nn_value *values, nn_size_t len) {
     if(len > NN_MAX_SIGNAL_VALS) return "too many values";
     if(len == 0) return "missing event";
     // no OOM for you hehe
@@ -152,21 +152,21 @@ const char *nn_pushSignal(nn_computer *computer, nn_value *values, size_t len) {
     }
     if(computer->signalCount == NN_MAX_SIGNALS) return "too many signals";
     computer->signals[computer->signalCount].len = len;
-    for(size_t i = 0; i < len; i++) {
+    for(nn_size_t i = 0; i < len; i++) {
         computer->signals[computer->signalCount].values[i] = values[i];
     }
     computer->signalCount++;
     return NULL;
 }
 
-nn_value nn_fetchSignalValue(nn_computer *computer, size_t index) {
+nn_value nn_fetchSignalValue(nn_computer *computer, nn_size_t index) {
     if(computer->signalCount == 0) return nn_values_nil();
     nn_signal *p = computer->signals;
     if(index >= p->len) return nn_values_nil();
     return p->values[index];
 }
 
-size_t nn_signalSize(nn_computer *computer) {
+nn_size_t nn_signalSize(nn_computer *computer) {
     if(computer->signalCount == 0) return 0;
     return computer->signals[0].len;
 }
@@ -174,10 +174,10 @@ size_t nn_signalSize(nn_computer *computer) {
 void nn_popSignal(nn_computer *computer) {
     if(computer->signalCount == 0) return;
     nn_signal *p = computer->signals;
-    for(size_t i = 0; i < p->len; i++) {
+    for(nn_size_t i = 0; i < p->len; i++) {
         nn_values_drop(p->values[i]);
     }
-    for(size_t i = 1; i < computer->signalCount; i++) {
+    for(nn_size_t i = 1; i < computer->signalCount; i++) {
         computer->signals[i-1] = computer->signals[i];
     }
     computer->signalCount--;
@@ -193,8 +193,8 @@ const char *nn_addUser(nn_computer *computer, const char *name) {
 }
 
 void nn_deleteUser(nn_computer *computer, const char *name) {
-    size_t j = 0;
-    for(size_t i = 0; i < computer->userCount; i++) {
+    nn_size_t j = 0;
+    for(nn_size_t i = 0; i < computer->userCount; i++) {
         char *user = computer->users[i];
         if(nn_strcmp(user, name) == 0) {
             nn_deallocStr(&computer->universe->ctx.allocator, user);
@@ -206,14 +206,14 @@ void nn_deleteUser(nn_computer *computer, const char *name) {
     computer->userCount = j;
 }
 
-const char *nn_indexUser(nn_computer *computer, size_t idx) {
+const char *nn_indexUser(nn_computer *computer, nn_size_t idx) {
     if(idx >= computer->userCount) return NULL;
     return computer->users[idx];
 }
 
 nn_bool_t nn_isUser(nn_computer *computer, const char *name) {
     if(computer->userCount == 0) return true;
-    for(size_t i = 0; i < computer->userCount; i++) {
+    for(nn_size_t i = 0; i < computer->userCount; i++) {
         if(nn_strcmp(computer->users[i], name) == 0) return true;
     }
     return false;
@@ -355,7 +355,7 @@ void nn_setCError(nn_computer *computer, const char *err) {
 
 nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slot, nn_componentTable *table, void *userdata) {
     nn_component *c = NULL;
-    for(size_t i = 0; i < computer->componentLen; i++) {
+    for(nn_size_t i = 0; i < computer->componentLen; i++) {
         if(computer->components[i].address == NULL) {
             c = computer->components + i;
             break;
@@ -381,7 +381,7 @@ nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slo
 }
 
 void nn_removeComponent(nn_computer *computer, nn_address address) {
-    for(size_t i = 0; i < computer->componentLen; i++) {
+    for(nn_size_t i = 0; i < computer->componentLen; i++) {
         if(nn_strcmp(computer->components[i].address, address) == 0) {
             nn_destroyComponent(computer->components + i);
         }
@@ -397,7 +397,7 @@ void nn_destroyComponent(nn_component *component) {
 }
 
 nn_component *nn_findComponent(nn_computer *computer, nn_address address) {
-    for(size_t i = 0; i < computer->componentLen; i++) {
+    for(nn_size_t i = 0; i < computer->componentLen; i++) {
         if(computer->components[i].address == NULL) continue; // empty slot
         if(nn_strcmp(computer->components[i].address, address) == 0) {
             return computer->components + i;
@@ -406,8 +406,8 @@ nn_component *nn_findComponent(nn_computer *computer, nn_address address) {
     return NULL;
 }
 
-nn_component *nn_iterComponent(nn_computer *computer, size_t *internalIndex) {
-    for(size_t i = *internalIndex; i < computer->componentLen; i++) {
+nn_component *nn_iterComponent(nn_computer *computer, nn_size_t *internalIndex) {
+    for(nn_size_t i = *internalIndex; i < computer->componentLen; i++) {
         if(computer->components[i].address == NULL) continue;
         *internalIndex = i+1;
         return computer->components + i;
@@ -416,11 +416,11 @@ nn_component *nn_iterComponent(nn_computer *computer, size_t *internalIndex) {
 }
 
 void nn_resetCall(nn_computer *computer) {
-    for(size_t i = 0; i < computer->argc; i++) {
+    for(nn_size_t i = 0; i < computer->argc; i++) {
         nn_values_drop(computer->args[i]);
     }
     
-    for(size_t i = 0; i < computer->retc; i++) {
+    for(nn_size_t i = 0; i < computer->retc; i++) {
         nn_values_drop(computer->rets[i]);
     }
 
@@ -440,29 +440,29 @@ void nn_return(nn_computer *computer, nn_value val) {
     computer->retc++;
 }
 
-nn_value nn_getArgument(nn_computer *computer, size_t idx) {
+nn_value nn_getArgument(nn_computer *computer, nn_size_t idx) {
     if(idx >= computer->argc) return nn_values_nil();
     return computer->args[idx];
 }
 
-nn_value nn_getReturn(nn_computer *computer, size_t idx) {
+nn_value nn_getReturn(nn_computer *computer, nn_size_t idx) {
     if(idx >= computer->retc) return nn_values_nil();
     return computer->rets[idx];
 }
 
-size_t nn_getArgumentCount(nn_computer *computer) {
+nn_size_t nn_getArgumentCount(nn_computer *computer) {
     return computer->argc;
 }
 
-size_t nn_getReturnCount(nn_computer *computer) {
+nn_size_t nn_getReturnCount(nn_computer *computer) {
     return computer->retc;
 }
 
-char *nn_serializeProgram(nn_computer *computer, size_t *len) {
+char *nn_serializeProgram(nn_computer *computer, nn_size_t *len) {
     return computer->arch->serialize(computer, computer->archState, computer->arch->userdata, len);
 }
 
-void nn_deserializeProgram(nn_computer *computer, const char *memory, size_t len) {
+void nn_deserializeProgram(nn_computer *computer, const char *memory, nn_size_t len) {
     computer->arch->deserialize(computer, memory, len, computer->archState, computer->arch->userdata);
 }
 
@@ -478,7 +478,7 @@ void nn_return_nil(nn_computer *computer) {
     nn_return(computer, nn_values_nil());
 }
 
-void nn_return_integer(nn_computer *computer, intptr_t integer) {
+void nn_return_integer(nn_computer *computer, nn_intptr_t integer) {
     nn_return(computer, nn_values_integer(integer));
 }
 
@@ -494,7 +494,7 @@ void nn_return_cstring(nn_computer *computer, const char *cstr) {
     nn_return(computer, nn_values_cstring(cstr));
 }
 
-void nn_return_string(nn_computer *computer, const char *str, size_t len) {
+void nn_return_string(nn_computer *computer, const char *str, nn_size_t len) {
     nn_value val = nn_values_string(&computer->universe->ctx.allocator, str, len);
     if(val.tag == NN_VALUE_NIL) {
         nn_setCError(computer, "out of memory");
@@ -502,7 +502,7 @@ void nn_return_string(nn_computer *computer, const char *str, size_t len) {
     nn_return(computer, val);
 }
 
-nn_value nn_return_array(nn_computer *computer, size_t len) {
+nn_value nn_return_array(nn_computer *computer, nn_size_t len) {
     nn_value val = nn_values_array(&computer->universe->ctx.allocator, len);
     if(val.tag == NN_VALUE_NIL) {
         nn_setCError(computer, "out of memory");
@@ -511,7 +511,7 @@ nn_value nn_return_array(nn_computer *computer, size_t len) {
     return val;
 }
 
-nn_value nn_return_table(nn_computer *computer, size_t len) {
+nn_value nn_return_table(nn_computer *computer, nn_size_t len) {
     nn_value val = nn_values_table(&computer->universe->ctx.allocator, len);
     if(val.tag == NN_VALUE_NIL) {
         nn_setCError(computer, "out of memory");

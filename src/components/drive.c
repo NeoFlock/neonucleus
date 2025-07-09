@@ -14,7 +14,7 @@ nn_driveControl nn_drive_getControl(nn_component *component, nn_drive *drive) {
 
 void nn_drive_getLabel(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     char buf[NN_LABEL_SIZE];
-    size_t l = NN_LABEL_SIZE;
+    nn_size_t l = NN_LABEL_SIZE;
     drive->getLabel(component, drive->userdata, buf, &l);
     if(l == 0) {
         nn_return(computer, nn_values_nil());
@@ -23,7 +23,7 @@ void nn_drive_getLabel(nn_drive *drive, void *_, nn_component *component, nn_com
     }
 }
 void nn_drive_setLabel(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    size_t l = 0;
+    nn_size_t l = 0;
     nn_value label = nn_getArgument(computer, 0);
     const char *buf = nn_toString(label, &l);
     if(buf == NULL) {
@@ -34,21 +34,21 @@ void nn_drive_setLabel(nn_drive *drive, void *_, nn_component *component, nn_com
     nn_return_string(computer, buf, l);
 }
 void nn_drive_getSectorSize(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    size_t sector_size = drive->getSectorSize(component, drive->userdata);
+    nn_size_t sector_size = drive->getSectorSize(component, drive->userdata);
     nn_return(computer, nn_values_integer(sector_size));
 }
 void nn_drive_getPlatterCount(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    size_t platter_count = drive->getPlatterCount(component, drive->userdata);
+    nn_size_t platter_count = drive->getPlatterCount(component, drive->userdata);
     nn_return(computer, nn_values_integer(platter_count));
 }
 void nn_drive_getCapacity(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    size_t capacity = drive->getCapacity(component, drive->userdata);
+    nn_size_t capacity = drive->getCapacity(component, drive->userdata);
     nn_return(computer, nn_values_integer(capacity));
 }
 void nn_drive_readSector(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value sectorValue = nn_getArgument(computer, 0);
     int sector = nn_toInt(sectorValue);
-    size_t sector_size = drive->getSectorSize(component, drive->userdata);
+    nn_size_t sector_size = drive->getSectorSize(component, drive->userdata);
     // we leave the +1 intentionally to compare the end of the real sector
     if (sector < 1 || (sector * sector_size > drive->getCapacity(component, drive->userdata))) {
         nn_setCError(computer, "bad argument #1 (sector out of range)");
@@ -61,10 +61,10 @@ void nn_drive_readSector(nn_drive *drive, void *_, nn_component *component, nn_c
 void nn_drive_writeSector(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value sectorValue = nn_getArgument(computer, 0);
     int sector = nn_toInt(sectorValue);
-    size_t sector_size = drive->getSectorSize(component, drive->userdata);
+    nn_size_t sector_size = drive->getSectorSize(component, drive->userdata);
     nn_value bufValue = nn_getArgument(computer, 1);
 
-    size_t buf_size = 0;
+    nn_size_t buf_size = 0;
     const char *buf = nn_toString(bufValue, &buf_size);
     if (buf_size != sector_size) {
         nn_setCError(computer, "bad argument #2 (expected buffer of length `sectorSize`)");
@@ -79,10 +79,10 @@ void nn_drive_writeSector(nn_drive *drive, void *_, nn_component *component, nn_
 }
 void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value offsetValue = nn_getArgument(computer, 0);
-    size_t disk_offset = nn_toInt(offsetValue) - 1;
-    size_t sector_size = drive->getSectorSize(component, drive->userdata);
+    nn_size_t disk_offset = nn_toInt(offsetValue) - 1;
+    nn_size_t sector_size = drive->getSectorSize(component, drive->userdata);
     int sector = (disk_offset / sector_size) + 1;
-    size_t sector_offset = disk_offset % sector_size;
+    nn_size_t sector_offset = disk_offset % sector_size;
 
     if (disk_offset >= drive->getCapacity(component, drive->userdata)) {
         nn_setCError(computer, "bad argument #1 (index out of range)");
@@ -96,11 +96,11 @@ void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_com
 void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value offsetValue = nn_getArgument(computer, 0);
     nn_value writeValue = nn_getArgument(computer, 1);
-    size_t disk_offset = nn_toInt(offsetValue) - 1;
-    intptr_t write = nn_toInt(writeValue);
-    size_t sector_size = drive->getSectorSize(component, drive->userdata);
+    nn_size_t disk_offset = nn_toInt(offsetValue) - 1;
+    nn_intptr_t write = nn_toInt(writeValue);
+    nn_size_t sector_size = drive->getSectorSize(component, drive->userdata);
     int sector = (disk_offset / sector_size) + 1;
-    size_t sector_offset = disk_offset % sector_size;
+    nn_size_t sector_offset = disk_offset % sector_size;
 
     if (write < -128 || write > 255) {
         nn_setCError(computer, "bad argument #2 (byte out of range)");

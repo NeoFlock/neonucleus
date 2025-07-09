@@ -7,20 +7,15 @@ const LibBuildOpts = struct {
     baremetal: bool,
 };
 
-fn addEngineSources(b: *std.Build, c: *std.Build.Step.Compile, opts: LibBuildOpts) void {
+fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
     const dataMod = b.createModule(.{
         .root_source_file = b.path("src/data.zig"),
         .target = opts.target,
         .optimize = opts.optimize,
+        .single_threaded = true,
     });
-    const zigObj = b.addObject(.{
-        .name = "zig_wrappers",
-        .root_module = dataMod,
-        .pic = true,
-    });
-    c.addObject(zigObj);
-   
-    c.addCSourceFiles(.{
+
+    dataMod.addCSourceFiles(.{
         .files = &[_][]const u8{
             "src/lock.c",
             "src/utils.c",
@@ -43,15 +38,17 @@ fn addEngineSources(b: *std.Build, c: *std.Build.Step.Compile, opts: LibBuildOpt
     });
 
     if(!opts.baremetal) {
-        c.linkLibC(); // we need a libc
-        c.addCSourceFiles(.{
+        dataMod.link_libc = true; // we need a libc
+        dataMod.addCSourceFiles(.{
             .files = &.{
                 "src/tinycthread.c",
             },
         });
     }
 
-    c.addIncludePath(b.path("src"));
+    dataMod.addIncludePath(b.path("src"));
+
+    return dataMod;
 }
 
 const LuaVersion = enum {
@@ -114,23 +111,18 @@ pub fn build(b: *std.Build) void {
     };
 
     const includeFiles = b.addInstallHeaderFile(b.path("src/neonucleus.h"), "neonucleus.h");
+   
+    const engineMod = addEngineSources(b, opts);
 
     const engineStatic = b.addStaticLibrary(.{
         .name = "neonucleus",
-        //.root_source_file = b.path("src/engine.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = engineMod,
     });
-
-    addEngineSources(b, engineStatic, opts);
 
     const engineShared = b.addSharedLibrary(.{
         .name = getSharedEngineName(os),
-        .target = target,
-        .optimize = optimize,
+        .root_module = engineMod,
     });
-
-    addEngineSources(b, engineShared, opts);
 
     const engineStep = b.step("engine", "Builds the engine as a static library");
     engineStep.dependOn(&engineStatic.step);

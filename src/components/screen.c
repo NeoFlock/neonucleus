@@ -93,8 +93,8 @@ void nn_addKeyboard(nn_screen *screen, nn_address address) {
 }
 
 void nn_removeKeyboard(nn_screen *screen, nn_address address) {
-    size_t j = 0;
-    for(size_t i = 0; i < screen->keyboardCount; i++) {
+    nn_size_t j = 0;
+    for(nn_size_t i = 0; i < screen->keyboardCount; i++) {
         if(nn_strcmp(screen->keyboards[i], address) == 0) {
             nn_deallocStr(&screen->ctx.allocator, screen->keyboards[i]);
         } else {
@@ -105,12 +105,12 @@ void nn_removeKeyboard(nn_screen *screen, nn_address address) {
     screen->keyboardCount = j;
 }
 
-nn_address nn_getKeyboard(nn_screen *screen, size_t idx) {
+nn_address nn_getKeyboard(nn_screen *screen, nn_size_t idx) {
     if(idx >= screen->keyboardCount) return NULL;
     return screen->keyboards[idx];
 }
 
-size_t nn_getKeyboardCount(nn_screen *screen) {
+nn_size_t nn_getKeyboardCount(nn_screen *screen) {
     return screen->keyboardCount;
 }
 
@@ -213,9 +213,9 @@ void nn_screenComp_getKeyboards(nn_screen *screen, void *_, nn_component *compon
     nn_lockScreen(screen);
     nn_value arr = nn_values_array(&screen->ctx.allocator, nn_getKeyboardCount(screen));
 
-    size_t len = arr.array->len;
-    for(size_t i = 0; i < len; i++) {
-        size_t addrlen = nn_strlen(nn_getKeyboard(screen, i));
+    nn_size_t len = arr.array->len;
+    for(nn_size_t i = 0; i < len; i++) {
+        nn_size_t addrlen = nn_strlen(nn_getKeyboard(screen, i));
         nn_value addr = nn_values_string(&screen->ctx.allocator, nn_getKeyboard(screen, i), addrlen);
         nn_values_set(arr, i, addr);
     }

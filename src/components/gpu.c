@@ -99,12 +99,12 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     
 
     if(reset) {
-        for(size_t i = 0; i < screen->width; i++) {
-            for(size_t j = 0; j < screen->height; j++) {
+        for(nn_size_t i = 0; i < screen->width; i++) {
+            for(nn_size_t j = 0; j < screen->height; j++) {
                 nn_setPixel(screen, i, j, nni_gpu_makePixel(gpu, " "));
             }
         }
-        size_t area = screen->width * screen->height;
+        nn_size_t area = screen->width * screen->height;
         nn_addHeat(computer, gpu->ctrl.heatPerPixelReset * area);
         nn_simulateBufferedIndirect(component, 1, gpu->ctrl.screenFillPerTick);
         nn_removeEnergy(computer, gpu->ctrl.energyPerPixelReset * area);
@@ -159,7 +159,7 @@ void nni_gpu_get(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
     int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     nn_scrchr_t pxl = nn_getPixel(gpu->currentScreen, x, y);
 
-    size_t l;
+    nn_size_t l;
     char chr[NN_MAXIMUM_UNICODE_BUFFER];
     nn_unicode_codepointToChar(chr, pxl.codepoint, &l);
 

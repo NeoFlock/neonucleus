@@ -22,7 +22,7 @@ nn_componentTable *nn_newComponentTable(nn_Alloc *alloc, const char *typeName, v
 void nn_destroyComponentTable(nn_componentTable *table) {
     nn_Alloc alloc = table->alloc;
     nn_deallocStr(&alloc, table->name);
-    for(size_t i = 0; i < table->methodCount; i++) {
+    for(nn_size_t i = 0; i < table->methodCount; i++) {
         nn_method method = table->methods[i];
         nn_deallocStr(&alloc, method.name);
         nn_deallocStr(&alloc, method.doc);
@@ -47,7 +47,7 @@ void nn_defineMethod(nn_componentTable *table, const char *methodName, nn_bool_t
     table->methodCount++;
 }
 
-const char *nn_getTableMethod(nn_componentTable *table, size_t idx, nn_bool_t *outDirect) {
+const char *nn_getTableMethod(nn_componentTable *table, nn_size_t idx, nn_bool_t *outDirect) {
     if(idx >= table->methodCount) return NULL;
     nn_method method = table->methods[idx];
     if(outDirect != NULL) *outDirect = method.direct;
@@ -55,7 +55,7 @@ const char *nn_getTableMethod(nn_componentTable *table, size_t idx, nn_bool_t *o
 }
 
 const char *nn_methodDoc(nn_componentTable *table, const char *methodName) {
-    for(size_t i = 0; i < table->methodCount; i++) {
+    for(nn_size_t i = 0; i < table->methodCount; i++) {
         if(nn_strcmp(table->methods[i].name, methodName) == 0) {
             return table->methods[i].doc;
         }
@@ -89,7 +89,7 @@ void *nn_getComponentUserdata(nn_component *component) {
 
 nn_bool_t nn_invokeComponentMethod(nn_component *component, const char *name) {
     nn_componentTable *table = component->table;
-    for(size_t i = 0; i < table->methodCount; i++) {
+    for(nn_size_t i = 0; i < table->methodCount; i++) {
         nn_method method = table->methods[i];
         if(nn_strcmp(method.name, name) == 0) {
             nn_callCost(component->computer, NN_CALL_COST);
