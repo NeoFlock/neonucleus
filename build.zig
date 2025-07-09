@@ -5,6 +5,7 @@ const LibBuildOpts = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     baremetal: bool,
+    bit32: bool,
 };
 
 fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
@@ -34,6 +35,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         },
         .flags = &.{
             if(opts.baremetal) "-DNN_BAREMETAL" else "",
+            if(opts.bit32) "-DNN_BIT32" else "",
         },
     });
 
@@ -108,7 +110,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .baremetal = b.option(bool, "baremetal", "Compiles without libc integration") orelse false,
+        .bit32 = target.result.ptrBitWidth() == 32,
     };
+
+    const noEmu = b.option(bool, "noEmu", "Disable compiling the emulator (fixes some build system quirks)") orelse false;
 
     const includeFiles = b.addInstallHeaderFile(b.path("src/neonucleus.h"), "neonucleus.h");
    
@@ -118,7 +123,7 @@ pub fn build(b: *std.Build) void {
         .name = "neonucleus",
         .root_module = engineMod,
     });
-
+    
     const engineShared = b.addSharedLibrary(.{
         .name = getSharedEngineName(os),
         .root_module = engineMod,
@@ -134,48 +139,51 @@ pub fn build(b: *std.Build) void {
     sharedStep.dependOn(&includeFiles.step);
     sharedStep.dependOn(&b.addInstallArtifact(engineShared, .{}).step);
 
-    const emulator = b.addExecutable(.{
-        .name = "neonucleus",
-        .target = target,
-        .optimize = optimize,
-    });
-    emulator.linkLibC();
+    if(!noEmu) {
+        const emulator = b.addExecutable(.{
+            .name = "neonucleus",
+            .target = target,
+            .optimize = optimize,
+        });
+        emulator.linkLibC();
 
-    const sysraylib_flag = b.option(bool, "sysraylib", "Use the system raylib instead of compiling raylib") orelse false;
-    if (sysraylib_flag) {
-        emulator.linkSystemLibrary("raylib");
-    } else {
-        const raylib = b.dependency("raylib", .{ .target = target, .optimize = optimize });
-        emulator.addIncludePath(raylib.path(raylib.builder.h_dir));
-        emulator.linkLibrary(raylib.artifact("raylib"));
+        const sysraylib_flag = b.option(bool, "sysraylib", "Use the system raylib instead of compiling raylib") orelse false;
+        if (sysraylib_flag) {
+            emulator.linkSystemLibrary("raylib");
+        } else {
+            const raylib = b.dependency("raylib", .{ .target = target, .optimize = optimize });
+            emulator.addIncludePath(raylib.path(raylib.builder.h_dir));
+            emulator.linkLibrary(raylib.artifact("raylib"));
+        }
+
+        const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua54;
+        emulator.addCSourceFiles(.{
+            .files = &.{
+                "src/testLuaArch.c",
+                "src/emulator.c",
+            },
+            .flags = &.{
+                if(opts.baremetal) "-DNN_BAREMETAL" else "",
+                if(opts.bit32) "-DNN_BIT32" else "",
+            },
+        });
+        compileTheRightLua(b, emulator, luaVer) catch unreachable;
+
+        // forces us to link in everything too
+        emulator.linkLibrary(engineStatic);
+
+        const emulatorStep = b.step("emulator", "Builds the emulator");
+        emulatorStep.dependOn(&emulator.step);
+        emulatorStep.dependOn(&b.addInstallArtifact(emulator, .{}).step);
+
+        var run_cmd = b.addRunArtifact(emulator);
+
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
+
+        const run_step = b.step("run", "Run the emulator");
+        run_step.dependOn(emulatorStep);
+        run_step.dependOn(&run_cmd.step);
     }
-
-    const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua54;
-    emulator.addCSourceFiles(.{
-        .files = &.{
-            "src/testLuaArch.c",
-            "src/emulator.c",
-        },
-        .flags = &.{
-            if(opts.baremetal) "-DNN_BAREMETAL" else "",
-        },
-    });
-    compileTheRightLua(b, emulator, luaVer) catch unreachable;
-
-    // forces us to link in everything too
-    emulator.linkLibrary(engineStatic);
-
-    const emulatorStep = b.step("emulator", "Builds the emulator");
-    emulatorStep.dependOn(&emulator.step);
-    emulatorStep.dependOn(&b.addInstallArtifact(emulator, .{}).step);
-
-    var run_cmd = b.addRunArtifact(emulator);
-
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-
-    const run_step = b.step("run", "Run the emulator");
-    run_step.dependOn(emulatorStep);
-    run_step.dependOn(&run_cmd.step);
 }

@@ -10,11 +10,15 @@
 #endif
 
 #ifdef NN_BAREMETAL
-#if defined(__LP64__) || defined(_LP64)
+#ifdef NN_BIT32
+    typedef int nn_intptr_t;
+    typedef unsigned int nn_size_t;
+#elif defined(__LP64__) || defined(_LP64)
     // long is ptr sized
     typedef long nn_intptr_t;
     typedef unsigned long nn_size_t;
 #else
+#error "fuck you"
     typedef long long nn_intptr_t;
     typedef unsigned long long nn_size_t;
 #endif
