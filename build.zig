@@ -1,11 +1,17 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-fn addEngineSources(b: *std.Build, c: *std.Build.Step.Compile, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+const LibBuildOpts = struct {
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    baremetal: bool,
+};
+
+fn addEngineSources(b: *std.Build, c: *std.Build.Step.Compile, opts: LibBuildOpts) void {
     const dataMod = b.createModule(.{
         .root_source_file = b.path("src/data.zig"),
-        .target = target,
-        .optimize = optimize,
+        .target = opts.target,
+        .optimize = opts.optimize,
     });
     const zigObj = b.addObject(.{
         .name = "zig_wrappers",
@@ -13,12 +19,9 @@ fn addEngineSources(b: *std.Build, c: *std.Build.Step.Compile, target: std.Build
         .pic = true,
     });
     c.addObject(zigObj);
-    
-    c.linkLibC(); // we need a libc
-
+   
     c.addCSourceFiles(.{
         .files = &[_][]const u8{
-            "src/tinycthread.c",
             "src/lock.c",
             "src/utils.c",
             "src/value.c",
@@ -34,7 +37,19 @@ fn addEngineSources(b: *std.Build, c: *std.Build.Step.Compile, target: std.Build
             "src/components/gpu.c",
             "src/components/keyboard.c",
         },
+        .flags = &.{
+            if(opts.baremetal) "-DNN_BAREMETAL" else "",
+        },
     });
+
+    if(!opts.baremetal) {
+        c.linkLibC(); // we need a libc
+        c.addCSourceFiles(.{
+            .files = &.{
+                "src/tinycthread.c",
+            },
+        });
+    }
 
     c.addIncludePath(b.path("src"));
 }
@@ -92,6 +107,12 @@ pub fn build(b: *std.Build) void {
 
     const optimize = b.standardOptimizeOption(.{});
 
+    const opts = LibBuildOpts {
+        .target = target,
+        .optimize = optimize,
+        .baremetal = b.option(bool, "baremetal", "Compiles without libc integration") orelse false,
+    };
+
     const includeFiles = b.addInstallHeaderFile(b.path("src/neonucleus.h"), "neonucleus.h");
 
     const engineStatic = b.addStaticLibrary(.{
@@ -101,7 +122,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    addEngineSources(b, engineStatic, target, optimize);
+    addEngineSources(b, engineStatic, opts);
 
     const engineShared = b.addSharedLibrary(.{
         .name = getSharedEngineName(os),
@@ -109,7 +130,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    addEngineSources(b, engineShared, target, optimize);
+    addEngineSources(b, engineShared, opts);
 
     const engineStep = b.step("engine", "Builds the engine as a static library");
     engineStep.dependOn(&engineStatic.step);
@@ -162,24 +183,4 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the emulator");
     run_step.dependOn(emulatorStep);
     run_step.dependOn(&run_cmd.step);
-
-    const lib_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/engine.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const run_lib_unit_tests = b.addRunArtifact(lib_unit_tests);
-
-    const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
-
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_lib_unit_tests.step);
-    test_step.dependOn(&run_exe_unit_tests.step);
 }

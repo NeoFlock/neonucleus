@@ -204,3 +204,32 @@ int nn_mapColor(int color, int *palette, int paletteSize) {
     }
     return bestColor;
 }
+
+void nn_memset(void *buf, unsigned char byte, size_t len) {
+    unsigned char *bytes = buf;
+    for(size_t i = 0; i < len; i++) bytes[i] = byte;
+}
+
+int nn_strcmp(const char *a, const char *b) {
+    size_t i = 0;
+    while(true) {
+        unsigned char ca = a[i];
+        unsigned char cb = b[i];
+
+        if(ca < cb) {
+            return -1;
+        }
+        if(ca > cb) {
+            return -1;
+        }
+        if(ca == 0 && cb == 0) { // reached terminator
+            return 0;
+        }
+    }
+}
+
+size_t nn_strlen(const char *a) {
+    size_t l = 0;
+    while(a[l]) l++;
+    return l;
+}

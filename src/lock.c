@@ -1,5 +1,4 @@
 #include "neonucleus.h"
-#include <stdio.h>
 
 #ifndef NN_BAREMETAL
 #include "tinycthread.h"

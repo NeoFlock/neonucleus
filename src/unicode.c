@@ -1,6 +1,4 @@
 #include "neonucleus.h"
-#include <assert.h>
-#include <stdio.h>
 #include <string.h>
 
 // both tables copied from: https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/scala/li/cil/oc/util/FontUtils.scala
@@ -225,9 +223,6 @@ char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, size_t codepoin
         j += codepointLen;
     }
     buf[j] = '\0';
-    // this can only fail if size_t is smaller than a pointer and overflowed.
-    // IF THIS HAPPENS, THE SYSTEM HEADERS ARE BUGGED.
-    assert(j == len);
 
     return buf;
 }

@@ -149,7 +149,11 @@ typedef struct nn_Context {
     nn_Rng rng;
 } nn_Context;
 
-// TODO: write a bunch of utils so this *can* work on baremetal.
+// libc-like utils
+
+void nn_memset(void *buf, unsigned char byte, size_t len);
+int nn_strcmp(const char *a, const char *b);
+size_t nn_strlen(const char *a);
 
 #ifndef NN_BAREMETAL
 nn_Alloc nn_libcAllocator();

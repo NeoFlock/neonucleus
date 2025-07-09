@@ -1,7 +1,5 @@
 #include "../neonucleus.h"
 #include "screen.h"
-#include <stdio.h>
-#include <string.h>
 
 typedef struct nni_gpu {
     nn_Alloc alloc;
@@ -173,7 +171,7 @@ void nni_gpu_get(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
 
 void nni_gpu_getScreen(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->screenAddress == NULL) return;
-    nn_return_string(computer, gpu->screenAddress, strlen(gpu->screenAddress));
+    nn_return_string(computer, gpu->screenAddress, nn_strlen(gpu->screenAddress));
 }
 
 void nni_gpu_maxResolution(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {

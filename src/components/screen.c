@@ -1,6 +1,4 @@
 #include "screen.h"
-#include <stdio.h>
-#include <string.h>
 
 nn_screen *nn_newScreen(nn_Context *context, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors) {
     nn_Alloc *alloc = &context->allocator;
@@ -20,7 +18,7 @@ nn_screen *nn_newScreen(nn_Context *context, int maxWidth, int maxHeight, int ma
     screen->editableColors = editableColors;
     screen->paletteColors = paletteColors;
     screen->palette = nn_alloc(alloc, sizeof(int) * screen->paletteColors);
-    memset(screen->palette, 0, sizeof(int) * screen->paletteColors);
+    nn_memset(screen->palette, 0, sizeof(int) * screen->paletteColors);
     screen->aspectRatioWidth = 1;
     screen->aspectRatioHeight = 1;
     screen->isOn = true;
@@ -97,7 +95,7 @@ void nn_addKeyboard(nn_screen *screen, nn_address address) {
 void nn_removeKeyboard(nn_screen *screen, nn_address address) {
     size_t j = 0;
     for(size_t i = 0; i < screen->keyboardCount; i++) {
-        if(strcmp(screen->keyboards[i], address) == 0) {
+        if(nn_strcmp(screen->keyboards[i], address) == 0) {
             nn_deallocStr(&screen->ctx.allocator, screen->keyboards[i]);
         } else {
             screen->keyboards[j] = screen->keyboards[i];
@@ -217,7 +215,7 @@ void nn_screenComp_getKeyboards(nn_screen *screen, void *_, nn_component *compon
 
     size_t len = arr.array->len;
     for(size_t i = 0; i < len; i++) {
-        size_t addrlen = strlen(nn_getKeyboard(screen, i));
+        size_t addrlen = nn_strlen(nn_getKeyboard(screen, i));
         nn_value addr = nn_values_string(&screen->ctx.allocator, nn_getKeyboard(screen, i), addrlen);
         nn_values_set(arr, i, addr);
     }
