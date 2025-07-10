@@ -22,36 +22,40 @@ nn_filesystemControl nn_fs_getControl(nn_component *component, nn_filesystem *fs
     return fs->control(component, fs->userdata);
 }
 
-nn_size_t nn_fs_countChunks(nn_filesystem *fs, nn_size_t bytes, nn_component *component) {
+void nn_fs_readCost(nn_filesystem *fs, nn_size_t bytes, nn_component *component) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
+    nn_computer *computer = nn_getComputerOfComponent(component);
 
-    nn_size_t chunks = bytes / control.pretendChunkSize;
-    if(bytes % control.pretendChunkSize != 0) chunks++;
-    return chunks;
+    nn_simulateBufferedIndirect(component, bytes, control.readBytesPerTick);
+    nn_removeEnergy(computer, control.readEnergyPerByte * bytes);
+    nn_addHeat(computer, control.readHeatPerByte * bytes);
 }
 
-void nn_fs_readCost(nn_filesystem *fs, nn_size_t count, nn_component *component, nn_computer *computer) {
+void nn_fs_writeCost(nn_filesystem *fs, nn_size_t bytes, nn_component *component) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
-    nn_removeEnergy(computer, control.readEnergyCost * count);
-    nn_callCost(computer, control.readCostPerChunk * count);
+    nn_computer *computer = nn_getComputerOfComponent(component);
+
+    nn_simulateBufferedIndirect(component, bytes, control.writeBytesPerTick);
+    nn_removeEnergy(computer, control.writeEnergyPerByte * bytes);
+    nn_addHeat(computer, control.writeHeatPerByte * bytes);
 }
 
-void nn_fs_writeCost(nn_filesystem *fs, nn_size_t count, nn_component *component, nn_computer *computer) {
+void nn_fs_removeCost(nn_filesystem *fs, nn_size_t count, nn_component *component) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
-    nn_removeEnergy(computer, control.writeEnergyCost * count);
-    nn_addHeat(computer, control.writeHeatPerChunk * count);
-    nn_callCost(computer, control.writeCostPerChunk * count);
+    nn_computer *computer = nn_getComputerOfComponent(component);
+
+    nn_simulateBufferedIndirect(component, count, control.removeFilesPerTick);
+    nn_removeEnergy(computer, control.removeEnergy * count);
+    nn_addHeat(computer, control.removeHeat * count);
 }
 
-void nn_fs_seekCost(nn_filesystem *fs, nn_size_t count, nn_component *component, nn_computer *computer) {
+void nn_fs_createCost(nn_filesystem *fs, nn_size_t count, nn_component *component) {
     nn_filesystemControl control = nn_fs_getControl(component, fs);
-    if(control.pretendRPM == 0) return; // disabled, likely SSD
-    double rps = (double)control.pretendRPM / 60;
-    double seekLatency = 1.0 / ((double)fs->spaceTotal(component, fs->userdata) / control.pretendChunkSize) / rps;
+    nn_computer *computer = nn_getComputerOfComponent(component);
 
-    nn_removeEnergy(computer, control.writeEnergyCost * count);
-    nn_addHeat(computer, control.writeHeatPerChunk * count);
-    nn_callCost(computer, control.writeCostPerChunk * count);
+    nn_simulateBufferedIndirect(component, count, control.createFilesPerTick);
+    nn_removeEnergy(computer, control.createEnergy * count);
+    nn_addHeat(computer, control.createHeat * count);
 }
 
 void nn_fs_getLabel(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -63,11 +67,8 @@ void nn_fs_getLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
     } else {
         nn_return_string(computer, buf, l);
     }
-    
-    // Latency, energy costs and stuff
-    nn_filesystemControl control = nn_fs_getControl(component, fs);
-    nn_removeEnergy(computer, control.readEnergyCost);
-    nn_callCost(computer, control.readCostPerChunk);
+
+    nn_fs_readCost(fs, l, component);
 }
 
 void nn_fs_setLabel(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -81,27 +82,21 @@ void nn_fs_setLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
     l = fs->setLabel(component, fs->userdata, buf, l);
     nn_return_string(computer, buf, l);
 
-    nn_fs_readCost(fs, 1, component, computer);
+    nn_fs_writeCost(fs, l, component);
 }
 
 void nn_fs_spaceUsed(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     nn_size_t space = fs->spaceUsed(component, fs->userdata);
     nn_return(computer, nn_values_integer(space));
-    
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_spaceTotal(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     nn_size_t space = fs->spaceUsed(component, fs->userdata);
     nn_return(computer, nn_values_integer(space));
-    
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_isReadOnly(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     nn_return(computer, nn_values_boolean(fs->isReadOnly(component, fs->userdata)));
-    
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_size(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -119,8 +114,6 @@ void nn_fs_size(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     nn_size_t byteSize = fs->size(component, fs->userdata, path);
 
     nn_return(computer, nn_values_integer(byteSize));
-    
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_remove(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -136,10 +129,8 @@ void nn_fs_remove(nn_filesystem *fs, void *_, nn_component *component, nn_comput
     }
 
     nn_return(computer, nn_values_boolean(fs->remove(component, fs->userdata, path)));
-   
-    // Considered 1 safety check + the actual write
-    nn_fs_readCost(fs, 1, component, computer);
-    nn_fs_writeCost(fs, 1, component, computer);
+
+    nn_fs_removeCost(fs, 1, component);
 }
 
 void nn_fs_lastModified(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -162,8 +153,6 @@ void nn_fs_lastModified(nn_filesystem *fs, void *_, nn_component *component, nn_
     t -= t % 1000;
 
     nn_return(computer, nn_values_integer(t));
-   
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_rename(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -192,9 +181,8 @@ void nn_fs_rename(nn_filesystem *fs, void *_, nn_component *component, nn_comput
     nn_size_t movedCount = fs->rename(component, fs->userdata, from, to);
     nn_return(computer, nn_values_boolean(movedCount > 0));
    
-    // Considered 2 safety checks + 1 read per file + 1 write per file
-    nn_fs_readCost(fs, 2 + movedCount, component, computer);
-    nn_fs_writeCost(fs, movedCount, component, computer);
+    nn_fs_removeCost(fs, movedCount, component);
+    nn_fs_createCost(fs, movedCount, component);
 }
 
 void nn_fs_exists(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -210,8 +198,6 @@ void nn_fs_exists(nn_filesystem *fs, void *_, nn_component *component, nn_comput
     }
 
     nn_return(computer, nn_values_boolean(fs->exists(component, fs->userdata, path)));
-   
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_isDirectory(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -227,8 +213,6 @@ void nn_fs_isDirectory(nn_filesystem *fs, void *_, nn_component *component, nn_c
     }
 
     nn_return(computer, nn_values_boolean(fs->isDirectory(component, fs->userdata, path)));
-   
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_makeDirectory(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -244,9 +228,8 @@ void nn_fs_makeDirectory(nn_filesystem *fs, void *_, nn_component *component, nn
     }
 
     nn_return(computer, nn_values_boolean(fs->makeDirectory(component, fs->userdata, path)));
-   
-    nn_fs_readCost(fs, 1, component, computer);
-    nn_fs_writeCost(fs, 1, component, computer);
+
+    nn_fs_createCost(fs, 1, component);
 }
 
 void nn_fs_list(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -276,8 +259,6 @@ void nn_fs_list(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         nn_dealloc(alloc, files, sizeof(char *) * fileCount);
         nn_return(computer, arr);
     }
-
-    nn_fs_readCost(fs, 1 + fileCount, component, computer);
 }
 
 void nn_fs_open(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -298,11 +279,13 @@ void nn_fs_open(nn_filesystem *fs, void *_, nn_component *component, nn_computer
         mode = "r";
     }
 
+    // technically wrongfully 
+    if(!fs->exists(component, fs->userdata, path)) {
+        nn_fs_createCost(fs, 1, component);
+    }
+
     nn_size_t fd = fs->open(component, fs->userdata, path, mode);
     nn_return(computer, nn_values_integer(fd));
-
-    // 1 safety check
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_close(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -311,9 +294,6 @@ void nn_fs_close(nn_filesystem *fs, void *_, nn_component *component, nn_compute
 
     nn_bool_t closed = fs->close(component, fs->userdata, fd);
     nn_return(computer, nn_values_boolean(closed));
-
-    // do not ask where it comes from, balance is hard
-    nn_fs_readCost(fs, 1, component, computer);
 }
 
 void nn_fs_write(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -333,9 +313,8 @@ void nn_fs_write(nn_filesystem *fs, void *_, nn_component *component, nn_compute
     nn_bool_t closed = fs->write(component, fs->userdata, fd, buf, len);
     nn_return(computer, nn_values_boolean(closed));
 
-    // do not ask where it comes from, balance is hard
-    nn_fs_writeCost(fs, nn_fs_countChunks(fs, len, component), component, computer);
-    nn_fs_seekCost(fs, nn_fs_countChunks(fs, len, component), component, computer);
+    nn_fs_writeCost(fs, len, component);
+    nn_return_boolean(computer, true);
 }
 
 void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
@@ -362,9 +341,7 @@ void nn_fs_read(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     }
     nn_dealloc(alloc, buf, byteLen);
 
-    // do not ask where it comes from, balance is hard
-    nn_fs_readCost(fs, nn_fs_countChunks(fs, readLen, component), component, computer);
-    nn_fs_seekCost(fs, nn_fs_countChunks(fs, readLen, component), component, computer);
+    nn_fs_readCost(fs, len, component);
 }
 
 nn_bool_t nn_fs_validWhence(const char *s) {
@@ -397,9 +374,6 @@ void nn_fs_seek(nn_filesystem *fs, void *_, nn_component *component, nn_computer
     nn_size_t pos = fs->seek(component, fs->userdata, fd, whence, off, &moved);
     if(moved < 0) moved = -moved;
 
-    // do not ask where it comes from, balance is hard
-    nn_fs_readCost(fs, 1, component, computer);
-    nn_fs_seekCost(fs, nn_fs_countChunks(fs, moved, component), component, computer);
     nn_return_integer(computer, pos);
 }
 

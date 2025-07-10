@@ -606,34 +606,20 @@ nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, 
 
 // FileSystem
 typedef struct nn_filesystemControl {
-    int pretendChunkSize;
+    double readBytesPerTick;
+    double writeBytesPerTick;
+    double removeFilesPerTick;
+    double createFilesPerTick;
 
-    // speed
-    // used to calculate the latency of seeking a file. It will treat the file as continuous within the storage medium, which is completely
-    // unrealistic. Essentially, after a seek, it will check how much the file pointer was changed. If it went backwards, the drive spins
-    // in the opposite direction. Drives work the same way.
-    int pretendRPM;
-    double readLatencyPerChunk;
-    double writeLatencyPerChunk;
+    double readHeatPerByte;
+    double writeHeatPerByte;
+    double removeHeat;
+    double createHeat;
 
-    // these control *random* latencies that each operation will do
-    double randomLatencyMin;
-    double randomLatencyMax;
-
-    // thermals
-    double motorHeat; // this times how many chunks have been seeked will be the heat addres, +/- the motor heat range.
-    double motorHeatRange;
-    double writeHeatPerChunk;
-    
-    // call budget
-    nn_size_t readCostPerChunk;
-    nn_size_t writeCostPerChunk;
-    nn_size_t seekCostPerChunk;
-
-    // energy cost
-    double readEnergyCost;
-    double writeEnergyCost;
-    double motorEnergyCost;
+    double readEnergyPerByte;
+    double writeEnergyPerByte;
+    double removeEnergy;
+    double createEnergy;
 } nn_filesystemControl;
 
 typedef struct nn_filesystem {
@@ -681,28 +667,21 @@ nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int sl
 
 // Drive
 typedef struct nn_driveControl {
+    double readSectorsPerTick;
+    double writeSectorsPerTick;
     // Set it to 0 to disable seek latency.
-    int rpm;
+    double seekSectorsPerTick;
 
-    double readLatencyPerSector;
-    double writeLatencyPerSector;
-
-    double randomLatencyMin;
-    double randomLatencyMax;
-
-    double motorHeat;
-    double motorHeatRange;
+    double readHeatPerSector;
     double writeHeatPerSector;
+    double motorHeatPerSector;
     
-    // These are per sector
-    double motorEnergyCost;
-    double readEnergyCost;
-    double writeEnergyCost;
-    
-    // call budget
-    nn_size_t readCostPerSector;
-    nn_size_t writeCostPerSector;
-    nn_size_t seekCostPerSector;
+    double readEnergyPerSector;
+    double writeEnergyPerSector;
+    double motorEnergyPerSector;
+
+    // if not, seeking *backwards* will cost as much as a full spin.
+    nn_bool_t reversable;
 } nn_driveControl;
 
 typedef struct nn_drive {

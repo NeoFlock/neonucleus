@@ -174,20 +174,20 @@ typedef struct ne_fs {
 
 nn_filesystemControl ne_fs_getControl(nn_component *component, ne_fs *_) {
     return (nn_filesystemControl) {
-        .pretendChunkSize = 512,
-        .pretendRPM = 12,
-        .writeHeatPerChunk = 0.01,
-        .writeCostPerChunk = 3,
-        .writeEnergyCost = 0.015,
-        .writeLatencyPerChunk = 0.0003,
-        .readEnergyCost = 0.007,
-        .readCostPerChunk = 1,
-        .readLatencyPerChunk = 0.0001,
-        .randomLatencyMin = 0.0005,
-        .randomLatencyMax = 0.0019,
-        .seekCostPerChunk = 1,
-        .motorHeat = 0.03,
-        .motorEnergyCost = 0.5,
+        .readBytesPerTick = 65536,
+        .writeBytesPerTick = 32768,
+        .removeFilesPerTick = 16,
+        .createFilesPerTick = 16,
+        
+        .readHeatPerByte = 0.0000015,
+        .writeHeatPerByte = 0.000015,
+        .removeHeat = 0.035,
+        .createHeat = 0.045,
+
+        .readEnergyPerByte = 0.0015,
+        .writeEnergyPerByte = 0.0035,
+        .removeEnergy = 0.135,
+        .createEnergy = 0.325,
     };
 }
 

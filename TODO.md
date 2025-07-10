@@ -1,9 +1,5 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- rework literally all the costs to just be heat and amount per tick
-- change more methods to be direct but with buffered indirects
-- complete the GPU implementation (screen buffers and missing methods)
-- complete the screen implementation (bunch of missing methods)
 - in-memory version of `filesystem` and `drive`
 - `hologram` component
 - `computer` component
@@ -15,14 +11,14 @@
 - `disk_drive` component
 - `computer.getDeviceInfo()`, and subsequently, component device information
 - `computer.beep(frequency?: number, duration?: number, volume?: number)`, frequency between 20 and 2000 Hz, duration up to 5 seconds, volume from 0 to 1.
-Should use the *busy* machine state to let the sandbox suspend it until it is done playing
-- ensure the recursive locks are used correctly to prevent race conditions
-- use dynamic arrays for signals (and maybe components)
+- complete the GPU implementation (screen buffers and missing methods)
+- complete the screen implementation (bunch of missing methods)
 - support invalid UTF-8 for GPU set and fill, which should pretend the byte value is the codepoint.
 
 # Bugfixes
 
 - Rework filesystem component to pre-process paths to ensure proper sandboxing and not allow arbitrary remote file access
+- Ensure the recursive locks are used correctly to prevent race conditions
 - Do a huge audit at some point
 
 # The extra components
@@ -39,9 +35,6 @@ Should use the *busy* machine state to let the sandbox suspend it until it is do
 - `tape_drive` component, compatible with Computronics, except maybe with proper seek times and support for multiple tapes
 - `cd_reader` and `cd_writer` components, to work with CDs
 
-# Internal stuff
+# Internal changes
 
-- custom atomic, lock and improved custom clock support. Perhaps generalizing it to an nn_Context
-- no longer depend on libc functions
-- no longer depend on libc headers
-- no longer link any libc when NN_BAREMETAL
+- use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging
