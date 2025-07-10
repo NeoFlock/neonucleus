@@ -35,6 +35,10 @@
 - `tape_drive` component, compatible with Computronics, except maybe with proper seek times and support for multiple tapes
 - `cd_reader` and `cd_writer` components, to work with CDs
 
+# API changes
+
+- move controls into the component instances instead of using getters, to boost performance
+
 # Internal changes
 
 - use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging

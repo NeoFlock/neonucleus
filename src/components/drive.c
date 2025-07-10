@@ -43,7 +43,7 @@ void nni_drive_seekTo(nn_component *component, nni_drive *drive, nn_size_t secto
     sector = sector - 1; // switch to 0 to N-1 sector addressing,
                          // which is much nicer to do math with
                          // and Lua made a big oopsie.
-    size_t old = drive->currentSector;
+    nn_size_t old = drive->currentSector;
     nn_driveControl ctrl = nn_drive_getControl(component, drive);
     if(ctrl.seekSectorsPerTick == 0) return; // seek latency disabled
     nn_computer *computer = nn_getComputerOfComponent(component);
