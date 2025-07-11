@@ -18,7 +18,6 @@
     typedef long nn_intptr_t;
     typedef unsigned long nn_size_t;
 #else
-#error "fuck you"
     typedef long long nn_intptr_t;
     typedef unsigned long long nn_size_t;
 #endif
