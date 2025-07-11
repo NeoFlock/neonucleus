@@ -42,3 +42,4 @@
 # Internal changes
 
 - use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging
+- setup an extensive testing system to find bugs easier
