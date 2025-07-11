@@ -5,6 +5,7 @@
 #ifdef NN_POSIX
 #include <time.h>
 #else
+#include <time.h>
 #include <windows.h>
 #endif
 
