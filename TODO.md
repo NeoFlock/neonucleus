@@ -1,6 +1,9 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- in-memory version of `eeprom`, `filesystem`
+- in-memory version of `filesystem`
+- complete the GPU implementation (screen buffers and missing methods)
+- complete the screen implementation (bunch of missing methods)
+- support invalid UTF-8 for GPU set and fill, which should pretend the byte value is the codepoint.
 - `hologram` component
 - `computer` component
 - `modem` component
@@ -11,9 +14,6 @@
 - `disk_drive` component
 - `computer.getDeviceInfo()`, and subsequently, component device information
 - `computer.beep(frequency?: number, duration?: number, volume?: number)`, frequency between 20 and 2000 Hz, duration up to 5 seconds, volume from 0 to 1.
-- complete the GPU implementation (screen buffers and missing methods)
-- complete the screen implementation (bunch of missing methods)
-- support invalid UTF-8 for GPU set and fill, which should pretend the byte value is the codepoint.
 
 # Bugfixes
 
