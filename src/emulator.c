@@ -155,31 +155,22 @@ nn_bool_t ne_eeprom_isReadonly(void *userdata) {
 
 void ne_eeprom_makeReadonly(void *userdata) {}
 
-#define NE_FS_MAX 128
+nn_filesystemControl ne_fs_ctrl = {
+    .readBytesPerTick = 65536,
+    .writeBytesPerTick = 32768,
+    .removeFilesPerTick = 16,
+    .createFilesPerTick = 16,
+    
+    .readHeatPerByte = 0.0000015,
+    .writeHeatPerByte = 0.000015,
+    .removeHeat = 0.035,
+    .createHeat = 0.045,
 
-typedef struct ne_fs {
-    FILE *files[NE_FS_MAX];
-    size_t fileLen;
-} ne_fs;
-
-nn_filesystemControl ne_fs_getControl(nn_component *component, ne_fs *_) {
-    return (nn_filesystemControl) {
-        .readBytesPerTick = 65536,
-        .writeBytesPerTick = 32768,
-        .removeFilesPerTick = 16,
-        .createFilesPerTick = 16,
-        
-        .readHeatPerByte = 0.0000015,
-        .writeHeatPerByte = 0.000015,
-        .removeHeat = 0.035,
-        .createHeat = 0.045,
-
-        .readEnergyPerByte = 0.0015,
-        .writeEnergyPerByte = 0.0035,
-        .removeEnergy = 0.135,
-        .createEnergy = 0.325,
-    };
-}
+    .readEnergyPerByte = 0.0015,
+    .writeEnergyPerByte = 0.0035,
+    .removeEnergy = 0.135,
+    .createEnergy = 0.325,
+};
 
 void ne_fs_getLabel(nn_component *component, void *_, char *buf, size_t *buflen) {
     *buflen = 0;
@@ -189,21 +180,13 @@ nn_size_t ne_fs_setLabel(nn_component *component, void *_, const char *buf, size
     return 0;
 }
 
-nn_bool_t ne_fs_isReadonly(nn_component *component, void *userdata) {
-    return false;
-}
-
-size_t ne_fs_spaceUsed(nn_component *component, void *_) {
+size_t ne_fs_spaceUsed(void *_) {
     return 0; // ultra accurate
 }
 
-size_t ne_fs_spaceTotal(nn_component *component, void *_) {
-    return 1*1024*1024;
-}
-
-const char *ne_fs_diskPath(nn_component *component, const char *path) {
+const char *ne_fs_diskPath(nn_address addr, const char *path) {
     static char buf[256];
-    const char *root = ne_location(nn_getComponentAddress(component));
+    const char *root = ne_location(addr);
     if(path[0] == '/') {
         snprintf(buf, 256, "%s%s", root, path);
     } else {
@@ -213,12 +196,7 @@ const char *ne_fs_diskPath(nn_component *component, const char *path) {
     return buf;
 }
 
-size_t ne_fs_open(nn_component *component, ne_fs *fs, const char *path, const char *mode) {
-    if(fs->fileLen == NE_FS_MAX) {
-        nn_setCError(nn_getComputerOfComponent(component), "too many files");
-        return 0;
-    }
-
+void *ne_fs_open(nn_address address, const char *path, const char *mode) {
     const char *trueMode = "rb";
     if(strcmp(mode, "w") == 0) {
         trueMode = "wb";
@@ -227,48 +205,27 @@ size_t ne_fs_open(nn_component *component, ne_fs *fs, const char *path, const ch
         trueMode = "ab";
     }
 
-    const char *p = ne_fs_diskPath(component, path);
+    const char *p = ne_fs_diskPath(address, path);
     if(p[0] == '/') p++;
     FILE *f = fopen(p, trueMode);
-
-    if(f == NULL) {
-        nn_setCError(nn_getComputerOfComponent(component), strerror(errno));
-        return 0;
-    }
-
-    for(size_t i = 0; i < fs->fileLen; i++) {
-        if(fs->files[i] == NULL) {
-            fs->files[i] = f;
-            return i;
-        }
-    }
-
-    size_t i = fs->fileLen++;
-    fs->files[i] = f;
-    return i;
+    return f;
 }
 
-bool ne_fs_close(nn_component *component, ne_fs *fs, int fd) {
-    // we pray
-    fclose(fs->files[fd]);
-    fs->files[fd] = NULL;
+bool ne_fs_close(nn_address addr, FILE *f) {
+    fclose(f);
     return true;
 }
 
-bool ne_fs_write(nn_component *component, ne_fs *fs, int fd, const char *buf, size_t len) {
-    FILE *f = fs->files[fd];
+bool ne_fs_write(nn_address addr, FILE *f, const char *buf, size_t len) {
     return fwrite(buf, sizeof(char), len, f) > 0;
 }
 
-size_t ne_fs_read(nn_component *component, ne_fs *fs, int fd, char *buf, size_t required) {
-    FILE *f = fs->files[fd];
+size_t ne_fs_read(nn_address addr, FILE *f, char *buf, size_t required) {
     if(feof(f)) return 0;
     return fread(buf, sizeof(char), required, f);
 }
 
-size_t ne_fs_seek(nn_component *component, ne_fs *fs, int fd, const char *whence, int off, int *moved) {
-    FILE *f = fs->files[fd];
-    *moved = 0;
+size_t ne_fs_seek(nn_address addr, FILE *f, const char *whence, int off) {
     int w = SEEK_SET;
     if(strcmp(whence, "cur") == 0) {
         w = SEEK_CUR;
@@ -280,8 +237,8 @@ size_t ne_fs_seek(nn_component *component, ne_fs *fs, int fd, const char *whence
     return ftell(f);
 }
 
-char **ne_fs_list(nn_Alloc *alloc, nn_component *component, ne_fs *fs, const char *path, size_t *len) {
-    const char *p = ne_fs_diskPath(component, path);
+char **ne_fs_list(nn_Alloc *alloc, nn_address addr, const char *path, size_t *len) {
+    const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     FilePathList files = LoadDirectoryFiles(p);
@@ -297,8 +254,8 @@ char **ne_fs_list(nn_Alloc *alloc, nn_component *component, ne_fs *fs, const cha
     return buf;
 }
 
-size_t ne_fs_size(nn_component *component, ne_fs *fs, const char *path) {
-    const char *p = ne_fs_diskPath(component, path);
+size_t ne_fs_size(nn_address addr, const char *path) {
+    const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     if(DirectoryExists(p)) return 0;
@@ -306,29 +263,29 @@ size_t ne_fs_size(nn_component *component, ne_fs *fs, const char *path) {
     return GetFileLength(p);
 }
 
-size_t ne_fs_lastModified(nn_component *component, ne_fs *fs, const char *path) {
-    const char *p = ne_fs_diskPath(component, path);
+size_t ne_fs_lastModified(nn_address addr, const char *path) {
+    const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     return GetFileModTime(p);
 }
 
-bool ne_fs_isDirectory(nn_component *component, ne_fs *fs, const char *path) {
-    const char *p = ne_fs_diskPath(component, path);
+bool ne_fs_isDirectory(nn_address addr, const char *path) {
+    const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     return DirectoryExists(p);
 }
 
-bool ne_fs_makeDirectory(nn_component *component, ne_fs *fs, const char *path) {
-    const char *p = ne_fs_diskPath(component, path);
+bool ne_fs_makeDirectory(nn_address addr, const char *path) {
+    const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     return MakeDirectory(p) == 0;
 }
 
-bool ne_fs_exists(nn_component *component, ne_fs *fs, const char *path) {
-    const char *p = ne_fs_diskPath(component, path);
+bool ne_fs_exists(nn_address addr, const char *path) {
+    const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     return FileExists(p) || DirectoryExists(p);
@@ -701,21 +658,15 @@ int main() {
 
     nn_addEeprom(computer, "luaBios.lua", 0, genericEEPROM);
 
-    ne_fs fs = {
-        .files = {NULL},
-        .fileLen = 0,
-    };
-
-    nn_filesystem genericFS = {
-        .refc = 0,
-        .userdata = &fs,
+    nn_address fsFolder = "OpenOS";
+    nn_filesystemTable genericFSTable = {
+        .userdata = fsFolder,
         .deinit = NULL,
-        .control = (void *)ne_fs_getControl,
-        .getLabel = ne_fs_getLabel,
-        .setLabel = ne_fs_setLabel,
+        .getLabel = ne_eeprom_getLabel,
+        .setLabel = ne_eeprom_setLabel,
         .spaceUsed = ne_fs_spaceUsed,
-        .spaceTotal = ne_fs_spaceTotal,
-        .isReadOnly = ne_fs_isReadonly,
+        .spaceTotal = 1*1024*1024,
+        .isReadOnly = ne_eeprom_isReadonly,
         .size = (void *)ne_fs_size,
         .remove = NULL,
         .lastModified = (void *)ne_fs_lastModified,
@@ -730,7 +681,8 @@ int main() {
         .read = (void *)ne_fs_read,
         .seek = (void *)ne_fs_seek,
     };
-    nn_addFileSystem(computer, "OpenOS", 1, &genericFS);
+    nn_filesystem *genericFS = nn_newFilesystem(&ctx, genericFSTable, ne_fs_ctrl);
+    nn_addFileSystem(computer, fsFolder, 1, genericFS);
 
     ne_drive drive = {
         .file = fopen("data/drive.img", "r+")

@@ -625,47 +625,51 @@ typedef struct nn_filesystemControl {
     double createEnergy;
 } nn_filesystemControl;
 
-typedef struct nn_filesystem {
-    nn_refc refc;
+typedef struct nn_filesystemTable {
     void *userdata;
-    void (*deinit)(nn_component *component, void *userdata);
+    void (*deinit)(void *userdata);
 
-    nn_filesystemControl (*control)(nn_component *component, void *userdata);
-    void (*getLabel)(nn_component *component, void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, nn_size_t buflen);
+    nn_filesystemControl (*control)(void *userdata);
+    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen);
 
-    nn_size_t (*spaceUsed)(nn_component *component, void *userdata);
-    nn_size_t (*spaceTotal)(nn_component *component, void *userdata);
-    nn_bool_t (*isReadOnly)(nn_component *component, void *userdata);
+    nn_size_t (*spaceUsed)(void *userdata);
+    nn_size_t spaceTotal;
+    nn_bool_t (*isReadOnly)(void *userdata);
 
     // general operations
-    nn_size_t (*size)(nn_component *component, void *userdata, const char *path);
-    nn_bool_t (*remove)(nn_component *component, void *userdata, const char *path);
-    nn_size_t (*lastModified)(nn_component *component, void *userdata, const char *path);
-    nn_size_t (*rename)(nn_component *component, void *userdata, const char *from, const char *to);
-    nn_bool_t (*exists)(nn_component *component, void *userdata, const char *path);
+    nn_size_t (*size)(void *userdata, const char *path);
+    nn_size_t (*remove)(void *userdata, const char *path);
+    nn_size_t (*lastModified)(void *userdata, const char *path);
+    nn_size_t (*rename)(void *userdata, const char *from, const char *to);
+    nn_bool_t (*exists)(void *userdata, const char *path);
 
     // directory operations
-    nn_bool_t (*isDirectory)(nn_component *component, void *userdata, const char *path);
-    nn_bool_t (*makeDirectory)(nn_component *component, void *userdata, const char *path);
+    nn_bool_t (*isDirectory)(void *userdata, const char *path);
+    nn_bool_t (*makeDirectory)(void *userdata, const char *path);
     // The returned array should be allocated with the supplied allocator.
     // The strings should be null terminated. Use nn_strdup for the allocation to guarantee nn_deallocStr deallocates it correctly.
     // For the array, the *exact* size of the allocation should be sizeof(char *) * (*len),
     // If it is not, the behavior is undefined.
     // We recommend first computing len then allocating, though if that is not doable or practical,
     // consider nn_resize()ing it to the correct size to guarantee a correct deallocation.
-    char **(*list)(nn_Alloc *alloc, nn_component *component, void *userdata, const char *path, nn_size_t *len);
+    char **(*list)(nn_Alloc *alloc, void *userdata, const char *path, nn_size_t *len);
 
     // file operations
-    nn_size_t (*open)(nn_component *component, void *userdata, const char *path, const char *mode);
-    nn_bool_t (*close)(nn_component *component, void *userdata, int fd);
-    nn_bool_t (*write)(nn_component *component, void *userdata, int fd, const char *buf, nn_size_t len);
-    nn_size_t (*read)(nn_component *component, void *userdata, int fd, char *buf, nn_size_t required);
-    // moved is an out pointer that says how many bytes the pointer moved.
-    nn_size_t (*seek)(nn_component *component, void *userdata, int fd, const char *whence, int off, int *moved);
-} nn_filesystem;
+    void *(*open)(void *userdata, const char *path, const char *mode);
+    nn_bool_t (*close)(void *userdata, void *fd);
+    nn_bool_t (*write)(void *userdata, void *fd, const char *buf, nn_size_t len);
+    nn_size_t (*read)(void *userdata, void *fd, char *buf, nn_size_t required);
+    nn_size_t (*seek)(void *userdata, void *fd, const char *whence, int off);
+} nn_filesystemTable;
 
-nn_filesystem *nn_volatileFileSystem(nn_size_t capacity, nn_filesystemControl *control);
+typedef struct nn_filesystem nn_filesystem;
+
+nn_filesystem *nn_newFilesystem(nn_Context *context, nn_filesystemTable table, nn_filesystemControl control);
+nn_guard *nn_getFilesystemLock(nn_filesystem *fs);
+void nn_retainFilesystem(nn_filesystem *fs);
+nn_bool_t nn_destroyFilesystem(nn_filesystem *fs);
+
 nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int slot, nn_filesystem *filesystem);
 
 // Drive
