@@ -1,28 +1,58 @@
 #include "../neonucleus.h"
 
-typedef struct nni_drive {
-    nn_drive *funcs;
+typedef struct nn_drive {
+    nn_refc refc;
+    nn_guard *lock;
+    nn_Context ctx;
     nn_size_t currentSector;
-} nni_drive;
+    nn_driveTable table;
+    nn_driveControl ctrl;
+} nn_drive;
 
-void nn_drive_destroy(void *_, nn_component *component, nni_drive *drive) {
-    if(!nn_decRef(&drive->funcs->refc)) return;
+nn_drive *nn_newDrive(nn_Context *context, nn_driveTable table, nn_driveControl control) {
+    nn_drive *d = nn_alloc(&context->allocator, sizeof(nn_drive));
+    if(d == NULL) return NULL;
+    d->lock = nn_newGuard(context);
+    if(d->lock == NULL) {
+        nn_dealloc(&context->allocator, d, sizeof(nn_drive));
+        return NULL;
+    }
+    d->refc = 1;
+    d->table = table;
+    d->ctrl = control;
+    d->currentSector = 0;
+    d->ctx = *context;
+    return d;
+}
 
-    if(drive->funcs->deinit != NULL) {
-        drive->funcs->deinit(component, drive->funcs->userdata);
+nn_guard *nn_getDriveLock(nn_drive *drive) {
+    return drive->lock;
+}
+
+void nn_retainDrive(nn_drive *drive) {
+    nn_incRef(&drive->refc);
+}
+
+nn_bool_t nn_destroyDrive(nn_drive *drive) {
+    if(!nn_decRef(&drive->refc)) return false;
+
+    if(drive->table.deinit != NULL) {
+        drive->table.deinit(drive->table.userdata);
     }
 
-    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(nn_getComputerOfComponent(component)));
+    nn_Context ctx = drive->ctx;
 
-    nn_dealloc(alloc, drive, sizeof(nni_drive));
+    nn_deleteGuard(&ctx, drive->lock);
+    nn_dealloc(&ctx.allocator, drive, sizeof(nn_drive));
+    return true;
 }
 
-nn_driveControl nn_drive_getControl(nn_component *component, nni_drive *drive) {
-    return drive->funcs->control(component, drive->funcs->userdata);
+void nn_drive_destroy(void *_, nn_component *component, nn_drive *drive) {
+    nn_destroyDrive(drive);
 }
 
-void nni_drive_readCost(nn_component *component, nni_drive *drive) {
-    nn_driveControl ctrl = nn_drive_getControl(component, drive);
+void nni_drive_readCost(nn_component *component, nn_drive *drive) {
+    nn_driveControl ctrl = drive->ctrl;
     nn_computer *computer = nn_getComputerOfComponent(component);
 
     nn_simulateBufferedIndirect(component, 1, ctrl.readSectorsPerTick);
@@ -30,8 +60,8 @@ void nni_drive_readCost(nn_component *component, nni_drive *drive) {
     nn_removeEnergy(computer, ctrl.readEnergyPerSector);
 }
 
-void nni_drive_writeCost(nn_component *component, nni_drive *drive) {
-    nn_driveControl ctrl = nn_drive_getControl(component, drive);
+void nni_drive_writeCost(nn_component *component, nn_drive *drive) {
+    nn_driveControl ctrl = drive->ctrl;
     nn_computer *computer = nn_getComputerOfComponent(component);
 
     nn_simulateBufferedIndirect(component, 1, ctrl.writeSectorsPerTick);
@@ -39,19 +69,19 @@ void nni_drive_writeCost(nn_component *component, nni_drive *drive) {
     nn_removeEnergy(computer, ctrl.writeEnergyPerSector);
 }
 
-void nni_drive_seekTo(nn_component *component, nni_drive *drive, nn_size_t sector) {
+void nni_drive_seekTo(nn_component *component, nn_drive *drive, nn_size_t sector) {
     sector = sector - 1; // switch to 0 to N-1 sector addressing,
                          // which is much nicer to do math with
                          // and Lua made a big oopsie.
     nn_size_t old = drive->currentSector;
-    nn_driveControl ctrl = nn_drive_getControl(component, drive);
+    nn_driveControl ctrl = drive->ctrl;
     if(ctrl.seekSectorsPerTick == 0) return; // seek latency disabled
     nn_computer *computer = nn_getComputerOfComponent(component);
 
     // Compute important constants
-    nn_size_t sectorSize = drive->funcs->getSectorSize(component, drive->funcs->userdata);
-    nn_size_t platterCount = drive->funcs->getPlatterCount(component, drive->funcs->userdata);
-    nn_size_t capacity = drive->funcs->getCapacity(component, drive->funcs->userdata);
+    nn_size_t sectorSize = drive->table.sectorSize;
+    nn_size_t platterCount = drive->table.platterCount;
+    nn_size_t capacity = drive->table.capacity;
 
     nn_size_t sectorsPerPlatter = (capacity / sectorSize) / platterCount;
 
@@ -83,17 +113,19 @@ void nni_drive_seekTo(nn_component *component, nni_drive *drive, nn_size_t secto
     nn_removeEnergy(computer, ctrl.motorEnergyPerSector * moved);
 }
 
-void nn_drive_getLabel(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+void nn_drive_getLabel(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     char buf[NN_LABEL_SIZE];
     nn_size_t l = NN_LABEL_SIZE;
-    drive->funcs->getLabel(component, drive->funcs->userdata, buf, &l);
+    nn_lock(&drive->ctx, drive->lock);
+    drive->table.getLabel(drive->table.userdata, buf, &l);
+    nn_unlock(&drive->ctx, drive->lock);
     if(l == 0) {
         nn_return(computer, nn_values_nil());
     } else {
         nn_return_string(computer, buf, l);
     }
 }
-void nn_drive_setLabel(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+void nn_drive_setLabel(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_size_t l = 0;
     nn_value label = nn_getArgument(computer, 0);
     const char *buf = nn_toString(label, &l);
@@ -101,38 +133,42 @@ void nn_drive_setLabel(nni_drive *drive, void *_, nn_component *component, nn_co
         nn_setCError(computer, "bad label (string expected)");
         return;
     }
-    l = drive->funcs->setLabel(component, drive->funcs->userdata, buf, l);
+    nn_lock(&drive->ctx, drive->lock);
+    l = drive->table.setLabel(drive->table.userdata, buf, l);
+    nn_unlock(&drive->ctx, drive->lock);
     nn_return_string(computer, buf, l);
 }
-void nn_drive_getSectorSize(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    nn_size_t sector_size = drive->funcs->getSectorSize(component, drive->funcs->userdata);
+void nn_drive_getSectorSize(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+    nn_size_t sector_size = drive->table.sectorSize;
     nn_return(computer, nn_values_integer(sector_size));
 }
-void nn_drive_getPlatterCount(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    nn_size_t platter_count = drive->funcs->getPlatterCount(component, drive->funcs->userdata);
+void nn_drive_getPlatterCount(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+    nn_size_t platter_count = drive->table.platterCount;
     nn_return(computer, nn_values_integer(platter_count));
 }
-void nn_drive_getCapacity(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
-    nn_size_t capacity = drive->funcs->getCapacity(component, drive->funcs->userdata);
+void nn_drive_getCapacity(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+    nn_size_t capacity = drive->table.capacity;
     nn_return(computer, nn_values_integer(capacity));
 }
-void nn_drive_readSector(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+void nn_drive_readSector(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value sectorValue = nn_getArgument(computer, 0);
     int sector = nn_toInt(sectorValue);
-    nn_size_t sector_size = drive->funcs->getSectorSize(component, drive->funcs->userdata);
+    nn_size_t sector_size = drive->table.sectorSize;
     // we leave the +1 intentionally to compare the end of the real sector
-    if (sector < 1 || (sector * sector_size > drive->funcs->getCapacity(component, drive->funcs->userdata))) {
+    if (sector < 1 || (sector * sector_size > drive->table.capacity)) {
         nn_setCError(computer, "bad argument #1 (sector out of range)");
         return;
     }
     char buf[sector_size];
-    drive->funcs->readSector(component, drive->funcs->userdata, sector, buf);
+    nn_lock(&drive->ctx, drive->lock);
+    drive->table.readSector(drive->table.userdata, sector, buf);
+    nn_unlock(&drive->ctx, drive->lock);
     nn_return_string(computer, buf, sector_size);
 }
-void nn_drive_writeSector(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+void nn_drive_writeSector(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value sectorValue = nn_getArgument(computer, 0);
     int sector = nn_toInt(sectorValue);
-    nn_size_t sector_size = drive->funcs->getSectorSize(component, drive->funcs->userdata);
+    nn_size_t sector_size = drive->table.sectorSize;
     nn_value bufValue = nn_getArgument(computer, 1);
 
     nn_size_t buf_size = 0;
@@ -142,34 +178,40 @@ void nn_drive_writeSector(nni_drive *drive, void *_, nn_component *component, nn
         return;
     }
     // we leave the +1 intentionally to compare the end of the real sector
-    if (sector < 1 || (sector * sector_size > drive->funcs->getCapacity(component, drive->funcs->userdata))) {
+    if (sector < 1 || (sector * sector_size > drive->table.capacity)) {
         nn_setCError(computer, "bad argument #1 (sector out of range)");
         return;
     }
-    drive->funcs->writeSector(component, drive->funcs->userdata, sector, buf);
+    nn_lock(&drive->ctx, drive->lock);
+    drive->table.writeSector(drive->table.userdata, sector, buf);
+    nn_unlock(&drive->ctx, drive->lock);
+
+    nn_return_boolean(computer, true);
 }
-void nn_drive_readByte(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+void nn_drive_readByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value offsetValue = nn_getArgument(computer, 0);
     nn_size_t disk_offset = nn_toInt(offsetValue) - 1;
-    nn_size_t sector_size = drive->funcs->getSectorSize(component, drive->funcs->userdata);
+    nn_size_t sector_size = drive->table.sectorSize;
     int sector = (disk_offset / sector_size) + 1;
     nn_size_t sector_offset = disk_offset % sector_size;
 
-    if (disk_offset >= drive->funcs->getCapacity(component, drive->funcs->userdata)) {
+    if (disk_offset >= drive->table.capacity) {
         nn_setCError(computer, "bad argument #1 (index out of range)");
         return;
     }
     char buf[sector_size];
-    drive->funcs->readSector(component, drive->funcs->userdata, sector, buf);
+    nn_lock(&drive->ctx, drive->lock);
+    drive->table.readSector(drive->table.userdata, sector, buf);
+    nn_unlock(&drive->ctx, drive->lock);
 
     nn_return(computer, nn_values_integer(buf[sector_offset]));
 }
-void nn_drive_writeByte(nni_drive *drive, void *_, nn_component *component, nn_computer *computer) {
+void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_computer *computer) {
     nn_value offsetValue = nn_getArgument(computer, 0);
     nn_value writeValue = nn_getArgument(computer, 1);
     nn_size_t disk_offset = nn_toInt(offsetValue) - 1;
     nn_intptr_t write = nn_toInt(writeValue);
-    nn_size_t sector_size = drive->funcs->getSectorSize(component, drive->funcs->userdata);
+    nn_size_t sector_size = drive->table.sectorSize;
     int sector = (disk_offset / sector_size) + 1;
     nn_size_t sector_offset = disk_offset % sector_size;
 
@@ -177,16 +219,20 @@ void nn_drive_writeByte(nni_drive *drive, void *_, nn_component *component, nn_c
         nn_setCError(computer, "bad argument #2 (byte out of range)");
         return;
     }
-    if (disk_offset >= drive->funcs->getCapacity(component, drive->funcs->userdata)) {
+    if (disk_offset >= drive->table.capacity) {
         nn_setCError(computer, "bad argument #1 (index out of range)");
         return;
     }
+    nn_lock(&drive->ctx, drive->lock);
     char buf[sector_size];
-    drive->funcs->readSector(component, drive->funcs->userdata, sector, buf);
+    drive->table.readSector(drive->table.userdata, sector, buf);
 
     buf[sector_offset] = write;
 
-    drive->funcs->writeSector(component, drive->funcs->userdata, sector, buf);
+    drive->table.writeSector(drive->table.userdata, sector, buf);
+    nn_unlock(&drive->ctx, drive->lock);
+
+    nn_return_boolean(computer, true);
 }
 
 void nn_loadDriveTable(nn_universe *universe) {
@@ -205,15 +251,7 @@ void nn_loadDriveTable(nn_universe *universe) {
 }
 
 nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive) {
-    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
-    nni_drive *d = nn_alloc(alloc, sizeof(nni_drive));
-    d->currentSector = 0;
-    d->funcs = drive;
     nn_componentTable *driveTable = nn_queryUserdata(nn_getUniverse(computer), "NN:DRIVE");
-    nn_component *c = nn_newComponent(computer, address, slot, driveTable, drive);
-    if(c == NULL) {
-        nn_dealloc(alloc, d, sizeof(nni_drive));
-    }
-    return c;
+    return nn_newComponent(computer, address, slot, driveTable, drive);
 }
 

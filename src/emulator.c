@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -290,47 +289,6 @@ bool ne_fs_exists(nn_address addr, const char *path) {
 
     return FileExists(p) || DirectoryExists(p);
 }
-
-typedef struct ne_drive {
-    FILE *file;
-} ne_drive;
-
-void ne_drive_close(nn_component *component, ne_drive *drive) {
-    fclose(drive->file);
-}
-nn_driveControl ne_drive_getControl(nn_component *component, ne_drive *_) {
-    return (nn_driveControl){};
-}
-size_t ne_drive_getPlatterCount(nn_component *component, ne_drive *_) {
-    return 1;
-}
-size_t ne_drive_getSectorSize(nn_component *component, ne_drive *_) {
-    return 512;
-}
-size_t ne_drive_getCapacity(nn_component *component, ne_drive *drive) {
-    fseek(drive->file, 0, SEEK_END);
-    return ftell(drive->file);
-}
-void ne_drive_readSector(nn_component *component, ne_drive *drive, int shifted_sector, char *buf) {
-    int sector = shifted_sector - 1;
-    size_t sectorSize = ne_drive_getSectorSize(component, drive);
-
-    size_t offset = sector * sectorSize;
-    fseek(drive->file, offset, SEEK_SET);
-    fread(buf, sizeof(char), sectorSize, drive->file);
-}
-void ne_drive_writeSector(nn_component *component, ne_drive *drive, int shifted_sector, const char *buf) {
-    int sector = shifted_sector - 1;
-    size_t sectorSize = ne_drive_getSectorSize(component, drive);
-
-    size_t offset = sector * sectorSize;
-    fseek(drive->file, offset, SEEK_SET);
-    fwrite(buf, sizeof(char), sectorSize, drive->file);
-
-    // this is probably not needed but i believe someone isn't running the deinit
-    fflush(drive->file);
-}
-
 
 int keycode_to_oc(int keycode) {
     switch (keycode) {
@@ -656,7 +614,7 @@ int main() {
 
     nn_eeprom *genericEEPROM = nn_newEEPROM(&ctx, genericEEPROMTable, ne_eeprom_ctrl);
 
-    nn_addEeprom(computer, "luaBios.lua", 0, genericEEPROM);
+    nn_addEeprom(computer, NULL, 0, genericEEPROM);
 
     nn_address fsFolder = "OpenOS";
     nn_filesystemTable genericFSTable = {
@@ -682,28 +640,26 @@ int main() {
         .seek = (void *)ne_fs_seek,
     };
     nn_filesystem *genericFS = nn_newFilesystem(&ctx, genericFSTable, ne_fs_ctrl);
-    nn_addFileSystem(computer, fsFolder, 1, genericFS);
+    nn_addFileSystem(computer, NULL, 1, genericFS);
 
-    ne_drive drive = {
-        .file = fopen("data/drive.img", "r+")
+    nn_vdriveOptions vdriveOpts = {
+        .sectorSize = 512,
+        .capacity = 1*1024*1024,
+        .platterCount = 1,
     };
-    assert(drive.file != NULL);
-
-    nn_drive genericDrive = {
-        .refc = 0,
-        .userdata = &drive,
-        .deinit = (void *)ne_drive_close,
-        .control = (void *)ne_drive_getControl,
-        .getLabel = ne_fs_getLabel,
-        .setLabel = ne_fs_setLabel,
-        .getPlatterCount = (void *)ne_drive_getPlatterCount,
-        .getSectorSize = (void *)ne_drive_getSectorSize,
-        .getCapacity = (void *)ne_drive_getCapacity,
-        .readSector = (void *)ne_drive_readSector,
-        .writeSector = (void *)ne_drive_writeSector,
+    nn_driveControl vdriveCtrl = {
+        .readSectorsPerTick = 32768,
+        .writeSectorsPerTick = 16384,
+        .seekSectorsPerTick = 8192,
+        .readHeatPerSector = 0.0015,
+        .writeHeatPerSector = 0.015,
+        .motorHeatPerSector = 0.000005,
+        .readEnergyPerSector = 0.0015,
+        .writeEnergyPerSector = 0.015,
+        .motorEnergyPerSector = 0.00005,
     };
-
-    nn_addDrive(computer, "drive.img", 4, &genericDrive);
+    nn_drive *genericDrive = nn_volatileDrive(&ctx, vdriveOpts, vdriveCtrl, NULL);
+    nn_addDrive(computer, NULL, 4, genericDrive);
 
     int maxWidth = 80, maxHeight = 32;
 
@@ -711,7 +667,7 @@ int main() {
     nn_setDepth(s, 4); // looks cool
     nn_addKeyboard(s, "shitty keyboard");
     nn_mountKeyboard(computer, "shitty keyboard", 2);
-    nn_addScreen(computer, "Main Screen", 2, s);
+    nn_addScreen(computer, NULL, 2, s);
 
     ne_premappedPixel *premap = ne_allocPremap(maxWidth, maxHeight);
 
@@ -731,7 +687,7 @@ int main() {
         .energyPerVRAMChange = 0.0015,
     };
 
-    nn_addGPU(computer, "RTX 6090", 3, &gpuCtrl);
+    nn_addGPU(computer, NULL, 3, &gpuCtrl);
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");

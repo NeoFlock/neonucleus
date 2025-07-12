@@ -1,6 +1,6 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- in-memory version of `filesystem` and `drive`
+- in-memory version of `filesystem`
 - `hologram` component
 - `computer` component
 - `modem` component
@@ -18,7 +18,6 @@
 # Bugfixes
 
 - Rework filesystem component to pre-process paths to ensure proper sandboxing and not allow arbitrary remote file access
-- Ensure the recursive locks are used correctly to prevent race conditions
 - Do a huge audit at some point
 
 # The extra components
@@ -34,10 +33,6 @@
 - `microphone` component, allows reading audio from nearby sources
 - `tape_drive` component, compatible with Computronics, except maybe with proper seek times and support for multiple tapes
 - `cd_reader` and `cd_writer` components, to work with CDs
-
-# API changes
-
-- move controls into the component instances instead of using getters, to boost performance
 
 # Internal changes
 

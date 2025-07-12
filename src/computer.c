@@ -367,7 +367,11 @@ nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slo
         computer->componentLen++;
     }
 
-    c->address = nn_strdup(&computer->universe->ctx.allocator, address);
+    if(address == NULL) {
+        c->address = nn_randomUUID(&computer->universe->ctx);
+    } else {
+        c->address = nn_strdup(&computer->universe->ctx.allocator, address);
+    }
     if(c->address == NULL) return NULL;
     c->table = table;
     c->slot = slot;

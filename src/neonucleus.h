@@ -196,6 +196,7 @@ double nn_randf(nn_Rng *rng);
 // returns from 0 to 1 (exclusive)
 double nn_randfe(nn_Rng *rng);
 
+
 typedef struct nn_Context {
     nn_Alloc allocator;
     nn_LockManager lockManager;
@@ -281,6 +282,7 @@ void nn_dealloc(nn_Alloc *alloc, void *memory, nn_size_t size);
 char *nn_strdup(nn_Alloc *alloc, const char *s);
 void *nn_memdup(nn_Alloc *alloc, const void *buf, nn_size_t len);
 void nn_deallocStr(nn_Alloc *alloc, char *s);
+nn_address nn_randomUUID(nn_Context *ctx);
 
 nn_guard *nn_newGuard(nn_Context *context);
 void nn_lock(nn_Context *context, nn_guard *guard);
@@ -691,28 +693,39 @@ typedef struct nn_driveControl {
     nn_bool_t reversable;
 } nn_driveControl;
 
-typedef struct nn_drive {
-    nn_refc refc;
+typedef struct nn_driveTable {
     void *userdata;
-    void (*deinit)(nn_component *component, void *userdata);
+    void (*deinit)(void *userdata);
     
-    nn_driveControl (*control)(nn_component *component, void *userdata);
-    void (*getLabel)(nn_component *component, void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, nn_size_t buflen);
+    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen);
 
-    nn_size_t (*getPlatterCount)(nn_component *component, void *userdata);
-    nn_size_t (*getCapacity)(nn_component *component, void *userdata);
-    nn_size_t (*getSectorSize)(nn_component *component, void *userdata);
+    nn_size_t platterCount;
+    nn_size_t capacity;
+    nn_size_t sectorSize;
 
     // sectors start at 1 as per OC.
-    void (*readSector)(nn_component *component, void *userdata, int sector, char *buf);
-    void (*writeSector)(nn_component *component, void *userdata, int sector, const char *buf);
+    void (*readSector)(void *userdata, int sector, char *buf);
+    void (*writeSector)(void *userdata, int sector, const char *buf);
 
     // readByte and writeByte will internally use readSector and writeSector. This is to ensure they are handled *consistently.*
     // Also makes the interface less redundant
-} nn_drive;
+} nn_driveTable;
 
-nn_drive *nn_volatileDrive(nn_size_t capacity, nn_size_t platterCount, nn_driveControl *control);
+typedef struct nn_vdriveOptions {
+    nn_size_t sectorSize;
+    nn_size_t platterCount;
+    nn_size_t capacity;
+} nn_vdriveOptions;
+
+typedef struct nn_drive nn_drive;
+
+nn_drive *nn_newDrive(nn_Context *context, nn_driveTable table, nn_driveControl control);
+nn_drive *nn_volatileDrive(nn_Context *context, nn_vdriveOptions opts, nn_driveControl control, const char *initialData);
+nn_guard *nn_getDriveLock(nn_drive *drive);
+void nn_retainDrive(nn_drive *drive);
+nn_bool_t nn_destroyDrive(nn_drive *drive);
+
 nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive);
 
 // Screens and GPUs

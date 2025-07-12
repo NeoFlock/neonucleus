@@ -59,11 +59,11 @@ const char *testLuaArch_pushlstring(lua_State *L, const char *s, size_t len) {
     }
     return lua_pushlstring(L, s, len);
 }
+
 const char *testLuaArch_pushstring(lua_State *L, const char *s) {
     size_t len = strlen(s);
     return testLuaArch_pushlstring(L, s, len);
 }
-
 
 void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize) {
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(arch->computer));

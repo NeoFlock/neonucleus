@@ -28,6 +28,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/components/eeprom.c",
             "src/components/filesystem.c",
             "src/components/drive.c",
+            "src/components/volatileDrive.c",
             "src/components/screen.c",
             "src/components/gpu.c",
             "src/components/keyboard.c",
@@ -68,7 +69,7 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
     const c = b.addObject(.{
         .name = "lua",
         .link_libc = true,
-        .optimize = .ReleaseSafe,
+        .optimize = .ReleaseFast,
         .target = target,
     });
 

@@ -104,6 +104,36 @@ void nn_deallocStr(nn_Alloc *alloc, char *s) {
     nn_dealloc(alloc, s, nn_strlen(s)+1);
 }
 
+static void nni_randomHex(nn_Context *ctx, char *buf, nn_size_t len) {
+    const char *hex = "0123456789abcdef";
+
+    for(nn_size_t i = 0; i < len; i++) {
+        int r = nn_rand(&ctx->rng) % 16;
+        buf[i] = hex[r];
+    }
+}
+
+nn_address nn_randomUUID(nn_Context *ctx) {
+    nn_address addr = nn_alloc(&ctx->allocator, 37);
+    if(addr == NULL) return NULL;
+    nni_randomHex(ctx, addr + 0, 8);
+    addr[8] = '-';
+    nni_randomHex(ctx, addr + 9, 4);
+    addr[13] = '-';
+    nni_randomHex(ctx, addr + 14, 4);
+    addr[18] = '-';
+    nni_randomHex(ctx, addr + 19, 4);
+    addr[23] = '-';
+    nni_randomHex(ctx, addr + 24, 12);
+    addr[36] = '\0';
+
+
+    // UUIDv4 variant 1
+    addr[14] = '4';
+    addr[19] = '1';
+    return addr;
+}
+
 nn_size_t nn_rand(nn_Rng *rng) {
     return rng->proc(rng->userdata);
 }
