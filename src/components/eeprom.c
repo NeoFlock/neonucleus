@@ -1,11 +1,53 @@
 #include "../neonucleus.h"
 
-nn_eepromControl nn_eeprom_getControl(nn_component *component, nn_eeprom *eeprom) {
-    return eeprom->control(component, eeprom->userdata);
+typedef struct nn_eeprom {
+    nn_Context ctx;
+    nn_refc refc;
+    nn_guard *lock;
+    nn_eepromTable table;
+    nn_eepromControl control;
+} nn_eeprom;
+
+nn_eeprom *nn_newEEPROM(nn_Context *context, nn_eepromTable table, nn_eepromControl control) {
+    nn_eeprom *e = nn_alloc(&context->allocator, sizeof(nn_eeprom));
+    if(e == NULL) return NULL;
+    e->lock = nn_newGuard(context);
+    if(e->lock == NULL) {
+        nn_dealloc(&context->allocator, e, sizeof(nn_eeprom));
+        return NULL;
+    }
+    e->ctx = *context;
+    e->refc = 1;
+    e->control = control;
+    e->table = table;
+    return e;
+}
+
+nn_guard *nn_getEEPROMLock(nn_eeprom *eeprom) {
+    return eeprom->lock;
+}
+void nn_retainEEPROM(nn_eeprom *eeprom) {
+    nn_incRef(&eeprom->refc);
+}
+
+nn_bool_t nn_destroyEEPROM(nn_eeprom *eeprom) {
+    if(!nn_decRef(&eeprom->refc)) return false;
+    // no need to lock, we are the only one with a reference
+
+    if(eeprom->table.deinit != NULL) {
+        eeprom->table.deinit(eeprom->table.userdata);
+    }
+
+    nn_Context ctx = eeprom->ctx;
+
+    nn_deleteGuard(&ctx, eeprom->lock);
+    nn_dealloc(&ctx.allocator, eeprom, sizeof(nn_eeprom));
+
+    return true;
 }
 
 static void nn_eeprom_readCost(nn_component *component, nn_size_t bytesRead) {
-    nn_eepromControl control = nn_eeprom_getControl(component, nn_getComponentUserdata(component));
+    nn_eepromControl control = ((nn_eeprom *)nn_getComponentUserdata(component))->control;
     nn_computer *computer = nn_getComputerOfComponent(component);
 
     nn_removeEnergy(computer, control.readEnergyCostPerByte * bytesRead);
@@ -14,7 +56,7 @@ static void nn_eeprom_readCost(nn_component *component, nn_size_t bytesRead) {
 }
 
 static void nn_eeprom_writeCost(nn_component *component, nn_size_t bytesWritten) {
-    nn_eepromControl control = nn_eeprom_getControl(component, nn_getComponentUserdata(component));
+    nn_eepromControl control = ((nn_eeprom *)nn_getComponentUserdata(component))->control;
     nn_computer *computer = nn_getComputerOfComponent(component);
 
     nn_removeEnergy(computer, control.writeEnergyCostPerByte * bytesWritten);
@@ -23,25 +65,21 @@ static void nn_eeprom_writeCost(nn_component *component, nn_size_t bytesWritten)
 }
 
 void nn_eeprom_destroy(void *_, nn_component *component, nn_eeprom *eeprom) {
-    if(!nn_decRef(&eeprom->refc)) return;
-
-    if(eeprom->deinit != NULL) {
-        eeprom->deinit(component, eeprom->userdata);
-    }
+    nn_destroyEEPROM(eeprom);
 }
 
 void nn_eeprom_getSize(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    nn_return(computer, nn_values_integer(eeprom->getSize(component, eeprom->userdata)));
+    nn_return(computer, nn_values_integer(eeprom->table.size));
 }
 
 void nn_eeprom_getDataSize(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    nn_return(computer, nn_values_integer(eeprom->getDataSize(component, eeprom->userdata)));
+    nn_return(computer, nn_values_integer(eeprom->table.dataSize));
 }
 
 void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     char buf[NN_LABEL_SIZE];
     nn_size_t l = NN_LABEL_SIZE;
-    eeprom->getLabel(component, eeprom->userdata, buf, &l);
+    eeprom->table.getLabel(eeprom->table.userdata, buf, &l);
     if(l == 0) {
         nn_return(computer, nn_values_nil());
     } else {
@@ -60,7 +98,9 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
         nn_setCError(computer, "bad label (string expected)");
         return;
     }
-    l = eeprom->setLabel(component, eeprom->userdata, buf, l);
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    l = eeprom->table.setLabel(eeprom->table.userdata, buf, l);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
     nn_return_string(computer, buf, l);
     
     // Latency, energy costs and stuff
@@ -68,14 +108,16 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
 }
 
 void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    nn_size_t cap = eeprom->getSize(component, eeprom->userdata);
+    nn_size_t cap = eeprom->table.size;
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     char *buf = nn_alloc(alloc, cap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
     }
-    nn_size_t len = eeprom->get(component, eeprom->userdata, buf);
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    nn_size_t len = eeprom->table.get(eeprom->table.userdata, buf);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
     nn_return_string(computer, buf, len);
     nn_dealloc(alloc, buf, cap);
 
@@ -86,7 +128,7 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
     nn_value data = nn_getArgument(computer, 0);
     nn_size_t len;
     const char *buf = nn_toString(data, &len);
-    if(len > eeprom->getSize(component, eeprom->userdata)) {
+    if(len > eeprom->table.size) {
         nn_setCError(computer, "out of space");
         return;
     }
@@ -99,20 +141,24 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
             return;
         }
     }
-    eeprom->set(component, eeprom->userdata, buf, len);
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    eeprom->table.set(eeprom->table.userdata, buf, len);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
     
     nn_eeprom_writeCost(component, len);
 }
 
 void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    nn_size_t cap = eeprom->getDataSize(component, eeprom->userdata);
+    nn_size_t cap = eeprom->table.dataSize;
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     char *buf = nn_alloc(alloc, cap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
     }
-    int len = eeprom->getData(component, eeprom->userdata, buf);
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    int len = eeprom->table.getData(eeprom->table.userdata, buf);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
     if(len < 0) {
         nn_return(computer, nn_values_nil());
     } else {
@@ -136,42 +182,52 @@ void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
             return;
         }
     }
-    if(len > eeprom->getDataSize(component, eeprom->userdata)) {
+    if(len > eeprom->table.dataSize) {
         nn_setCError(computer, "out of space");
         return;
     }
-    eeprom->setData(component, eeprom->userdata, buf, len);
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    eeprom->table.setData(eeprom->table.userdata, buf, len);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
 
     nn_eeprom_writeCost(component, len);
 }
 
 void nn_eeprom_isReadOnly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    nn_return(computer, nn_values_boolean(eeprom->isReadonly(component, eeprom->userdata)));
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    nn_return(computer, nn_values_boolean(eeprom->table.isReadonly(eeprom->table.userdata)));
+    nn_unlock(&eeprom->ctx, eeprom->lock);
 }
 
 void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    eeprom->makeReadonly(component, eeprom->userdata);
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    eeprom->table.makeReadonly(eeprom->table.userdata);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
 }
 
 void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
-    nn_size_t dataCap = eeprom->getDataSize(component, eeprom->userdata);
-    nn_size_t codeCap = eeprom->getSize(component, eeprom->userdata);
+    nn_size_t dataCap = eeprom->table.dataSize;
+    nn_size_t codeCap = eeprom->table.size;
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
     char *buf = nn_alloc(alloc, dataCap + codeCap);
     if(buf == NULL) {
         nn_setCError(computer, "out of memory");
         return;
     }
-    int dataLen = eeprom->getData(component, eeprom->userdata, buf);
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    int dataLen = eeprom->table.getData(eeprom->table.userdata, buf);
     if(dataLen < 0) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
         nn_dealloc(alloc, buf, dataCap + codeCap);
         return;
     }
-    int codeLen = eeprom->get(component, eeprom->userdata, buf + dataLen);
+    int codeLen = eeprom->table.get(eeprom->table.userdata, buf + dataLen);
     if(codeLen < 0) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
         nn_dealloc(alloc, buf, dataCap + codeCap);
         return;
     }
+    nn_unlock(&eeprom->ctx, eeprom->lock);
     char hash[4];
     nn_data_crc32(buf, dataLen + codeLen, hash);
     nn_dealloc(alloc, buf, dataCap + codeCap);

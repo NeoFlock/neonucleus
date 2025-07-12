@@ -582,25 +582,29 @@ typedef struct nn_eepromControl {
     double bytesWrittenPerTick;
 } nn_eepromControl;
 
-typedef struct nn_eeprom {
-    nn_refc refc;
+typedef struct nn_eepromTable {
     void *userdata;
-    void (*deinit)(nn_component *component, void *userdata);
-
-    nn_eepromControl (*control)(nn_component *component, void *userdata);
+    void (*deinit)(void *userdata);
 
     // methods
-    nn_size_t (*getSize)(nn_component *component, void *userdata);
-    nn_size_t (*getDataSize)(nn_component *component, void *userdata);
-    void (*getLabel)(nn_component *component, void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setLabel)(nn_component *component, void *userdata, const char *buf, nn_size_t buflen);
-    nn_size_t (*get)(nn_component *component, void *userdata, char *buf);
-    void (*set)(nn_component *component, void *userdata, const char *buf, nn_size_t len);
-    int (*getData)(nn_component *component, void *userdata, char *buf);
-    void (*setData)(nn_component *component, void *userdata, const char *buf, nn_size_t len);
-    nn_bool_t (*isReadonly)(nn_component *component, void *userdata);
-    void (*makeReadonly)(nn_component *component, void *userdata);
-} nn_eeprom;
+    nn_size_t size;
+    nn_size_t dataSize;
+    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen);
+    nn_size_t (*get)(void *userdata, char *buf);
+    void (*set)(void *userdata, const char *buf, nn_size_t len);
+    int (*getData)(void *userdata, char *buf);
+    void (*setData)(void *userdata, const char *buf, nn_size_t len);
+    nn_bool_t (*isReadonly)(void *userdata);
+    void (*makeReadonly)(void *userdata);
+} nn_eepromTable;
+
+typedef struct nn_eeprom nn_eeprom;
+
+nn_eeprom *nn_newEEPROM(nn_Context *context, nn_eepromTable table, nn_eepromControl control);
+nn_guard *nn_getEEPROMLock(nn_eeprom *eeprom);
+void nn_retainEEPROM(nn_eeprom *eeprom);
+nn_bool_t nn_destroyEEPROM(nn_eeprom *eeprom);
 nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom);
 
 // FileSystem

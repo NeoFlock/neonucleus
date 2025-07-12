@@ -96,30 +96,20 @@ Color ne_processColor(unsigned int color) {
     return GetColor(color);
 }
 
-nn_eepromControl ne_eeprom_getControl(nn_component *component, void *_) {
-    return (nn_eepromControl) {
-        .readHeatPerByte = 0.0015,
-        .writeHeatPerByte = 0.03,
-        .readEnergyCostPerByte = 0.001,
-        .writeEnergyCostPerByte = 0.05,
-        .bytesReadPerTick = 32768,
-        .bytesWrittenPerTick = 4096,
-    };
-}
+nn_eepromControl ne_eeprom_ctrl = {
+    .readHeatPerByte = 0.0015,
+    .writeHeatPerByte = 0.03,
+    .readEnergyCostPerByte = 0.001,
+    .writeEnergyCostPerByte = 0.05,
+    .bytesReadPerTick = 32768,
+    .bytesWrittenPerTick = 4096,
+};
     
-size_t ne_eeprom_getSize(nn_component *component, void *_) {
-    return 4096;
-}
-
-size_t ne_eeprom_getDataSize(nn_component *component, void *_) {
-    return 1024;
-}
-
-void ne_eeprom_getLabel(nn_component *component, void *_, char *buf, size_t *buflen) {
+void ne_eeprom_getLabel(void *_, char *buf, size_t *buflen) {
     *buflen = 0;
 }
 
-size_t ne_eeprom_setLabel(nn_component *component, void *_, const char *buf, size_t buflen) {
+size_t ne_eeprom_setLabel(void *_, const char *buf, size_t buflen) {
     return 0;
 }
 
@@ -129,8 +119,8 @@ const char *ne_location(nn_address address) {
     return buffer;
 }
 
-size_t ne_eeprom_get(nn_component *component, void *_, char *buf) {
-    FILE *f = fopen(ne_location(nn_getComponentAddress(component)), "rb");
+size_t ne_eeprom_get(void *addr, char *buf) {
+    FILE *f = fopen(ne_location(addr), "rb");
     if (f == NULL) {
         printf("couldn't read eeprom");
         exit(1);
@@ -143,8 +133,8 @@ size_t ne_eeprom_get(nn_component *component, void *_, char *buf) {
     return len;
 }
 
-void ne_eeprom_set(nn_component *component, void *_, const char *buf, size_t len) {
-    FILE *f = fopen(ne_location(nn_getComponentAddress(component)), "wb");
+void ne_eeprom_set(void *addr, const char *buf, size_t len) {
+    FILE *f = fopen(ne_location(addr), "wb");
     if (f == NULL) {
         printf("couldn't write eeprom");
         exit(1);
@@ -153,17 +143,17 @@ void ne_eeprom_set(nn_component *component, void *_, const char *buf, size_t len
     fclose(f);
 }
 
-int ne_eeprom_getData(nn_component *component, void *_, char *buf) {
+int ne_eeprom_getData(void *_, char *buf) {
     return 0;
 }
 
-void ne_eeprom_setData(nn_component *component, void *_, const char *buf, size_t len) {}
+void ne_eeprom_setData(void *_, const char *buf, size_t len) {}
     
-nn_bool_t ne_eeprom_isReadonly(nn_component *component, void *userdata) {
+nn_bool_t ne_eeprom_isReadonly(void *userdata) {
     return false;
 }
 
-void ne_eeprom_makeReadonly(nn_component *component, void *userdata) {}
+void ne_eeprom_makeReadonly(void *userdata) {}
 
 #define NE_FS_MAX 128
 
@@ -189,6 +179,18 @@ nn_filesystemControl ne_fs_getControl(nn_component *component, ne_fs *_) {
         .removeEnergy = 0.135,
         .createEnergy = 0.325,
     };
+}
+
+void ne_fs_getLabel(nn_component *component, void *_, char *buf, size_t *buflen) {
+    *buflen = 0;
+}
+
+nn_size_t ne_fs_setLabel(nn_component *component, void *_, const char *buf, size_t buflen) {
+    return 0;
+}
+
+nn_bool_t ne_fs_isReadonly(nn_component *component, void *userdata) {
+    return false;
 }
 
 size_t ne_fs_spaceUsed(nn_component *component, void *_) {
@@ -677,16 +679,14 @@ int main() {
     // 1MB of RAM, 16 components max
     nn_computer *computer = nn_newComputer(universe, "testMachine", arch, NULL, 1*1024*1024, 16);
     nn_setEnergyInfo(computer, 5000, 5000);
-    nn_setCallBudget(computer, 18000);
+    //nn_setCallBudget(computer, 18000);
     nn_addSupportedArchitecture(computer, arch);
 
-    nn_eeprom genericEEPROM = {
-        .userdata = NULL,
-        .refc = 1,
+    nn_eepromTable genericEEPROMTable = {
+        .userdata = "luaBios.lua",
         .deinit = NULL,
-        .control = ne_eeprom_getControl,
-        .getSize = ne_eeprom_getSize,
-        .getDataSize = ne_eeprom_getDataSize,
+        .size = 4096,
+        .dataSize = 1024,
         .getLabel = ne_eeprom_getLabel,
         .setLabel = ne_eeprom_setLabel,
         .get = ne_eeprom_get,
@@ -697,7 +697,9 @@ int main() {
         .makeReadonly = ne_eeprom_makeReadonly,
     };
 
-    nn_addEeprom(computer, "luaBios.lua", 0, &genericEEPROM);
+    nn_eeprom *genericEEPROM = nn_newEEPROM(&ctx, genericEEPROMTable, ne_eeprom_ctrl);
+
+    nn_addEeprom(computer, "luaBios.lua", 0, genericEEPROM);
 
     ne_fs fs = {
         .files = {NULL},
@@ -709,11 +711,11 @@ int main() {
         .userdata = &fs,
         .deinit = NULL,
         .control = (void *)ne_fs_getControl,
-        .getLabel = ne_eeprom_getLabel,
-        .setLabel = ne_eeprom_setLabel,
+        .getLabel = ne_fs_getLabel,
+        .setLabel = ne_fs_setLabel,
         .spaceUsed = ne_fs_spaceUsed,
         .spaceTotal = ne_fs_spaceTotal,
-        .isReadOnly = ne_eeprom_isReadonly,
+        .isReadOnly = ne_fs_isReadonly,
         .size = (void *)ne_fs_size,
         .remove = NULL,
         .lastModified = (void *)ne_fs_lastModified,
@@ -740,8 +742,8 @@ int main() {
         .userdata = &drive,
         .deinit = (void *)ne_drive_close,
         .control = (void *)ne_drive_getControl,
-        .getLabel = ne_eeprom_getLabel,
-        .setLabel = ne_eeprom_setLabel,
+        .getLabel = ne_fs_getLabel,
+        .setLabel = ne_fs_setLabel,
         .getPlatterCount = (void *)ne_drive_getPlatterCount,
         .getSectorSize = (void *)ne_drive_getSectorSize,
         .getCapacity = (void *)ne_drive_getCapacity,

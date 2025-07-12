@@ -13,11 +13,6 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .root_source_file = b.path("src/data.zig"),
         .target = opts.target,
         .optimize = opts.optimize,
-        .single_threaded = true,
-        .sanitize_c = true,
-        .valgrind = true,
-        .stack_check = true,
-        .stack_protector = true,
     });
 
     dataMod.addCSourceFiles(.{
