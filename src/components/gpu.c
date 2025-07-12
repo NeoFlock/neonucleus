@@ -164,9 +164,9 @@ void nni_gpu_get(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
     nn_unicode_codepointToChar(chr, pxl.codepoint, &l);
 
     // TODO: gosh darn palettes
-    nn_return(computer, nn_values_cstring(chr));
-    nn_return(computer, nn_values_integer(pxl.fg));
-    nn_return(computer, nn_values_integer(pxl.bg));
+    nn_return_string(computer, chr, l);
+    nn_return_integer(computer, pxl.fg);
+    nn_return_integer(computer, pxl.bg);
 }
 
 void nni_gpu_getScreen(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {

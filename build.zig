@@ -14,6 +14,10 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .target = opts.target,
         .optimize = opts.optimize,
         .single_threaded = true,
+        .sanitize_c = true,
+        .valgrind = true,
+        .stack_check = true,
+        .stack_protector = true,
     });
 
     dataMod.addCSourceFiles(.{
@@ -62,9 +66,16 @@ const LuaVersion = enum {
 // For the test architecture, we specify the target Lua version we so desire.
 // This can be checked for with Lua's _VERSION
 
-fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVersion) !void {
+fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: LuaVersion) !*std.Build.Step.Compile {
     const alloc = b.allocator;
     const dirName = @tagName(version);
+
+    const c = b.addObject(.{
+        .name = "lua",
+        .link_libc = true,
+        .optimize = .ReleaseSafe,
+        .target = target,
+    });
 
     const rootPath = try std.mem.join(alloc, std.fs.path.sep_str, &.{ "foreign", dirName });
 
@@ -90,13 +101,8 @@ fn compileTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVer
         .root = b.path(rootPath),
         .files = files.items,
     });
-}
-fn getSharedEngineName(os: std.Target.Os.Tag) []const u8 {
-    if (os == .windows) {
-        return "neonucleusdll";
-    } else {
-        return "neonucleus";
-    }
+
+    return c;
 }
 
 pub fn build(b: *std.Build) void {
@@ -125,7 +131,7 @@ pub fn build(b: *std.Build) void {
     });
     
     const engineShared = b.addSharedLibrary(.{
-        .name = getSharedEngineName(os),
+        .name = if(os == .windows) "neonucleusdll" else "neonucleus",
         .root_module = engineMod,
     });
 
@@ -167,9 +173,10 @@ pub fn build(b: *std.Build) void {
                 if(opts.bit32) "-DNN_BIT32" else "",
             },
         });
-        compileTheRightLua(b, emulator, luaVer) catch unreachable;
+        const l = compileTheRightLua(b, target, luaVer) catch unreachable;
 
         // forces us to link in everything too
+        emulator.addObject(l);
         emulator.linkLibrary(engineStatic);
 
         const emulatorStep = b.step("emulator", "Builds the emulator");

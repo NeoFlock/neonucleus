@@ -673,7 +673,11 @@ testLuaArch *testLuaArch_setup(nn_computer *computer, void *_) {
     lua_setfield(L, LUA_REGISTRYINDEX, "archPtr");
     s->L = L;
     testLuaArch_loadEnv(L);
-    assert(luaL_loadbufferx(L, testLuaSandbox, strlen(testLuaSandbox), "=machine.lua", "t") == LUA_OK);
+    if(luaL_loadbufferx(L, testLuaSandbox, strlen(testLuaSandbox), "=machine.lua", "t") != LUA_OK) {
+        lua_close(L);
+        nn_dealloc(alloc, s, sizeof(testLuaArch));
+        return NULL;
+    }
     return s;
 }
 
@@ -703,7 +707,7 @@ void testLuaArch_tick(nn_computer *computer, testLuaArch *arch, void *_) {
     } else {
         const char *s = lua_tostring(arch->L, -1);
         nn_setError(computer, s);
-        lua_pop(arch->L, 1);
+        lua_pop(arch->L, ret);
     }
 }
 
