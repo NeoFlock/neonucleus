@@ -1,6 +1,6 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- in-memory version of `filesystem`
+- in-memory version of `eeprom`, `filesystem`
 - `hologram` component
 - `computer` component
 - `modem` component
@@ -36,5 +36,6 @@
 
 # Internal changes
 
+- rework some interfaces to account for possibility of errors
 - use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging
 - setup an extensive testing system to find bugs easier

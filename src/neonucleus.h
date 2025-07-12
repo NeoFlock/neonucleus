@@ -603,11 +603,24 @@ typedef struct nn_eepromTable {
 
 typedef struct nn_eeprom nn_eeprom;
 
+typedef struct nn_veepromOptions {
+    const char *code;
+    nn_size_t len;
+    nn_size_t size;
+    const char *data;
+    nn_size_t dataLen;
+    nn_size_t dataSize;
+    char label[NN_LABEL_SIZE];
+    nn_size_t labelLen;
+    nn_bool_t isReadOnly;
+} nn_veepromOptions;
+
 nn_eeprom *nn_newEEPROM(nn_Context *context, nn_eepromTable table, nn_eepromControl control);
+nn_eeprom *nn_volatileEEPROM(nn_Context *context, nn_veepromOptions opts, nn_eepromControl control);
 nn_guard *nn_getEEPROMLock(nn_eeprom *eeprom);
 void nn_retainEEPROM(nn_eeprom *eeprom);
 nn_bool_t nn_destroyEEPROM(nn_eeprom *eeprom);
-nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom);
+nn_component *nn_addEEPROM(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom);
 
 // FileSystem
 typedef struct nn_filesystemControl {
@@ -716,12 +729,15 @@ typedef struct nn_vdriveOptions {
     nn_size_t sectorSize;
     nn_size_t platterCount;
     nn_size_t capacity;
+    const char *data;
+    char label[NN_LABEL_SIZE];
+    nn_size_t labelLen;
 } nn_vdriveOptions;
 
 typedef struct nn_drive nn_drive;
 
 nn_drive *nn_newDrive(nn_Context *context, nn_driveTable table, nn_driveControl control);
-nn_drive *nn_volatileDrive(nn_Context *context, nn_vdriveOptions opts, nn_driveControl control, const char *initialData);
+nn_drive *nn_volatileDrive(nn_Context *context, nn_vdriveOptions opts, nn_driveControl control);
 nn_guard *nn_getDriveLock(nn_drive *drive);
 void nn_retainDrive(nn_drive *drive);
 nn_bool_t nn_destroyDrive(nn_drive *drive);

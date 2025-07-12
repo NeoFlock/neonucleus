@@ -142,6 +142,11 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
         }
     }
     nn_lock(&eeprom->ctx, eeprom->lock);
+    if(eeprom->table.isReadonly(eeprom->table.userdata)) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
+        nn_setCError(computer, "readonly");
+        return;
+    }
     eeprom->table.set(eeprom->table.userdata, buf, len);
     nn_unlock(&eeprom->ctx, eeprom->lock);
     
@@ -187,6 +192,11 @@ void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
         return;
     }
     nn_lock(&eeprom->ctx, eeprom->lock);
+    if(eeprom->table.isReadonly(eeprom->table.userdata)) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
+        nn_setCError(computer, "readonly");
+        return;
+    }
     eeprom->table.setData(eeprom->table.userdata, buf, len);
     nn_unlock(&eeprom->ctx, eeprom->lock);
 
@@ -255,7 +265,7 @@ void nn_loadEepromTable(nn_universe *universe) {
     nn_defineMethod(eepromTable, "getChecksum", true, (void *)nn_eeprom_getChecksum, NULL, "getChecksum(): string - Returns a checksum of the data on the EEPROM.");
 }
 
-nn_component *nn_addEeprom(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom) {
+nn_component *nn_addEEPROM(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom) {
     nn_componentTable *eepromTable = nn_queryUserdata(nn_getUniverse(computer), "NN:EEPROM");
 
     return nn_newComponent(computer, address, slot, eepromTable, eeprom);

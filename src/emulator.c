@@ -614,7 +614,7 @@ int main() {
 
     nn_eeprom *genericEEPROM = nn_newEEPROM(&ctx, genericEEPROMTable, ne_eeprom_ctrl);
 
-    nn_addEeprom(computer, NULL, 0, genericEEPROM);
+    nn_addEEPROM(computer, NULL, 0, genericEEPROM);
 
     nn_address fsFolder = "OpenOS";
     nn_filesystemTable genericFSTable = {
@@ -646,6 +646,8 @@ int main() {
         .sectorSize = 512,
         .capacity = 1*1024*1024,
         .platterCount = 1,
+        .labelLen = 0,
+        .data = NULL,
     };
     nn_driveControl vdriveCtrl = {
         .readSectorsPerTick = 32768,
@@ -658,7 +660,7 @@ int main() {
         .writeEnergyPerSector = 0.015,
         .motorEnergyPerSector = 0.00005,
     };
-    nn_drive *genericDrive = nn_volatileDrive(&ctx, vdriveOpts, vdriveCtrl, NULL);
+    nn_drive *genericDrive = nn_volatileDrive(&ctx, vdriveOpts, vdriveCtrl);
     nn_addDrive(computer, NULL, 4, genericDrive);
 
     int maxWidth = 80, maxHeight = 32;
@@ -688,6 +690,18 @@ int main() {
     };
 
     nn_addGPU(computer, NULL, 3, &gpuCtrl);
+
+    nn_veepromOptions eepromOpts = {
+        .isReadOnly = false,
+        .data = NULL,
+        .dataLen = 0,
+        .dataSize = 65536,
+        .labelLen = 0,
+        .code = NULL,
+        .len = 0,
+        .size = 131072,
+    };
+    nn_addEEPROM(computer, NULL, 9, nn_volatileEEPROM(&ctx, eepromOpts, ne_eeprom_ctrl));
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");
