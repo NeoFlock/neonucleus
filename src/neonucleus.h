@@ -300,6 +300,8 @@ nn_bool_t nn_decRef(nn_refc *refc);
 // Unicode (more specifically, UTF-8) stuff
 
 nn_bool_t nn_unicode_validate(const char *s);
+// expects NULL terminator
+nn_bool_t nn_unicode_isValidCodepoint(const char *s);
 // returned string must be nn_deallocStr()'d
 char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, nn_size_t codepointCount);
 // returned array must be nn_dealloc()'d

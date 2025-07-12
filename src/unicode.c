@@ -162,6 +162,36 @@ static nn_bool_t nn_unicode_is_continuation(unsigned char byte) {
     return (byte >> 6) == 0b10;
 }
 
+nn_bool_t nn_unicode_isValidCodepoint(const char *s) {
+    if(s[0] <= 0x7F) {
+        return true;
+    } else if((s[0] >> 5) == 0b110) {
+        if (!nn_unicode_is_continuation(s[1])) {
+            return false;
+        }
+    } else if((s[0] >> 4) == 0b1110) {
+        if (!nn_unicode_is_continuation(s[1])) {
+            return false;
+        }
+        if (!nn_unicode_is_continuation(s[2])) {
+            return false;
+        }
+    } else if((s[0] >> 3) == 0b11110) {
+        if (!nn_unicode_is_continuation(s[1])) {
+            return false;
+        }
+        if (!nn_unicode_is_continuation(s[2])) {
+            return false;
+        }
+        if (!nn_unicode_is_continuation(s[3])) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    return true;
+}
+
 nn_bool_t nn_unicode_validate(const char *b) {
     const unsigned char* s = (const unsigned char*)b;
     while (*s) {

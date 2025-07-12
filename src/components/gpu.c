@@ -131,22 +131,23 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
         return;
     }
 
-    if(!nn_unicode_validate(s)) {
-        nn_setCError(computer, "invalid utf-8");
-        return;
-    }
-
     int current = 0;
     int len = 0;
     while(s[current] != 0) {
-        int codepoint = nn_unicode_codepointAt(s, current);
-        nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, s + current));
+        if(nn_unicode_isValidCodepoint(s + current)) {
+            int codepoint = nn_unicode_codepointAt(s, current);
+            nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, s + current));
+            current += nn_unicode_codepointSize(codepoint);
+        } else {
+            unsigned int codepoint = (unsigned char)s[current];
+            nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, s + current));
+            current++;
+        }
         if(isVertical) {
             y++;
         } else {
             x++;
         }
-        current += nn_unicode_codepointSize(codepoint);
         len++;
     }
 

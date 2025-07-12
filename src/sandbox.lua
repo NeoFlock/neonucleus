@@ -17,6 +17,14 @@ local function copy(v, p)
     end
 end
 
+local function spcall(f, ...)
+    local t = {pcall(f, ...)}
+    if t[1] then
+        return table.unpack(t, 2)
+    end
+    return nil, t[2]
+end
+
 local function nextDeadline()
     return computer.uptime() + 5
 end
@@ -392,40 +400,9 @@ sandbox = {
 
     utf8 = copy(utf8),
     unicode = copy(unicode, {
-        wtrunc = function (str,space)
-			space = space - 1
-			return str:sub(1,(space >= utf8.len(str)) and (#str) or (utf8.offset(str,space+1)-1))
-		end,
         isWide = function(s) return unicode.wlen(s) > unicode.len(s) end,
         upper = string.upper,
         lower = string.lower,
-        --[[
-        sub = function (str,a,b)
-			if not b then b = utf8.len(str) end
-			if not a then a = 1 end
-			-- a = math.max(a,1)
-			
-			if a < 0 then
-				-- negative
-				
-				a = utf8.len(str) + a + 1
-			end
-			
-			if b < 0 then
-				b = utf8.len(str) + b + 1
-			end
-			
-			if a > b then return "" end
-			
-			if b >= utf8.len(str) then b = #str else b = utf8.offset(str,b+1)-1 end
-			
-			if a > utf8.len(str) then return "" end
-			a = utf8.offset(str,a)
-			
-			return str:sub(a,b)
-			-- return str:sub(a, b)
-		end,
-        ]]
     }),
     checkArg = checkArg,
     component = libcomponent,
