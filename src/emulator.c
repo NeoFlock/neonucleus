@@ -691,18 +691,6 @@ int main() {
 
     nn_addGPU(computer, NULL, 3, &gpuCtrl);
 
-    nn_veepromOptions eepromOpts = {
-        .isReadOnly = false,
-        .data = NULL,
-        .dataLen = 0,
-        .dataSize = 65536,
-        .labelLen = 0,
-        .code = NULL,
-        .len = 0,
-        .size = 131072,
-    };
-    nn_addEEPROM(computer, NULL, 9, nn_volatileEEPROM(&ctx, eepromOpts, ne_eeprom_ctrl));
-
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");
 
