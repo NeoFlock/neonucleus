@@ -13,6 +13,8 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .root_source_file = b.path("src/data.zig"),
         .target = opts.target,
         .optimize = opts.optimize,
+        .strip = if(opts.optimize == .Debug) false else true,
+        .unwind_tables = if(opts.optimize == .Debug) null else .none,
     });
 
     dataMod.addCSourceFiles(.{
