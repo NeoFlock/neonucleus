@@ -39,3 +39,4 @@
 - rework some interfaces to account for possibility of errors
 - use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging
 - setup an extensive testing system to find bugs easier
+- check if ports are open in `nn_pushNetworkMessage`

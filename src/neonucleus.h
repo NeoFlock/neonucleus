@@ -120,6 +120,7 @@ extern "C" {
 #define NN_MAX_PATH 256
 #define NN_PORT_MAX 65535
 #define NN_MAX_WAKEUPMSG 2048
+#define NN_MAX_CHANNEL_SIZE 256
 #define NN_TUNNEL_PORT 0
 
 #define NN_OVERHEAT_MIN 100
@@ -876,8 +877,6 @@ typedef struct nn_modemTable {
     void *userdata;
     void (*deinit)(void *userdata);
 
-    nn_networkControl control;
-
     // basic limits
 
     nn_bool_t wireless;
@@ -906,12 +905,42 @@ typedef struct nn_modemTable {
     nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy);
 } nn_modemTable;
 
+typedef struct nn_modem nn_modem;
+
+typedef struct nn_debugLoopbackNetworkOpts {
+    nn_computer *computer;
+    nn_address address;
+    nn_size_t maxValues;
+    nn_size_t maxPacketSize;
+    nn_bool_t isWireless;
+} nn_debugLoopbackNetworkOpts;
+
+nn_modem *nn_newModem(nn_Context *context, nn_modemTable table, nn_networkControl control);
+nn_modem *nn_debugLoopbackModem(nn_Context *context, nn_modemTable table, nn_networkControl control);
+nn_guard *nn_getModemLock(nn_modem *modem);
+void nn_retainModem(nn_modem *modem);
+nn_bool_t nn_destroyModem(nn_modem *modem);
+
 typedef struct nn_tunnelTable {
     void *userdata;
     void (*deinit)(void *userdata);
     
-    nn_networkControl control;
+    nn_size_t maxValues;
+    nn_size_t maxPacketSize;
+    
+    nn_bool_t (*send)(void *userdata, nn_value *values, nn_size_t valueCount);
+    void (*getChannel)(void *userdata, char *buf, nn_size_t *buflen);
+    void (*getWakeMessage)(void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy);
 } nn_tunnelTable;
+
+typedef struct nn_tunnel nn_tunnel;
+
+nn_tunnel *nn_newTunnel(nn_Context *context, nn_tunnelTable table, nn_networkControl control);
+nn_tunnel *nn_debugLoopbackTunnel(nn_Context *context, nn_debugLoopbackNetworkOpts opts, nn_networkControl control);
+nn_guard *nn_getTunnelLock(nn_tunnel *tunnel);
+void nn_retainTunnel(nn_tunnel *tunnel);
+nn_bool_t nn_destroyTunnel(nn_tunnel *tunnel);
 
 #ifdef __cplusplus
 }
