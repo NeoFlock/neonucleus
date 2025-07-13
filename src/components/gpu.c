@@ -131,24 +131,17 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
         return;
     }
 
-    int current = 0;
-    int len = 0;
+    nn_size_t current = 0;
     while(s[current] != 0) {
-        if(nn_unicode_isValidCodepoint(s + current)) {
-            int codepoint = nn_unicode_codepointAt(s, current);
-            nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, s + current));
-            current += nn_unicode_codepointSize(codepoint);
-        } else {
-            unsigned int codepoint = (unsigned char)s[current];
-            nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, s + current));
-            current++;
-        }
+        unsigned int codepoint = nn_unicode_nextCodepointPermissive(s, &current);
+        char buf[NN_MAXIMUM_UNICODE_BUFFER];
+        nn_unicode_codepointToChar(buf, codepoint, NULL);
+        nn_setPixel(gpu->currentScreen, x, y, nni_gpu_makePixel(gpu, buf));
         if(isVertical) {
             y++;
         } else {
             x++;
         }
-        len++;
     }
 
     nn_simulateBufferedIndirect(component, 1, gpu->ctrl.screenSetsPerTick);
@@ -297,12 +290,9 @@ void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
         nn_setCError(computer, "bad argument #5 (character expected)");
         return;
     }
-    if(!nn_unicode_validate(s)) {
-        nn_setCError(computer, "invalid utf-8");
-        return;
-    }
 
-    int codepoint = nn_unicode_codepointAt(s, 0);
+    nn_size_t startIdx = 0;
+    int codepoint = nn_unicode_nextCodepointPermissive(s, &startIdx);
 
     // prevent DoS
     if(x < 0) x = 0;

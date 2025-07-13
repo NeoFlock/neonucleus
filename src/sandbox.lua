@@ -400,9 +400,16 @@ sandbox = {
 
     utf8 = copy(utf8),
     unicode = copy(unicode, {
-        isWide = function(s) return unicode.wlen(s) > unicode.len(s) end,
+        isWide = function(s)
+            local c = unicode.sub(s, 1, 1)
+            return unicode.wlen(c) > unicode.len(c)
+        end,
         upper = string.upper,
         lower = string.lower,
+		wtrunc = function (str,space)
+			space = space - 1
+			return str:sub(1,(space >= utf8.len(str)) and (#str) or (utf8.offset(str,space+1)-1))
+		end,
     }),
     checkArg = checkArg,
     component = libcomponent,

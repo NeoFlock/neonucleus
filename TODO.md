@@ -1,10 +1,8 @@
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- make the `unicode` library in testLuaArch support invalid UTF-8 (WHY IS IT OK WITH THAT)
 - in-memory version of `filesystem`
 - complete the GPU implementation (screen buffers and missing methods)
 - complete the screen implementation (bunch of missing methods)
-- support invalid UTF-8 for GPU set and fill, which should pretend the byte value is the codepoint.
 - `hologram` component
 - `computer` component
 - `modem` component
@@ -20,6 +18,7 @@
 
 - Rework filesystem component to pre-process paths to ensure proper sandboxing and not allow arbitrary remote file access
 - Do a huge audit at some point
+- `nn_unicode_charWidth` appears to be bugged, look into that.
 
 # The extra components
 

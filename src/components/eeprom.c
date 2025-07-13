@@ -242,7 +242,16 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
     nn_data_crc32(buf, dataLen + codeLen, hash);
     nn_dealloc(alloc, buf, dataCap + codeCap);
 
-    nn_return_string(computer, hash, sizeof(hash));
+    char encoded[8];
+
+    const char *hex = "0123456789abcdef";
+    for(int i = 0; i < 4; i++) {
+        unsigned char b = hash[i];
+        encoded[i*2] = hex[b >> 4];
+        encoded[i*2+1] = hex[b & 0xF];
+    }
+
+    nn_return_string(computer, encoded, sizeof(encoded));
     
     nn_eeprom_readCost(component, dataLen + codeLen);
 }

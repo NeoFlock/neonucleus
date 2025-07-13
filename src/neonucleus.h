@@ -319,6 +319,16 @@ unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
 // returned string must be nn_deallocStr()'d
 char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
 
+// permissive means it allows invalid UTF-8, in which case each byte is treated as a codepoint
+
+// it will return the codepoint starting at byte *index, but will also set *index to the byte afterward it
+// since it is permissive, it supports invalid UTF-8
+unsigned int nn_unicode_nextCodepointPermissive(const char *s, nn_size_t *index);
+nn_size_t nn_unicode_lenPermissive(const char *s);
+nn_size_t nn_unicode_wlenPermissive(const char *s);
+// if not found, it will return -1. This is why it is an nn_intptr_t
+nn_intptr_t nn_unicode_indexPermissive(const char *s, nn_size_t codepointIndex);
+
 // Data card stuff
 
 // Hashing

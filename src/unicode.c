@@ -329,7 +329,7 @@ nn_size_t nn_unicode_codepointSize(unsigned int codepoint) {
 
 void nn_unicode_codepointToChar(char *buffer, unsigned int codepoint, nn_size_t *len) {
     nn_size_t codepointSize = nn_unicode_codepointSize(codepoint);
-    *len = codepointSize;
+    if(len != NULL) *len = codepointSize;
 
     nn_memset(buffer, 0, 4); // Clear static array
 
@@ -391,3 +391,45 @@ unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
 char *nn_unicode_upper(nn_Alloc *alloc, const char *s);
 unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
 char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
+
+unsigned int nn_unicode_nextCodepointPermissive(const char *s, nn_size_t *index) {
+    nn_size_t i = *index;
+    if(nn_unicode_isValidCodepoint(s + i)) {
+        // TODO: handle edge-case where suboptimial encoding is used
+        unsigned int p = nn_unicode_codepointAt(s, i);
+        *index = i + nn_unicode_codepointSize(p);
+        return p;
+    }
+    unsigned int p = (unsigned char)s[i];
+    *index = i + 1;
+    return p;
+}
+
+nn_size_t nn_unicode_lenPermissive(const char *b) {
+    nn_size_t len = 0;
+    nn_size_t cur = 0;
+    while(b[cur]) {
+        nn_unicode_nextCodepointPermissive(b, &cur);
+        len++;
+    }
+    return len;
+}
+
+nn_size_t nn_unicode_wlenPermissive(const char *s) {
+    nn_size_t wlen = 0;
+    nn_size_t cur = 0;
+    while (s[cur]) {
+        unsigned int codepoint = nn_unicode_nextCodepointPermissive(s, &cur);
+        wlen += nn_unicode_charWidth(codepoint);
+    }
+    return wlen;
+}
+
+nn_intptr_t nn_unicode_indexPermissive(const char *s, nn_size_t codepointIndex) {
+    nn_size_t bytes = 0;
+    while(true) {
+        if(codepointIndex == 0) return bytes;
+        nn_unicode_nextCodepointPermissive(s, &bytes);
+        codepointIndex--;
+    }
+}

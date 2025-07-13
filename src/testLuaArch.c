@@ -469,10 +469,7 @@ int testLuaArch_unicode_sub(lua_State *L) {
     const char *s = luaL_checkstring(L, 1);
     nn_Alloc *alloc = testLuaArch_getAlloc(L);
     int start = luaL_checkinteger(L, 2);
-    if(!nn_unicode_validate(s)) {
-        luaL_error(L, "invalid utf-8");
-    }
-    int len = nn_unicode_len(s);
+    int len = nn_unicode_lenPermissive(s);
     if(len < 0) {
         luaL_error(L, "length overflow");
     }
@@ -503,22 +500,9 @@ int testLuaArch_unicode_sub(lua_State *L) {
         return 1;
     }
 
-    // there is a way to do it without an allocation
-    // however, I'm lazy
-    size_t pointLen;
-    unsigned int *points = nn_unicode_codepoints(alloc, s, &pointLen);
-    if(points == NULL) {
-        luaL_error(L, "out of memory");
-    }
-
-    char *sub = nn_unicode_char(alloc, points + start - 1, stop - start + 1);
-    if(sub == NULL) {
-        nn_dealloc(alloc, points, sizeof(unsigned int) * pointLen);
-        luaL_error(L, "out of memory");
-    }
-    const char *res = testLuaArch_pushstring(L, sub);
-    nn_deallocStr(alloc, sub);
-    nn_dealloc(alloc, points, sizeof(unsigned int) * pointLen);
+    nn_size_t startByte = nn_unicode_indexPermissive(s, start - 1);
+    nn_size_t termByte = nn_unicode_indexPermissive(s, stop);
+    const char *res = testLuaArch_pushlstring(L, s + startByte, termByte - startByte);
     if (!res) {
         luaL_error(L, "out of memory");
     }
@@ -555,10 +539,13 @@ int testLuaArch_unicode_char(lua_State *L) {
 
 int testLuaArch_unicode_len(lua_State *L) {
     const char *s = luaL_checkstring(L, 1);
-    if(!nn_unicode_validate(s)) {
-        luaL_error(L, "invalid utf-8");
-    }
-    lua_pushinteger(L, nn_unicode_len(s));
+    lua_pushinteger(L, nn_unicode_lenPermissive(s));
+    return 1;
+}
+
+int testLuaArch_unicode_wlen(lua_State *L) {
+    const char *s = luaL_checkstring(L, 1);
+    lua_pushinteger(L, nn_unicode_lenPermissive(s));
     return 1;
 }
 
@@ -653,7 +640,7 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, unicode, "sub");
     lua_pushcfunction(L, testLuaArch_unicode_len);
     lua_setfield(L, unicode, "len");
-    lua_pushcfunction(L, testLuaArch_unicode_len);
+    lua_pushcfunction(L, testLuaArch_unicode_wlen);
     lua_setfield(L, unicode, "wlen");
     lua_pushcfunction(L, testLuaArch_unicode_char);
     lua_setfield(L, unicode, "char");
