@@ -118,6 +118,9 @@ extern "C" {
 #define NN_MAX_OPEN_FILES 128
 #define NN_MAX_SCREEN_KEYBOARDS 64
 #define NN_MAX_PATH 256
+#define NN_PORT_MAX 65535
+#define NN_MAX_WAKEUPMSG 2048
+#define NN_TUNNEL_PORT 0
 
 #define NN_OVERHEAT_MIN 100
 #define NN_CALL_HEAT 0.05
@@ -549,6 +552,7 @@ nn_value nn_return_table(nn_computer *computer, nn_size_t len);
 nn_size_t nn_values_getType(nn_value val);
 nn_value nn_values_retain(nn_value val);
 void nn_values_drop(nn_value val);
+void nn_values_dropAll(nn_value *values, nn_size_t len);
 
 void nn_values_set(nn_value arr, nn_size_t idx, nn_value val);
 nn_value nn_values_get(nn_value arr, nn_size_t idx);
@@ -858,6 +862,56 @@ typedef struct nn_gpuControl {
 
 // the control is COPIED.
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control);
+
+typedef struct nn_networkControl {
+    double packetBytesPerTick;
+    double heatPerFullPacket;
+    double energyPerFullPacket;
+} nn_networkControl;
+
+// NULL on success, error string on failure
+const char *nn_pushNetworkMessage(nn_computer *computer, nn_address receiver, nn_address sender, nn_size_t port, double distance, nn_value *values, nn_size_t valueLen);
+
+typedef struct nn_modemTable {
+    void *userdata;
+    void (*deinit)(void *userdata);
+
+    nn_networkControl control;
+
+    // basic limits
+
+    nn_bool_t wireless;
+    nn_size_t maxValues;
+    nn_size_t maxPacketSize;
+
+    // ports
+
+    nn_bool_t (*isOpen)(void *userdata, nn_size_t port);
+    nn_bool_t (*open)(void *userdata, nn_size_t port);
+    // port 0 means close all
+    nn_bool_t (*close)(void *userdata, nn_size_t port);
+    
+    // messages
+
+    // Address is NULL if broadcasting
+    nn_bool_t (*send)(void *userdata, nn_address address, nn_size_t port, nn_value *values, nn_size_t valueCount);
+
+    // signal strength
+    nn_size_t maxStrength;
+    nn_size_t (*getStrength)(void *userdata);
+    nn_bool_t (*setStrength)(void *userdata, nn_size_t strength);
+
+    // wake message
+    void (*getWakeMessage)(void *userdata, char *buf, nn_size_t *buflen);
+    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy);
+} nn_modemTable;
+
+typedef struct nn_tunnelTable {
+    void *userdata;
+    void (*deinit)(void *userdata);
+    
+    nn_networkControl control;
+} nn_tunnelTable;
 
 #ifdef __cplusplus
 }

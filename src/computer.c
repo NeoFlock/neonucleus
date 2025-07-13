@@ -523,3 +523,19 @@ nn_value nn_return_table(nn_computer *computer, nn_size_t len) {
     nn_return(computer, val);
     return val;
 }
+
+const char *nn_pushNetworkMessage(nn_computer *computer, nn_address receiver, nn_address sender, nn_size_t port, double distance, nn_value *values, nn_size_t valueLen) {
+    nn_Alloc *alloc = &computer->universe->ctx.allocator;
+
+    nn_value buffer[valueLen + 5];
+    buffer[0] = nn_values_cstring("modem_message");
+    buffer[1] = nn_values_string(alloc, receiver, nn_strlen(receiver));
+    buffer[2] = nn_values_string(alloc, sender, nn_strlen(sender));
+    buffer[3] = nn_values_integer(port);
+    buffer[4] = nn_values_number(distance);
+    for(nn_size_t i = 0; i < valueLen; i++) {
+        buffer[i + 5] = nn_values_retain(values[i]);
+    }
+
+    return nn_pushSignal(computer, buffer, valueLen + 5);
+}

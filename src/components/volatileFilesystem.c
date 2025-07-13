@@ -1,5 +1,7 @@
 #include "../neonucleus.h"
 
+// TODO: finish
+
 // Data structures
 
 typedef struct nn_vfnode {

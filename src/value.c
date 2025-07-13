@@ -129,6 +129,12 @@ void nn_values_drop(nn_value val) {
     }
 }
 
+void nn_values_dropAll(nn_value *values, nn_size_t len) {
+    for(nn_size_t i = 0; i < len; i++) {
+        nn_values_drop(values[i]);
+    }
+}
+
 void nn_values_set(nn_value arr, nn_size_t idx, nn_value val) {
     if(arr.tag != NN_VALUE_ARRAY) return;
     if(idx >= arr.array->len) return;
