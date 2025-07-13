@@ -28,6 +28,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/components/eeprom.c",
             "src/components/volatileEeprom.c",
             "src/components/filesystem.c",
+            "src/components/volatileFilesystem.c",
             "src/components/drive.c",
             "src/components/volatileDrive.c",
             "src/components/screen.c",

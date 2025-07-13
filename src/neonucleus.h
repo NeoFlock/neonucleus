@@ -117,6 +117,7 @@ extern "C" {
 #define NN_MAX_SIGNAL_SIZE 8192
 #define NN_MAX_OPEN_FILES 128
 #define NN_MAX_SCREEN_KEYBOARDS 64
+#define NN_MAX_PATH 256
 
 #define NN_OVERHEAT_MIN 100
 #define NN_CALL_HEAT 0.05
@@ -656,7 +657,6 @@ typedef struct nn_filesystemTable {
     void *userdata;
     void (*deinit)(void *userdata);
 
-    nn_filesystemControl (*control)(void *userdata);
     void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen);
     nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen);
 
@@ -692,7 +692,18 @@ typedef struct nn_filesystemTable {
 
 typedef struct nn_filesystem nn_filesystem;
 
+typedef struct nn_vfilesystemOptions {
+    // used to compute lastModified
+    nn_size_t creationTime;
+    nn_size_t maxDirEntries;
+    nn_size_t capacity;
+    nn_bool_t isReadOnly;
+    char label[NN_LABEL_SIZE];
+    nn_size_t labelLen;
+} nn_vfilesystemOptions;
+
 nn_filesystem *nn_newFilesystem(nn_Context *context, nn_filesystemTable table, nn_filesystemControl control);
+nn_filesystem *nn_volatileFilesystem(nn_Context *context, nn_vfilesystemOptions opts, nn_filesystemControl control);
 nn_guard *nn_getFilesystemLock(nn_filesystem *fs);
 void nn_retainFilesystem(nn_filesystem *fs);
 nn_bool_t nn_destroyFilesystem(nn_filesystem *fs);

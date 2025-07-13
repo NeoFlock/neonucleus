@@ -46,6 +46,12 @@ void nn_retainFilesystem(nn_filesystem *fs) {
 
 nn_bool_t nn_destroyFilesystem(nn_filesystem *fs) {
     if(!nn_decRef(&fs->refc)) return false;
+    
+    // close all files
+    for(size_t i = 0; i < NN_MAX_OPEN_FILES; i++) {
+        void *f = fs->files[i];
+        if(f != NULL) fs->table.close(fs->table.userdata, f);
+    }
 
     if(fs->table.deinit != NULL) {
         fs->table.deinit(fs->table.userdata);
