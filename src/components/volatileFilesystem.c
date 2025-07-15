@@ -30,7 +30,7 @@ typedef enum nn_vfmode {
 
 typedef struct nn_vfhandle {
     nn_vfnode *node;
-    nn_size_t position;
+    nn_intptr_t position;
     nn_vfmode mode;
 } nn_vfhandle;
 

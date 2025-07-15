@@ -310,3 +310,99 @@ void nn_error_write(nn_errorbuf_t buf, const char *s) {
 void nn_error_clear(nn_errorbuf_t buf) {
     buf[0] = 0;
 }
+
+
+nn_bool_t nn_path_hasSlash(const char *path) {
+    while(*path) {
+        if(*path == '/') return true;
+        path++;
+    }
+    return false;
+}
+
+nn_size_t nn_path_firstSlash(const char *path) {
+    for(nn_size_t i = 0; path[i]; i++) {
+        if(path[i] == '/') return i;
+    }
+    return 0; // should never happen
+}
+
+nn_size_t nn_path_lastSlash(const char *path) {
+    nn_size_t slash = 0;
+    for(nn_size_t i = 0; path[i]; i++) {
+        if(path[i] == '/') slash = i;
+    }
+    return slash;
+}
+
+// returns whether it is the last name
+nn_bool_t nn_path_firstName(const char *path, char firstDirectory[NN_MAX_PATH], char subpath[NN_MAX_PATH]) {
+    if(!nn_path_hasSlash(path)) {
+        nn_strcpy(firstDirectory, path);
+        nn_strcpy(subpath, "");
+        return false; // end
+    }
+    nn_size_t slash = nn_path_firstSlash(path);
+
+    nn_memcpy(firstDirectory, path, slash);
+    firstDirectory[slash] = 0;
+
+    nn_strcpy(subpath, path + slash + 1);
+    return true;
+}
+
+// returns whether it is the only name
+nn_bool_t nn_path_lastName(const char *path, char name[NN_MAX_PATH], char parent[NN_MAX_PATH]) {
+    if(!nn_path_hasSlash(path)) {
+        nn_strcpy(name, path);
+        nn_strcpy(parent, "");
+        return false; // end
+    }
+
+    nn_size_t slash = nn_path_lastSlash(path);
+    nn_strcpy(name, path + slash + 1);
+
+    nn_memcpy(parent, path, slash);
+    parent[slash] = 0;
+    return true;
+}
+
+const char *nn_path_illegal = "\"\\:*?<>|";
+
+nn_bool_t nn_path_isValid(const char *path) {
+    // if we don't check for these, we will be FUCKED
+
+    for(nn_size_t i = 0; nn_path_illegal[i] != '\0'; i++) {
+        if(nn_strchr(path, nn_path_illegal[i]) != NULL) return false;
+    }
+    return nn_strlen(path) < NN_MAX_PATH; // less then because we depend on the terminator
+}
+
+nn_bool_t nn_path_canonical(const char path[NN_MAX_PATH], char canonical[NN_MAX_PATH]) {
+    // attempts to convert a random barely legal path
+    // if this shit is ever bugged and a sandbox escape is done
+    // by tricking it into sneaking some .. in there
+    // !!!! WE WILL BE FUCKED, THE SERVER WILL BE HACKED, AND WE WILL DIE !!!!
+
+    if(!nn_path_isValid(path)) {
+        // HELL NO
+        return false;
+    }
+
+    // tmp shit because lazy, maybe the optimizer be with us
+    char junk[NN_MAX_PATH];
+
+    // 0'd out because it fills it up with terminators, simplifying the rest of the code
+    // in theory this is suboptimal, however, I'm lazy
+    nn_memset(canonical, 0, NN_MAX_PATH);
+    size_t ptr = 0;
+
+    // TODO: burn it with fire and get banned from programming
+    for(nn_size_t i = 0; path[i]; i++) {
+        // all of this is very slow
+
+        while(path[i] == '/') continue; // just do not ask
+    }
+
+    return true;
+}

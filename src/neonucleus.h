@@ -292,6 +292,20 @@ void *nn_memdup(nn_Alloc *alloc, const void *buf, nn_size_t len);
 void nn_deallocStr(nn_Alloc *alloc, char *s);
 nn_address nn_randomUUID(nn_Context *ctx);
 
+nn_bool_t nn_path_hasSlash(const char *path);
+nn_size_t nn_path_firstSlash(const char *path);
+nn_size_t nn_path_lastSlash(const char *path);
+// returns whether it is the last name
+nn_bool_t nn_path_firstName(const char path[NN_MAX_PATH], char firstDirectory[NN_MAX_PATH], char subpath[NN_MAX_PATH]);
+// returns whether it is the only name
+nn_bool_t nn_path_lastName(const char path[NN_MAX_PATH], char name[NN_MAX_PATH], char parent[NN_MAX_PATH]);
+
+// returns whether the path is valid
+nn_bool_t nn_path_isValid(const char *path);
+// writes to canonical the standard form of the path
+// returns whether the path is so horribly bad it cannot be converted in canonical form.
+nn_bool_t nn_path_canonical(const char path[NN_MAX_PATH], char canonical[NN_MAX_PATH]);
+
 nn_guard *nn_newGuard(nn_Context *context);
 void nn_lock(nn_Context *context, nn_guard *guard);
 nn_bool_t nn_tryLock(nn_Context *context, nn_guard *guard);
