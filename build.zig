@@ -17,6 +17,8 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .unwind_tables = if(opts.optimize == .Debug) null else .none,
     });
 
+    const strict = opts.optimize != .Debug;
+
     dataMod.addCSourceFiles(.{
         .files = &[_][]const u8{
             "src/lock.c",
@@ -40,8 +42,8 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .flags = &.{
             if(opts.baremetal) "-DNN_BAREMETAL" else "",
             if(opts.bit32) "-DNN_BIT32" else "",
-            "-Wall",
-            "-Werror",
+            if(strict) "-Wall" else "",
+            if(strict) "-Werror" else "",
             "-std=gnu23",
             "-Wno-keyword-macro", // cuz bools
         },
