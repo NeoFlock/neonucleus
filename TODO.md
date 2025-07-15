@@ -33,6 +33,7 @@
 - `microphone` component, allows reading audio from nearby sources
 - `tape_drive` component, compatible with Computronics, except maybe with proper seek times and support for multiple tapes
 - `cd_reader` and `cd_writer` components, to work with CDs
+- `serial` component, for serial communications with other devices (USB?)
 
 # Internal changes
 
