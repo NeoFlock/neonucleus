@@ -79,8 +79,6 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
 
     const rootPath = try std.mem.join(alloc, std.fs.path.sep_str, &.{ "foreign", dirName });
 
-    c.addIncludePath(b.path(rootPath));
-
     // get all the .c files
     var files = std.ArrayList([]const u8).init(alloc);
     errdefer files.deinit();
@@ -105,7 +103,16 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
     return c;
 }
 
-pub fn build(b: *std.Build) void {
+fn includeTheRightLua(b: *std.Build, c: *std.Build.Step.Compile, version: LuaVersion) !void {
+    const alloc = b.allocator;
+    const dirName = @tagName(version);
+
+    const rootPath = try std.mem.join(alloc, std.fs.path.sep_str, &.{ "foreign", dirName });
+
+    c.addIncludePath(b.path(rootPath));
+}
+
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
 
     const os = target.result.os.tag;
@@ -162,7 +169,7 @@ pub fn build(b: *std.Build) void {
             emulator.linkLibrary(raylib.artifact("raylib"));
         }
 
-        const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua54;
+        const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua52;
         emulator.addCSourceFiles(.{
             .files = &.{
                 "src/testLuaArch.c",
@@ -173,7 +180,8 @@ pub fn build(b: *std.Build) void {
                 if(opts.bit32) "-DNN_BIT32" else "",
             },
         });
-        const l = compileTheRightLua(b, target, luaVer) catch unreachable;
+        const l = try compileTheRightLua(b, target, luaVer);
+        try includeTheRightLua(b, emulator, luaVer);
 
         // forces us to link in everything too
         emulator.addObject(l);
