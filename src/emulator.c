@@ -6,6 +6,7 @@
 #include "neonucleus.h"
 #include "testLuaArch.h"
 #include <raylib.h>
+#include <errno.h>
 
 #ifdef NN_BAREMETAL
 
@@ -104,12 +105,21 @@ nn_eepromControl ne_eeprom_ctrl = {
     .bytesWrittenPerTick = 4096,
 };
     
-void ne_eeprom_getLabel(void *_, char *buf, size_t *buflen) {
+void ne_eeprom_getLabel(void *_, char *buf, size_t *buflen, nn_errorbuf_t err) {
     *buflen = 0;
 }
 
-size_t ne_eeprom_setLabel(void *_, const char *buf, size_t buflen) {
+nn_size_t ne_eeprom_setLabel(void *_, const char *buf, size_t buflen, nn_errorbuf_t err) {
+    nn_error_write(err, "unsupported");
     return 0;
+}
+
+char *ne_eeprom_getArchitecture(nn_Alloc *alloc, void *_, nn_errorbuf_t err) {
+    return NULL;
+}
+
+void ne_eeprom_setArchitecture(void *_, const char *buf, nn_errorbuf_t err) {
+    nn_error_write(err, "unsupported");
 }
 
 const char *ne_location(nn_address address) {
@@ -118,11 +128,11 @@ const char *ne_location(nn_address address) {
     return buffer;
 }
 
-size_t ne_eeprom_get(void *addr, char *buf) {
+size_t ne_eeprom_get(void *addr, char *buf, nn_errorbuf_t err) {
     FILE *f = fopen(ne_location(addr), "rb");
     if (f == NULL) {
-        printf("couldn't read eeprom");
-        exit(1);
+        nn_error_write(err, strerror(errno));
+        return 0;
     }
     fseek(f, 0, SEEK_END);
     size_t len = ftell(f);
@@ -132,27 +142,35 @@ size_t ne_eeprom_get(void *addr, char *buf) {
     return len;
 }
 
-void ne_eeprom_set(void *addr, const char *buf, size_t len) {
+nn_bool_t ne_eeprom_set(void *addr, const char *buf, size_t len, nn_errorbuf_t err) {
     FILE *f = fopen(ne_location(addr), "wb");
     if (f == NULL) {
-        printf("couldn't write eeprom");
-        exit(1);
+        nn_error_write(err, strerror(errno));
+        return false;
     }
     fwrite(buf, sizeof(char), len, f);
     fclose(f);
+    return true;
 }
 
-int ne_eeprom_getData(void *_, char *buf) {
+nn_size_t ne_eeprom_getData(void *_, char *buf, nn_errorbuf_t err) {
+    nn_error_write(err, "unsupported");
     return 0;
 }
 
-void ne_eeprom_setData(void *_, const char *buf, size_t len) {}
+nn_bool_t ne_eeprom_setData(void *_, const char *buf, size_t len, nn_errorbuf_t err) {
+    nn_error_write(err, "unsupported");
+    return false;
+}
     
-nn_bool_t ne_eeprom_isReadonly(void *userdata) {
+nn_bool_t ne_eeprom_isReadonly(void *userdata, nn_errorbuf_t err) {
     return false;
 }
 
-void ne_eeprom_makeReadonly(void *userdata) {}
+nn_bool_t ne_eeprom_makeReadonly(void *userdata, nn_errorbuf_t err) {
+    nn_error_write(err, "unsupported");
+    return false;
+}
 
 nn_filesystemControl ne_fs_ctrl = {
     .readBytesPerTick = 65536,
@@ -171,12 +189,16 @@ nn_filesystemControl ne_fs_ctrl = {
     .createEnergy = 0.325,
 };
 
-void ne_fs_getLabel(nn_component *component, void *_, char *buf, size_t *buflen) {
+void ne_fs_getLabel(void *_, char *buf, size_t *buflen) {
     *buflen = 0;
 }
 
-nn_size_t ne_fs_setLabel(nn_component *component, void *_, const char *buf, size_t buflen) {
+nn_size_t ne_fs_setLabel(void *_, const char *buf, size_t buflen) {
     return 0;
+}
+
+nn_bool_t ne_fs_isReadOnly(void *_) {
+    return false;
 }
 
 size_t ne_fs_spaceUsed(void *_) {
@@ -608,6 +630,8 @@ int main() {
         .set = ne_eeprom_set,
         .getData = ne_eeprom_getData,
         .setData = ne_eeprom_setData,
+        .getArchitecture = ne_eeprom_getArchitecture,
+        .setArchitecture = ne_eeprom_setArchitecture,
         .isReadonly = ne_eeprom_isReadonly,
         .makeReadonly = ne_eeprom_makeReadonly,
     };
@@ -620,11 +644,11 @@ int main() {
     nn_filesystemTable genericFSTable = {
         .userdata = fsFolder,
         .deinit = NULL,
-        .getLabel = ne_eeprom_getLabel,
-        .setLabel = ne_eeprom_setLabel,
+        .getLabel = ne_fs_getLabel,
+        .setLabel = ne_fs_setLabel,
         .spaceUsed = ne_fs_spaceUsed,
         .spaceTotal = 1*1024*1024,
-        .isReadOnly = ne_eeprom_isReadonly,
+        .isReadOnly = ne_fs_isReadOnly,
         .size = (void *)ne_fs_size,
         .remove = NULL,
         .lastModified = (void *)ne_fs_lastModified,

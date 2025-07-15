@@ -236,18 +236,18 @@ void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_co
 }
 
 void nn_loadDriveTable(nn_universe *universe) {
-    nn_componentTable *driveTable = nn_newComponentTable(nn_getAllocator(universe), "drive", NULL, NULL, (void *)nn_drive_destroy);
+    nn_componentTable *driveTable = nn_newComponentTable(nn_getAllocator(universe), "drive", NULL, NULL, (nn_componentDestructor *)nn_drive_destroy);
     nn_storeUserdata(universe, "NN:DRIVE", driveTable);
 
-    nn_defineMethod(driveTable, "getLabel", false, (void *)nn_drive_getLabel, NULL, "getLabel():string - Get the current label of the drive.");
-    nn_defineMethod(driveTable, "setLabel", false, (void *)nn_drive_setLabel, NULL, "setLabel(value:string):string - Sets the label of the drive. Returns the new value, which may be truncated.");
-    nn_defineMethod(driveTable, "getSectorSize", true, (void *)nn_drive_getSectorSize, NULL, "getSectorSize():number - Returns the size of a single sector on the drive, in bytes.");
-    nn_defineMethod(driveTable, "getPlatterCount", true, (void *)nn_drive_getPlatterCount, NULL, "getPlatterCount():number - Returns the number of platters in the drive.");
-    nn_defineMethod(driveTable, "getCapacity", true, (void *)nn_drive_getCapacity, NULL, "getCapacity():number - Returns the total capacity of the drive, in bytes.");
-    nn_defineMethod(driveTable, "readSector", false, (void *)nn_drive_readSector, NULL, "readSector(sector:number):string - Read the current contents of the specified sector.");
-    nn_defineMethod(driveTable, "writeSector", false, (void *)nn_drive_writeSector, NULL, "writeSector(sector:number, value:string) - Write the specified contents to the specified sector.");
-    nn_defineMethod(driveTable, "readByte", false, (void *)nn_drive_readByte, NULL, "readByte(offset:number):number - Read a single byte at the specified offset.");
-    nn_defineMethod(driveTable, "writeByte", false, (void *)nn_drive_writeByte, NULL, "writeByte(offset:number, value:number) - Write a single byte to the specified offset.");
+    nn_defineMethod(driveTable, "getLabel", false, (nn_componentMethod *)nn_drive_getLabel, NULL, "getLabel():string - Get the current label of the drive.");
+    nn_defineMethod(driveTable, "setLabel", false, (nn_componentMethod *)nn_drive_setLabel, NULL, "setLabel(value:string):string - Sets the label of the drive. Returns the new value, which may be truncated.");
+    nn_defineMethod(driveTable, "getSectorSize", true, (nn_componentMethod *)nn_drive_getSectorSize, NULL, "getSectorSize():number - Returns the size of a single sector on the drive, in bytes.");
+    nn_defineMethod(driveTable, "getPlatterCount", true, (nn_componentMethod *)nn_drive_getPlatterCount, NULL, "getPlatterCount():number - Returns the number of platters in the drive.");
+    nn_defineMethod(driveTable, "getCapacity", true, (nn_componentMethod *)nn_drive_getCapacity, NULL, "getCapacity():number - Returns the total capacity of the drive, in bytes.");
+    nn_defineMethod(driveTable, "readSector", false, (nn_componentMethod *)nn_drive_readSector, NULL, "readSector(sector:number):string - Read the current contents of the specified sector.");
+    nn_defineMethod(driveTable, "writeSector", false, (nn_componentMethod *)nn_drive_writeSector, NULL, "writeSector(sector:number, value:string) - Write the specified contents to the specified sector.");
+    nn_defineMethod(driveTable, "readByte", false, (nn_componentMethod *)nn_drive_readByte, NULL, "readByte(offset:number):number - Read a single byte at the specified offset.");
+    nn_defineMethod(driveTable, "writeByte", false, (nn_componentMethod *)nn_drive_writeByte, NULL, "writeByte(offset:number, value:number) - Write a single byte to the specified offset.");
 }
 
 nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive) {

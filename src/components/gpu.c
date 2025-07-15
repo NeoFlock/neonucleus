@@ -423,7 +423,7 @@ void nni_gpu_setDepth(nni_gpu *gpu, void *_, nn_component *component, nn_compute
     int old = nn_getDepth(gpu->currentScreen);
     nn_setDepth(gpu->currentScreen, depth);
     
-    nn_return_cstring(computer, nn_depthName(depth));
+    nn_return_cstring(computer, nn_depthName(old));
 }
 
 void nni_gpu_maxDepth(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
@@ -432,26 +432,26 @@ void nni_gpu_maxDepth(nni_gpu *gpu, void *_, nn_component *component, nn_compute
 }
 
 void nn_loadGraphicsCardTable(nn_universe *universe) {
-    nn_componentTable *gpuTable = nn_newComponentTable(nn_getAllocator(universe), "gpu", NULL, NULL, (void *)nni_gpuDeinit);
+    nn_componentTable *gpuTable = nn_newComponentTable(nn_getAllocator(universe), "gpu", NULL, NULL, (nn_componentDestructor *)nni_gpuDeinit);
     nn_storeUserdata(universe, "NN:GPU", gpuTable);
 
-    nn_defineMethod(gpuTable, "bind", false, (void *)nni_gpu_bind, NULL, "bind(addr: string[, reset: boolean = false]): boolean - Bind a GPU to a screen. Very expensive. If reset is true, it will clear the screen.");
-    nn_defineMethod(gpuTable, "getScreen", true, (void *)nni_gpu_getScreen, NULL, "getScreen(): string");
-    nn_defineMethod(gpuTable, "set", true, (void *)nni_gpu_set, NULL, "set(x: integer, y: integer, text: string[, vertical: boolean = false]) - Modifies the screen at a specific x or y. If vertical is false, it will display it horizontally. If it is true, it will display it vertically.");
-    nn_defineMethod(gpuTable, "get", true, (void *)nni_gpu_get, NULL, "get(x: integer, y: integer): string, integer, integer, integer?, integer? - Returns the character, foreground color, background color, foreground palette index (if applicable), background palette index (if applicable) of a pixel");
-    nn_defineMethod(gpuTable, "maxResolution", true, (void *)nni_gpu_maxResolution, NULL, "maxResolution(): integer, integer - Gets the maximum resolution supported by the bound screen.");
-    nn_defineMethod(gpuTable, "getResolution", true, (void *)nni_gpu_getResolution, NULL, "getResolution(): integer, integer - Gets the current resolution of the bound screen.");
-    nn_defineMethod(gpuTable, "setResolution", true, (void *)nni_gpu_setResolution, NULL, "maxResolution(): integer, integer - Changes the resolution of the bound screen.");
-    nn_defineMethod(gpuTable, "setBackground", true, (void *)nni_gpu_setBackground, NULL, "setBackground(color: integer, isPalette: boolean): integer, integer? - Sets the current background color. Returns the old one and palette index if applicable.");
-    nn_defineMethod(gpuTable, "setForeground", true, (void *)nni_gpu_setForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
-    nn_defineMethod(gpuTable, "getBackground", true, (void *)nni_gpu_getBackground, NULL, "setBackground(color: integer, isPalette: boolean): integer, integer? - Sets the current background color. Returns the old one and palette index if applicable.");
-    nn_defineMethod(gpuTable, "getForeground", true, (void *)nni_gpu_getForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
-    nn_defineMethod(gpuTable, "getDepth", true, (void *)nni_gpu_getDepth, NULL, "getDepth(): number - The currently set color depth of the screen, in bits. Can be 1, 4 or 8.");
-    nn_defineMethod(gpuTable, "setDepth", true, (void *)nni_gpu_setDepth, NULL, "setDepth(depth: integer): string - Changes the screen depth. Valid values can be 1, 4, 8, 16 or 24, however check maxDepth for the maximum supported value of the screen. Using a depth higher than what is supported by the screen will error. Returns the name of the new depth.");
-    nn_defineMethod(gpuTable, "maxDepth", true, (void *)nni_gpu_maxDepth, NULL, "maxDepth(): number - The maximum supported depth of the screen.");
-    nn_defineMethod(gpuTable, "fill", true, (void *)nni_gpu_fill, NULL, "fill(x: integer, y: integer, w: integer, h: integer, s: string)");
-    nn_defineMethod(gpuTable, "copy", true, (void *)nni_gpu_copy, NULL, "copy(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer) - Copies stuff");
-    nn_defineMethod(gpuTable, "getViewport", true, (void *)nni_gpu_getViewport, NULL, "getViewport(): integer, integer - Gets the current viewport resolution");
+    nn_defineMethod(gpuTable, "bind", false, (nn_componentMethod *)nni_gpu_bind, NULL, "bind(addr: string[, reset: boolean = false]): boolean - Bind a GPU to a screen. Very expensive. If reset is true, it will clear the screen.");
+    nn_defineMethod(gpuTable, "getScreen", true, (nn_componentMethod *)nni_gpu_getScreen, NULL, "getScreen(): string");
+    nn_defineMethod(gpuTable, "set", true, (nn_componentMethod *)nni_gpu_set, NULL, "set(x: integer, y: integer, text: string[, vertical: boolean = false]) - Modifies the screen at a specific x or y. If vertical is false, it will display it horizontally. If it is true, it will display it vertically.");
+    nn_defineMethod(gpuTable, "get", true, (nn_componentMethod *)nni_gpu_get, NULL, "get(x: integer, y: integer): string, integer, integer, integer?, integer? - Returns the character, foreground color, background color, foreground palette index (if applicable), background palette index (if applicable) of a pixel");
+    nn_defineMethod(gpuTable, "maxResolution", true, (nn_componentMethod *)nni_gpu_maxResolution, NULL, "maxResolution(): integer, integer - Gets the maximum resolution supported by the bound screen.");
+    nn_defineMethod(gpuTable, "getResolution", true, (nn_componentMethod *)nni_gpu_getResolution, NULL, "getResolution(): integer, integer - Gets the current resolution of the bound screen.");
+    nn_defineMethod(gpuTable, "setResolution", true, (nn_componentMethod *)nni_gpu_setResolution, NULL, "maxResolution(): integer, integer - Changes the resolution of the bound screen.");
+    nn_defineMethod(gpuTable, "setBackground", true, (nn_componentMethod *)nni_gpu_setBackground, NULL, "setBackground(color: integer, isPalette: boolean): integer, integer? - Sets the current background color. Returns the old one and palette index if applicable.");
+    nn_defineMethod(gpuTable, "setForeground", true, (nn_componentMethod *)nni_gpu_setForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
+    nn_defineMethod(gpuTable, "getBackground", true, (nn_componentMethod *)nni_gpu_getBackground, NULL, "setBackground(color: integer, isPalette: boolean): integer, integer? - Sets the current background color. Returns the old one and palette index if applicable.");
+    nn_defineMethod(gpuTable, "getForeground", true, (nn_componentMethod *)nni_gpu_getForeground, NULL, "setForeground(color: integer, isPalette: boolean): integer, integer? - Sets the current foreground color. Returns the old one and palette index if applicable.");
+    nn_defineMethod(gpuTable, "getDepth", true, (nn_componentMethod *)nni_gpu_getDepth, NULL, "getDepth(): number - The currently set color depth of the screen, in bits. Can be 1, 4 or 8.");
+    nn_defineMethod(gpuTable, "setDepth", true, (nn_componentMethod *)nni_gpu_setDepth, NULL, "setDepth(depth: integer): string - Changes the screen depth. Valid values can be 1, 4, 8, 16 or 24, however check maxDepth for the maximum supported value of the screen. Using a depth higher than what is supported by the screen will error. Returns the name of the new depth.");
+    nn_defineMethod(gpuTable, "maxDepth", true, (nn_componentMethod *)nni_gpu_maxDepth, NULL, "maxDepth(): number - The maximum supported depth of the screen.");
+    nn_defineMethod(gpuTable, "fill", true, (nn_componentMethod *)nni_gpu_fill, NULL, "fill(x: integer, y: integer, w: integer, h: integer, s: string)");
+    nn_defineMethod(gpuTable, "copy", true, (nn_componentMethod *)nni_gpu_copy, NULL, "copy(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer) - Copies stuff");
+    nn_defineMethod(gpuTable, "getViewport", true, (nn_componentMethod *)nni_gpu_getViewport, NULL, "getViewport(): integer, integer - Gets the current viewport resolution");
 }
 
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control) {

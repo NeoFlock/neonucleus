@@ -19,7 +19,7 @@ static nn_bool_t nni_libcLock(void *_, mtx_t *lock, int action, int flags) {
     return NN_TRUE;
 }
 
-nn_LockManager nn_libcMutex() {
+nn_LockManager nn_libcMutex(void) {
     nn_LockManager mgr = {};
     mgr.lockSize = sizeof(mtx_t);
     mgr.userdata = NULL;
@@ -33,7 +33,7 @@ static nn_bool_t nni_noLock(void *_, void *__, int action, int flags) {
     return NN_TRUE;
 }
 
-nn_LockManager nn_noMutex() {
+nn_LockManager nn_noMutex(void) {
     return (nn_LockManager) {
         .userdata = NULL,
         .lockSize = 0,

@@ -54,7 +54,7 @@ static void *nn_libcAllocProc(void *_, void *ptr, nn_size_t oldSize, nn_size_t n
     }
 }
 
-nn_Alloc nn_libcAllocator() {
+nn_Alloc nn_libcAllocator(void) {
     return (nn_Alloc) {
         .userdata = NULL,
         .proc = nn_libcAllocProc,
@@ -65,7 +65,7 @@ static nn_size_t nni_rand(void *userdata) {
     return rand();
 }
 
-nn_Rng nn_libcRng() {
+nn_Rng nn_libcRng(void) {
     srand(time(NULL));
     return (nn_Rng) {
         .userdata = NULL,
@@ -74,7 +74,7 @@ nn_Rng nn_libcRng() {
     };
 }
 
-nn_Context nn_libcContext() {
+nn_Context nn_libcContext(void) {
     return (nn_Context) {
         .allocator = nn_libcAllocator(),
         .clock = nn_libcRealTime(),
@@ -83,6 +83,7 @@ nn_Context nn_libcContext() {
     };
 }
 #endif
+
 
 // Utilities, both internal and external
 char *nn_strdup(nn_Alloc *alloc, const char *s) {
@@ -155,7 +156,7 @@ double nn_randfe(nn_Rng *rng) {
 
 #ifdef NN_POSIX
 
-static double nni_realTime() {
+static double nni_realTime(void) {
     struct timespec time;
     if(clock_gettime(CLOCK_MONOTONIC, &time) < 0) return 0; // oh no
     return time.tv_sec + ((double)time.tv_nsec) / 1e9;
@@ -163,7 +164,7 @@ static double nni_realTime() {
 
 #else
 
-static double nni_realTime() {
+static double nni_realTime(void) {
     LARGE_INTEGER frequency = {0};
     if(!QueryPerformanceFrequency(&frequency)) return 0;
 
@@ -179,7 +180,7 @@ static double nni_realTimeClock(void *_) {
     return nni_realTime();
 }
 
-nn_Clock nn_libcRealTime() {
+nn_Clock nn_libcRealTime(void) {
     return (nn_Clock) {
         .userdata = NULL,
         .proc = nni_realTimeClock,
@@ -291,4 +292,21 @@ nn_size_t nn_strlen(const char *a) {
     nn_size_t l = 0;
     while(a[l]) l++;
     return l;
+}
+
+nn_bool_t nn_error_isEmpty(nn_errorbuf_t buf) {
+    return buf[0] == 0;
+}
+
+void nn_error_write(nn_errorbuf_t buf, const char *s) {
+    for(nn_size_t i = 0; i < NN_MAX_ERROR_BUFFER; i++) {
+        buf[i] = s[i];
+        if(s[i] == 0) break;
+    }
+    // just to be sure
+    buf[NN_MAX_ERROR_BUFFER-1] = 0;
+}
+
+void nn_error_clear(nn_errorbuf_t buf) {
+    buf[0] = 0;
 }

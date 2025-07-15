@@ -1,6 +1,6 @@
 #include "neonucleus.h"
 
-nn_value nn_values_nil() {
+nn_value nn_values_nil(void) {
     return (nn_value) {.tag = NN_VALUE_NIL};
 }
 

@@ -13,13 +13,9 @@
 #ifdef NN_BIT32
     typedef int nn_intptr_t;
     typedef unsigned int nn_size_t;
-#elif defined(__LP64__) || defined(_LP64)
-    // long is ptr sized
-    typedef long nn_intptr_t;
-    typedef unsigned long nn_size_t;
 #else
-    typedef long long nn_intptr_t;
-    typedef unsigned long long nn_size_t;
+    typedef __INTPTR_TYPE__ nn_intptr_t;
+    typedef __SIZE_TYPE__ nn_size_t;
 #endif
 #else
 #include <stdbool.h>
@@ -129,6 +125,7 @@ extern "C" {
 #define NN_LABEL_SIZE 128
 
 #define NN_MAXIMUM_UNICODE_BUFFER 4
+#define NN_MAX_ERROR_BUFFER 128
 
 typedef struct nn_guard nn_guard;
 #ifdef __STDC_NO_ATOMICS__
@@ -201,7 +198,6 @@ double nn_randf(nn_Rng *rng);
 // returns from 0 to 1 (exclusive)
 double nn_randfe(nn_Rng *rng);
 
-
 typedef struct nn_Context {
     nn_Alloc allocator;
     nn_LockManager lockManager;
@@ -219,14 +215,21 @@ int nn_strcmp(const char *a, const char *b);
 nn_size_t nn_strlen(const char *a);
 
 #ifndef NN_BAREMETAL
-nn_Alloc nn_libcAllocator();
-nn_Clock nn_libcRealTime();
-nn_LockManager nn_libcMutex();
-nn_Rng nn_libcRng();
-nn_Context nn_libcContext();
+nn_Alloc nn_libcAllocator(void);
+nn_Clock nn_libcRealTime(void);
+nn_LockManager nn_libcMutex(void);
+nn_Rng nn_libcRng(void);
+nn_Context nn_libcContext(void);
 #endif
 
-nn_LockManager nn_noMutex();
+nn_LockManager nn_noMutex(void);
+
+// Error buffers!!!
+typedef char nn_errorbuf_t[NN_MAX_ERROR_BUFFER];
+
+nn_bool_t nn_error_isEmpty(nn_errorbuf_t buf);
+void nn_error_write(nn_errorbuf_t buf, const char *s);
+void nn_error_clear(nn_errorbuf_t buf);
 
 // Values for architectures
 
@@ -532,7 +535,7 @@ nn_size_t nn_getReturnCount(nn_computer *computer);
 
 // Value stuff
 
-nn_value nn_values_nil();
+nn_value nn_values_nil(void);
 nn_value nn_values_integer(nn_intptr_t integer);
 nn_value nn_values_number(double num);
 nn_value nn_values_boolean(nn_bool_t boolean);
@@ -609,14 +612,17 @@ typedef struct nn_eepromTable {
     // methods
     nn_size_t size;
     nn_size_t dataSize;
-    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen);
-    nn_size_t (*get)(void *userdata, char *buf);
-    void (*set)(void *userdata, const char *buf, nn_size_t len);
-    int (*getData)(void *userdata, char *buf);
-    void (*setData)(void *userdata, const char *buf, nn_size_t len);
-    nn_bool_t (*isReadonly)(void *userdata);
-    void (*makeReadonly)(void *userdata);
+    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen, nn_errorbuf_t error);
+    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen, nn_errorbuf_t error);
+    nn_size_t (*get)(void *userdata, char *buf, nn_errorbuf_t error);
+    nn_bool_t (*set)(void *userdata, const char *buf, nn_size_t len, nn_errorbuf_t error);
+    nn_size_t (*getData)(void *userdata, char *buf, nn_errorbuf_t error);
+    nn_bool_t (*setData)(void *userdata, const char *buf, nn_size_t len, nn_errorbuf_t error);
+    // allocate the string with alloc. We recommend using nn_strdup()
+    char *(*getArchitecture)(nn_Alloc *alloc, void *userdata, nn_errorbuf_t error);
+    void (*setArchitecture)(void *userdata, const char *buf, nn_errorbuf_t error);
+    nn_bool_t (*isReadonly)(void *userdata, nn_errorbuf_t error);
+    nn_bool_t (*makeReadonly)(void *userdata, nn_errorbuf_t error);
 } nn_eepromTable;
 
 typedef struct nn_eeprom nn_eeprom;

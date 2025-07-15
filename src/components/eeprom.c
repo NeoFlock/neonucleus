@@ -79,7 +79,14 @@ void nn_eeprom_getDataSize(nn_eeprom *eeprom, void *_, nn_component *component, 
 void nn_eeprom_getLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
     char buf[NN_LABEL_SIZE];
     nn_size_t l = NN_LABEL_SIZE;
-    eeprom->table.getLabel(eeprom->table.userdata, buf, &l);
+    nn_errorbuf_t err = "";
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    eeprom->table.getLabel(eeprom->table.userdata, buf, &l, err);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     if(l == 0) {
         nn_return(computer, nn_values_nil());
     } else {
@@ -98,9 +105,14 @@ void nn_eeprom_setLabel(nn_eeprom *eeprom, void *_, nn_component *component, nn_
         nn_setCError(computer, "bad label (string expected)");
         return;
     }
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    l = eeprom->table.setLabel(eeprom->table.userdata, buf, l);
+    l = eeprom->table.setLabel(eeprom->table.userdata, buf, l, err);
     nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     nn_return_string(computer, buf, l);
     
     // Latency, energy costs and stuff
@@ -115,9 +127,14 @@ void nn_eeprom_get(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
         nn_setCError(computer, "out of memory");
         return;
     }
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    nn_size_t len = eeprom->table.get(eeprom->table.userdata, buf);
+    nn_size_t len = eeprom->table.get(eeprom->table.userdata, buf, err);
     nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     nn_return_string(computer, buf, len);
     nn_dealloc(alloc, buf, cap);
 
@@ -141,14 +158,24 @@ void nn_eeprom_set(nn_eeprom *eeprom, void *_, nn_component *component, nn_compu
             return;
         }
     }
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    if(eeprom->table.isReadonly(eeprom->table.userdata)) {
+    if(eeprom->table.isReadonly(eeprom->table.userdata, err)) {
         nn_unlock(&eeprom->ctx, eeprom->lock);
         nn_setCError(computer, "readonly");
         return;
     }
-    eeprom->table.set(eeprom->table.userdata, buf, len);
+    if(!nn_error_isEmpty(err)) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
+        nn_setError(computer, err);
+        return;
+    }
+    eeprom->table.set(eeprom->table.userdata, buf, len, err);
     nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     
     nn_eeprom_writeCost(component, len);
 }
@@ -161,14 +188,15 @@ void nn_eeprom_getData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
         nn_setCError(computer, "out of memory");
         return;
     }
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    int len = eeprom->table.getData(eeprom->table.userdata, buf);
+    nn_size_t len = eeprom->table.getData(eeprom->table.userdata, buf, err);
     nn_unlock(&eeprom->ctx, eeprom->lock);
-    if(len < 0) {
-        nn_return(computer, nn_values_nil());
-    } else {
-        nn_return_string(computer, buf, len);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
     }
+    nn_return_string(computer, buf, len);
     nn_dealloc(alloc, buf, cap);
     
     nn_eeprom_readCost(component, len);
@@ -191,28 +219,104 @@ void nn_eeprom_setData(nn_eeprom *eeprom, void *_, nn_component *component, nn_c
         nn_setCError(computer, "out of space");
         return;
     }
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    if(eeprom->table.isReadonly(eeprom->table.userdata)) {
+    if(eeprom->table.isReadonly(eeprom->table.userdata, err)) {
         nn_unlock(&eeprom->ctx, eeprom->lock);
         nn_setCError(computer, "readonly");
         return;
     }
-    eeprom->table.setData(eeprom->table.userdata, buf, len);
+    if(!nn_error_isEmpty(err)) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
+        nn_setError(computer, err);
+        return;
+    }
+    eeprom->table.setData(eeprom->table.userdata, buf, len, err);
     nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 
     nn_eeprom_writeCost(component, len);
 }
 
-void nn_eeprom_isReadOnly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
+void nn_eeprom_getArchitecture(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
+    nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    nn_return(computer, nn_values_boolean(eeprom->table.isReadonly(eeprom->table.userdata)));
+    char *s = eeprom->table.getArchitecture(alloc, eeprom->table.userdata, err);
     nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+
+    if(s == NULL) {
+        nn_return_nil(computer);
+        return;
+    }
+
+    nn_size_t l = nn_strlen(s);
+
+    nn_return_string(computer, s, nn_strlen(s));
+
+    nn_deallocStr(alloc, s);
+    
+    nn_eeprom_readCost(component, l);
+}
+
+void nn_eeprom_setArchitecture(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
+    nn_value data = nn_getArgument(computer, 0);
+    const char *buf = nn_toCString(data);
+    if(buf == NULL) {
+        nn_setCError(computer, "bad data (string expected)");
+        return;
+    }
+    nn_errorbuf_t err = "";
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    if(eeprom->table.isReadonly(eeprom->table.userdata, err)) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
+        nn_setCError(computer, "readonly");
+        return;
+    }
+    if(!nn_error_isEmpty(err)) {
+        nn_unlock(&eeprom->ctx, eeprom->lock);
+        nn_setError(computer, err);
+        return;
+    }
+    eeprom->table.setArchitecture(eeprom->table.userdata, buf, err);
+    nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+
+    nn_eeprom_writeCost(component, nn_strlen(buf));
+}
+
+void nn_eeprom_isReadOnly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
+    nn_errorbuf_t err = "";
+    nn_lock(&eeprom->ctx, eeprom->lock);
+    nn_return(computer, nn_values_boolean(eeprom->table.isReadonly(eeprom->table.userdata, err)));
+    nn_unlock(&eeprom->ctx, eeprom->lock);
+
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 }
 
 void nn_eeprom_makeReadonly(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    eeprom->table.makeReadonly(eeprom->table.userdata);
+    nn_bool_t done =eeprom->table.makeReadonly(eeprom->table.userdata, err);
     nn_unlock(&eeprom->ctx, eeprom->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+    nn_return_boolean(computer, done);
 }
 
 void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, nn_computer *computer) {
@@ -224,17 +328,20 @@ void nn_eeprom_getChecksum(nn_eeprom *eeprom, void *_, nn_component *component, 
         nn_setCError(computer, "out of memory");
         return;
     }
+    nn_errorbuf_t err = "";
     nn_lock(&eeprom->ctx, eeprom->lock);
-    int dataLen = eeprom->table.getData(eeprom->table.userdata, buf);
-    if(dataLen < 0) {
+    nn_size_t dataLen = eeprom->table.getData(eeprom->table.userdata, buf, err);
+    if(!nn_error_isEmpty(err)) {
         nn_unlock(&eeprom->ctx, eeprom->lock);
         nn_dealloc(alloc, buf, dataCap + codeCap);
+        nn_setError(computer, err);
         return;
     }
-    int codeLen = eeprom->table.get(eeprom->table.userdata, buf + dataLen);
-    if(codeLen < 0) {
+    int codeLen = eeprom->table.get(eeprom->table.userdata, buf + dataLen, err);
+    if(!nn_error_isEmpty(err)) {
         nn_unlock(&eeprom->ctx, eeprom->lock);
         nn_dealloc(alloc, buf, dataCap + codeCap);
+        nn_setError(computer, err);
         return;
     }
     nn_unlock(&eeprom->ctx, eeprom->lock);
@@ -268,6 +375,8 @@ void nn_loadEepromTable(nn_universe *universe) {
     nn_defineMethod(eepromTable, "set", true, (void *)nn_eeprom_set, NULL, "set(data: string) - Sets the current code contents.");
     nn_defineMethod(eepromTable, "getData", true, (void *)nn_eeprom_getData, NULL, "getData(): string - Reads the current data contents.");
     nn_defineMethod(eepromTable, "setData", true, (void *)nn_eeprom_setData, NULL, "setData(data: string) - Sets the current data contents.");
+    nn_defineMethod(eepromTable, "getArchitecture", true, (void *)nn_eeprom_getArchitecture, NULL, "getArchitecture(): string - Gets the intended architecture.");
+    nn_defineMethod(eepromTable, "setArchitecture", true, (void *)nn_eeprom_setArchitecture, NULL, "setArchitecture(data: string) - Sets the intended architecture.");
     nn_defineMethod(eepromTable, "isReadOnly", true, (void *)nn_eeprom_isReadOnly, NULL, "isReadOnly(): boolean - Returns whether this EEPROM is read-only.");
     nn_defineMethod(eepromTable, "makeReadOnly", false, (void *)nn_eeprom_makeReadonly, NULL, "makeReadOnly() - Makes the current EEPROM read-only. Normally, this cannot be undone.");
     nn_defineMethod(eepromTable, "makeReadonly", false, (void *)nn_eeprom_makeReadonly, NULL, "makeReadonly() - Legacy alias to makeReadOnly()");

@@ -40,6 +40,10 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .flags = &.{
             if(opts.baremetal) "-DNN_BAREMETAL" else "",
             if(opts.bit32) "-DNN_BIT32" else "",
+            "-Wall",
+            "-Werror",
+            "-std=gnu23",
+            "-Wno-keyword-macro", // cuz bools
         },
     });
 

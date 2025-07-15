@@ -237,11 +237,11 @@ void nn_screenComp_getAspectRatio(nn_screen *screen, void *_, nn_component *comp
 }
 
 void nn_loadScreenTable(nn_universe *universe) {
-    nn_componentTable *screenTable = nn_newComponentTable(nn_getAllocator(universe), "screen", NULL, NULL, (void *)nn_screenComp_destroy);
+    nn_componentTable *screenTable = nn_newComponentTable(nn_getAllocator(universe), "screen", NULL, NULL, (nn_componentDestructor *)nn_screenComp_destroy);
     nn_storeUserdata(universe, "NN:SCREEN", screenTable);
 
-    nn_defineMethod(screenTable, "getKeyboards", true, (void *)nn_screenComp_getKeyboards, NULL, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
-    nn_defineMethod(screenTable, "getAspectRatio", true, (void *)nn_screenComp_getAspectRatio, NULL, "");
+    nn_defineMethod(screenTable, "getKeyboards", true, (nn_componentMethod *)nn_screenComp_getKeyboards, NULL, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
+    nn_defineMethod(screenTable, "getAspectRatio", true, (nn_componentMethod *)nn_screenComp_getAspectRatio, NULL, "");
 }
 
 nn_componentTable *nn_getScreenTable(nn_universe *universe) {
