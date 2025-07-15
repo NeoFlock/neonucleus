@@ -229,6 +229,9 @@ void *ne_fs_open(nn_address address, const char *path, const char *mode) {
     const char *p = ne_fs_diskPath(address, path);
     if(p[0] == '/') p++;
     FILE *f = fopen(p, trueMode);
+    if(f == NULL) {
+        printf("open(%s) failure: %s\n", path, strerror(errno));
+    }
     return f;
 }
 
