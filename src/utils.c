@@ -238,11 +238,15 @@ int nn_mapColor(int color, int *palette, int paletteSize) {
 }
 
 void nn_memset(void *buf, unsigned char byte, nn_size_t len) {
+    if(buf == NULL) return;
     unsigned char *bytes = buf;
     for(nn_size_t i = 0; i < len; i++) bytes[i] = byte;
 }
 
 void nn_memcpy(void *dest, const void *src, nn_size_t len) {
+    if(dest == NULL) return;
+    if(src == NULL) return;
+
     char *destBytes = dest;
     const char *srcBytes = src;
     for(nn_size_t i = 0; i < len; i++) {
@@ -251,6 +255,7 @@ void nn_memcpy(void *dest, const void *src, nn_size_t len) {
 }
 
 char *nn_strcpy(char *dest, const char *src) {
+    if(dest == NULL) return dest;
     nn_size_t i = 0;
     while(src[i]) {
         dest[i] = src[i];
@@ -280,6 +285,7 @@ int nn_strcmp(const char *a, const char *b) {
 }
 
 const char *nn_strchr(const char *str, int ch) {
+    if(str == NULL) return NULL;
     nn_size_t i = 0;
     while(NN_TRUE) {
         if(str[i] == ch) return str + i;
@@ -289,16 +295,19 @@ const char *nn_strchr(const char *str, int ch) {
 }
 
 nn_size_t nn_strlen(const char *a) {
+    if(a == NULL) return 0;
     nn_size_t l = 0;
     while(a[l]) l++;
     return l;
 }
 
 nn_bool_t nn_error_isEmpty(nn_errorbuf_t buf) {
+    if(buf == NULL) return true;
     return buf[0] == 0;
 }
 
 void nn_error_write(nn_errorbuf_t buf, const char *s) {
+    if(buf == NULL) return;
     for(nn_size_t i = 0; i < NN_MAX_ERROR_BUFFER; i++) {
         buf[i] = s[i];
         if(s[i] == 0) break;
@@ -308,6 +317,7 @@ void nn_error_write(nn_errorbuf_t buf, const char *s) {
 }
 
 void nn_error_clear(nn_errorbuf_t buf) {
+    if(buf == NULL) return;
     buf[0] = 0;
 }
 
