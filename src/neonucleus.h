@@ -682,37 +682,37 @@ typedef struct nn_filesystemTable {
     void *userdata;
     void (*deinit)(void *userdata);
 
-    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen);
+    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen, nn_errorbuf_t err);
+    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen, nn_errorbuf_t err);
 
     nn_size_t (*spaceUsed)(void *userdata);
     nn_size_t spaceTotal;
-    nn_bool_t (*isReadOnly)(void *userdata);
+    nn_bool_t (*isReadOnly)(void *userdata, nn_errorbuf_t err);
 
     // general operations
-    nn_size_t (*size)(void *userdata, const char *path);
-    nn_size_t (*remove)(void *userdata, const char *path);
-    nn_size_t (*lastModified)(void *userdata, const char *path);
-    nn_size_t (*rename)(void *userdata, const char *from, const char *to);
-    nn_bool_t (*exists)(void *userdata, const char *path);
+    nn_size_t (*size)(void *userdata, const char *path, nn_errorbuf_t err);
+    nn_size_t (*remove)(void *userdata, const char *path, nn_errorbuf_t err);
+    nn_size_t (*lastModified)(void *userdata, const char *path, nn_errorbuf_t err);
+    nn_size_t (*rename)(void *userdata, const char *from, const char *to, nn_errorbuf_t err);
+    nn_bool_t (*exists)(void *userdata, const char *path, nn_errorbuf_t err);
 
     // directory operations
-    nn_bool_t (*isDirectory)(void *userdata, const char *path);
-    nn_bool_t (*makeDirectory)(void *userdata, const char *path);
+    nn_bool_t (*isDirectory)(void *userdata, const char *path, nn_errorbuf_t err);
+    nn_bool_t (*makeDirectory)(void *userdata, const char *path, nn_errorbuf_t err);
     // The returned array should be allocated with the supplied allocator.
     // The strings should be null terminated. Use nn_strdup for the allocation to guarantee nn_deallocStr deallocates it correctly.
     // For the array, the *exact* size of the allocation should be sizeof(char *) * (*len),
     // If it is not, the behavior is undefined.
     // We recommend first computing len then allocating, though if that is not doable or practical,
     // consider nn_resize()ing it to the correct size to guarantee a correct deallocation.
-    char **(*list)(nn_Alloc *alloc, void *userdata, const char *path, nn_size_t *len);
+    char **(*list)(nn_Alloc *alloc, void *userdata, const char *path, nn_size_t *len, nn_errorbuf_t err);
 
     // file operations
-    void *(*open)(void *userdata, const char *path, const char *mode);
-    nn_bool_t (*close)(void *userdata, void *fd);
-    nn_bool_t (*write)(void *userdata, void *fd, const char *buf, nn_size_t len);
-    nn_size_t (*read)(void *userdata, void *fd, char *buf, nn_size_t required);
-    nn_size_t (*seek)(void *userdata, void *fd, const char *whence, int off);
+    void *(*open)(void *userdata, const char *path, const char *mode, nn_errorbuf_t err);
+    nn_bool_t (*close)(void *userdata, void *fd, nn_errorbuf_t err);
+    nn_bool_t (*write)(void *userdata, void *fd, const char *buf, nn_size_t len, nn_errorbuf_t err);
+    nn_size_t (*read)(void *userdata, void *fd, char *buf, nn_size_t required, nn_errorbuf_t err);
+    nn_size_t (*seek)(void *userdata, void *fd, const char *whence, int off, nn_errorbuf_t err);
 } nn_filesystemTable;
 
 typedef struct nn_filesystem nn_filesystem;

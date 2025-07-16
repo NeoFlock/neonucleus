@@ -197,7 +197,7 @@ nn_size_t ne_fs_setLabel(void *_, const char *buf, size_t buflen) {
     return 0;
 }
 
-nn_bool_t ne_fs_isReadOnly(void *_) {
+nn_bool_t ne_fs_isReadOnly(void *_, nn_errorbuf_t err) {
     return false;
 }
 
@@ -217,7 +217,7 @@ const char *ne_fs_diskPath(nn_address addr, const char *path) {
     return buf;
 }
 
-void *ne_fs_open(nn_address address, const char *path, const char *mode) {
+void *ne_fs_open(nn_address address, const char *path, const char *mode, nn_errorbuf_t err) {
     const char *trueMode = "rb";
     if(strcmp(mode, "w") == 0) {
         trueMode = "wb";
@@ -228,28 +228,32 @@ void *ne_fs_open(nn_address address, const char *path, const char *mode) {
 
     const char *p = ne_fs_diskPath(address, path);
     if(p[0] == '/') p++;
+    if(DirectoryExists(p)) {
+        nn_error_write(err, "Is a directory");
+        return NULL;
+    }
     FILE *f = fopen(p, trueMode);
     if(f == NULL) {
-        printf("open(%s) failure: %s\n", path, strerror(errno));
+        nn_error_write(err, strerror(errno));
     }
     return f;
 }
 
-bool ne_fs_close(nn_address addr, FILE *f) {
+bool ne_fs_close(nn_address addr, FILE *f, nn_errorbuf_t err) {
     fclose(f);
     return true;
 }
 
-bool ne_fs_write(nn_address addr, FILE *f, const char *buf, size_t len) {
+bool ne_fs_write(nn_address addr, FILE *f, const char *buf, size_t len, nn_errorbuf_t err) {
     return fwrite(buf, sizeof(char), len, f) > 0;
 }
 
-size_t ne_fs_read(nn_address addr, FILE *f, char *buf, size_t required) {
+size_t ne_fs_read(nn_address addr, FILE *f, char *buf, size_t required, nn_errorbuf_t err) {
     if(feof(f)) return 0;
     return fread(buf, sizeof(char), required, f);
 }
 
-size_t ne_fs_seek(nn_address addr, FILE *f, const char *whence, int off) {
+size_t ne_fs_seek(nn_address addr, FILE *f, const char *whence, int off, nn_errorbuf_t err) {
     int w = SEEK_SET;
     if(strcmp(whence, "cur") == 0) {
         w = SEEK_CUR;
@@ -261,7 +265,7 @@ size_t ne_fs_seek(nn_address addr, FILE *f, const char *whence, int off) {
     return ftell(f);
 }
 
-char **ne_fs_list(nn_Alloc *alloc, nn_address addr, const char *path, size_t *len) {
+char **ne_fs_list(nn_Alloc *alloc, nn_address addr, const char *path, size_t *len, nn_errorbuf_t err) {
     const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
@@ -278,7 +282,7 @@ char **ne_fs_list(nn_Alloc *alloc, nn_address addr, const char *path, size_t *le
     return buf;
 }
 
-size_t ne_fs_size(nn_address addr, const char *path) {
+size_t ne_fs_size(nn_address addr, const char *path, nn_errorbuf_t err) {
     const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
@@ -287,28 +291,28 @@ size_t ne_fs_size(nn_address addr, const char *path) {
     return GetFileLength(p);
 }
 
-size_t ne_fs_lastModified(nn_address addr, const char *path) {
+size_t ne_fs_lastModified(nn_address addr, const char *path, nn_errorbuf_t err) {
     const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     return GetFileModTime(p);
 }
 
-bool ne_fs_isDirectory(nn_address addr, const char *path) {
+bool ne_fs_isDirectory(nn_address addr, const char *path, nn_errorbuf_t err) {
     const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     return DirectoryExists(p);
 }
 
-bool ne_fs_makeDirectory(nn_address addr, const char *path) {
+bool ne_fs_makeDirectory(nn_address addr, const char *path, nn_errorbuf_t err) {
     const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
     return MakeDirectory(p) == 0;
 }
 
-bool ne_fs_exists(nn_address addr, const char *path) {
+bool ne_fs_exists(nn_address addr, const char *path, nn_errorbuf_t err) {
     const char *p = ne_fs_diskPath(addr, path);
     if(p[0] == '/') p++;
 
@@ -647,8 +651,8 @@ int main() {
     nn_filesystemTable genericFSTable = {
         .userdata = fsFolder,
         .deinit = NULL,
-        .getLabel = ne_fs_getLabel,
-        .setLabel = ne_fs_setLabel,
+        .getLabel = ne_eeprom_getLabel,
+        .setLabel = ne_eeprom_setLabel,
         .spaceUsed = ne_fs_spaceUsed,
         .spaceTotal = 1*1024*1024,
         .isReadOnly = ne_fs_isReadOnly,

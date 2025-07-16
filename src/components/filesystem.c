@@ -46,11 +46,13 @@ void nn_retainFilesystem(nn_filesystem *fs) {
 
 nn_bool_t nn_destroyFilesystem(nn_filesystem *fs) {
     if(!nn_decRef(&fs->refc)) return false;
+
+    nn_errorbuf_t err = ""; // ignored
     
     // close all files
     for(nn_size_t i = 0; i < NN_MAX_OPEN_FILES; i++) {
         void *f = fs->files[i];
-        if(f != NULL) fs->table.close(fs->table.userdata, f);
+        if(f != NULL) fs->table.close(fs->table.userdata, f, err);
     }
 
     if(fs->table.deinit != NULL) {
@@ -141,9 +143,14 @@ void nn_fs_createCost(nn_filesystem *fs, nn_size_t count, nn_component *componen
 void nn_fs_getLabel(nn_filesystem *fs, void *_, nn_component *component, nn_computer *computer) {
     char buf[NN_LABEL_SIZE];
     nn_size_t l = NN_LABEL_SIZE;
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    fs->table.getLabel(fs->table.userdata, buf, &l);
+    fs->table.getLabel(fs->table.userdata, buf, &l, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     if(l == 0) {
         nn_return(computer, nn_values_nil());
     } else {
@@ -161,9 +168,14 @@ void nn_fs_setLabel(nn_filesystem *fs, void *_, nn_component *component, nn_comp
         nn_setCError(computer, "bad label (string expected)");
         return;
     }
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    l = fs->table.setLabel(fs->table.userdata, buf, l);
+    l = fs->table.setLabel(fs->table.userdata, buf, l, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     nn_return_string(computer, buf, l);
 
     nn_fs_writeCost(fs, l, component);
@@ -179,9 +191,14 @@ void nn_fs_spaceTotal(nn_filesystem *fs, nn_componentMethod *_, nn_component *co
 }
 
 void nn_fs_isReadOnly(nn_filesystem *fs, nn_componentMethod *_, nn_component *component, nn_computer *computer) {
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_return_boolean(computer, fs->table.isReadOnly(fs->table.userdata));
+    nn_return_boolean(computer, fs->table.isReadOnly(fs->table.userdata, err));
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 }
 
 void nn_fs_size(nn_filesystem *fs, nn_componentMethod *_, nn_component *component, nn_computer *computer) {
@@ -197,9 +214,14 @@ void nn_fs_size(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t byteSize = fs->table.size(fs->table.userdata, canonical);
+    nn_size_t byteSize = fs->table.size(fs->table.userdata, canonical, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 
     nn_return(computer, nn_values_integer(byteSize));
 }
@@ -217,9 +239,14 @@ void nn_fs_remove(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t removed = fs->table.remove(fs->table.userdata, canonical);
+    nn_size_t removed = fs->table.remove(fs->table.userdata, canonical, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     nn_return_boolean(computer, removed > 0);
 
     nn_fs_removeCost(fs, removed, component);
@@ -238,9 +265,14 @@ void nn_fs_lastModified(nn_filesystem *fs, nn_componentMethod *_, nn_component *
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t t = fs->table.lastModified(fs->table.userdata, canonical);
+    nn_size_t t = fs->table.lastModified(fs->table.userdata, canonical, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 
     // OpenOS does BULLSHIT with this thing, dividing it by 1000 and expecting it to be
     // fucking usable as a date, meaning it needs to be an int.
@@ -275,9 +307,14 @@ void nn_fs_rename(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t movedCount = fs->table.rename(fs->table.userdata, canonicalFrom, canonicalTo);
+    nn_size_t movedCount = fs->table.rename(fs->table.userdata, canonicalFrom, canonicalTo, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     nn_return(computer, nn_values_boolean(movedCount > 0));
    
     nn_fs_removeCost(fs, movedCount, component);
@@ -297,9 +334,14 @@ void nn_fs_exists(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_return_boolean(computer, fs->table.exists(fs->table.userdata, canonical));
+    nn_return_boolean(computer, fs->table.exists(fs->table.userdata, canonical, err));
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 }
 
 void nn_fs_isDirectory(nn_filesystem *fs, nn_componentMethod *_, nn_component *component, nn_computer *computer) {
@@ -315,9 +357,13 @@ void nn_fs_isDirectory(nn_filesystem *fs, nn_componentMethod *_, nn_component *c
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_return_boolean(computer, fs->table.isDirectory(fs->table.userdata, canonical));
+    nn_return_boolean(computer, fs->table.isDirectory(fs->table.userdata, canonical, err));
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+    }
 }
 
 void nn_fs_makeDirectory(nn_filesystem *fs, nn_componentMethod *_, nn_component *component, nn_computer *computer) {
@@ -333,9 +379,13 @@ void nn_fs_makeDirectory(nn_filesystem *fs, nn_componentMethod *_, nn_component 
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_return_boolean(computer, fs->table.makeDirectory(fs->table.userdata, canonical));
+    nn_return_boolean(computer, fs->table.makeDirectory(fs->table.userdata, canonical, err));
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+    }
 
     nn_fs_createCost(fs, 1, component);
 }
@@ -355,10 +405,20 @@ void nn_fs_list(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
     
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(computer));
 
+    nn_errorbuf_t err = "";
     nn_size_t fileCount = 0;
     nn_lock(&fs->ctx, fs->lock);
-    char **files = fs->table.list(alloc, fs->table.userdata, canonical, &fileCount);
+    char **files = fs->table.list(alloc, fs->table.userdata, canonical, &fileCount, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        if(files != NULL) {
+            for(nn_size_t i = 0; i < fileCount; i++) {
+                nn_deallocStr(alloc, files[i]);
+            }
+            nn_dealloc(alloc, files, sizeof(char *) * fileCount);
+        }
+        nn_setError(computer, err);
+    }
 
     if(files != NULL) {
         // operation succeeded
@@ -391,10 +451,16 @@ void nn_fs_open(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         mode = "r";
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
     // technically wrongfully 
-    if(!fs->table.exists(fs->table.userdata, path)) {
+    if(!fs->table.exists(fs->table.userdata, path, err)) {
         nn_fs_createCost(fs, 1, component);
+    }
+    if(!nn_error_isEmpty(err)) {
+        nn_unlock(&fs->ctx, fs->lock);
+        nn_setError(computer, err);
+        return;
     }
 
     nn_size_t fd = 0;
@@ -406,13 +472,25 @@ void nn_fs_open(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
             return;
         }
     }
-    void *file = fs->table.open(fs->table.userdata, canonical, mode);
+    void *file = fs->table.open(fs->table.userdata, canonical, mode, err);
+    if(!nn_error_isEmpty(err)) {
+        if(file != NULL) {
+            fs->table.close(fs->table.userdata, file, err);
+        }
+        nn_unlock(&fs->ctx, fs->lock);
+        nn_setError(computer, err);
+        return;
+    }
     if(file == NULL) {
         nn_unlock(&fs->ctx, fs->lock);
         nn_setCError(computer, "no such file or directory");
         return;
     }
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     fs->files[fd] = file;
     nn_return(computer, nn_values_integer(fd));
 }
@@ -426,12 +504,17 @@ void nn_fs_close(nn_filesystem *fs, nn_componentMethod *_, nn_component *compone
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_bool_t closed = fs->table.close(fs->table.userdata, file);
+    nn_bool_t closed = fs->table.close(fs->table.userdata, file, err);
     if(closed) {
         fs->files[fd] = NULL;
     }
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     nn_return(computer, nn_values_boolean(closed));
 }
 
@@ -446,7 +529,8 @@ void nn_fs_write(nn_filesystem *fs, nn_componentMethod *_, nn_component *compone
         nn_setCError(computer, "bad buffer (string expected)");
         return;
     }
-    
+   
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
     nn_size_t spaceRemaining = nn_fs_getSpaceRemaining(fs);
 
@@ -463,10 +547,14 @@ void nn_fs_write(nn_filesystem *fs, nn_componentMethod *_, nn_component *compone
         return;
     }
 
-    nn_bool_t written = fs->table.write(fs->table.userdata, file, buf, len);
+    nn_bool_t written = fs->table.write(fs->table.userdata, file, buf, len, err);
     nn_return(computer, nn_values_boolean(written));
     if(written) nn_fs_invalidateSpaceUsed(fs);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 
     nn_fs_writeCost(fs, len, component);
 }
@@ -482,6 +570,7 @@ void nn_fs_read(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
     if(len > capacity) len = capacity;
     nn_size_t byteLen = len;
     
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
     void *file = nn_fs_unwrapFD(fs, fd);
     if(file == NULL) {
@@ -498,8 +587,12 @@ void nn_fs_read(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         return;
     }
 
-    nn_size_t readLen = fs->table.read(fs->table.userdata, file, buf, byteLen);
+    nn_size_t readLen = fs->table.read(fs->table.userdata, file, buf, byteLen, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
     if(readLen > 0) {
         // Nothing read means EoF.
         nn_return_string(computer, buf, readLen);
@@ -533,6 +626,7 @@ void nn_fs_seek(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         return;
     }
 
+    nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
     void *file = nn_fs_unwrapFD(fs, fd);
     if(file == NULL) {
@@ -541,8 +635,12 @@ void nn_fs_seek(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         return;
     }
 
-    nn_size_t pos = fs->table.seek(fs->table.userdata, file, whence, off);
+    nn_size_t pos = fs->table.seek(fs->table.userdata, file, whence, off, err);
     nn_unlock(&fs->ctx, fs->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
 
     nn_return_integer(computer, pos);
 }

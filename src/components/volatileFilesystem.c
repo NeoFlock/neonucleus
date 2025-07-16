@@ -159,6 +159,28 @@ nn_size_t nn_vf_getIdealCapacity(nn_vfnode *file, nn_size_t spaceNeeded) {
     return cap;
 }
 
+void nn_vf_clampHandlePosition(nn_vfhandle *handle) {
+    nn_size_t len = handle->node->len;
+    if(handle->position < 0) handle->position = 0;
+    if(handle->position > len) handle->position = len;
+}
+
+nn_vfnode *nn_vf_resolvePathFromNode(nn_vfnode *node, const char *path) {
+    if(path[0] == 0) return node;
+    char firstDirectory[NN_MAX_PATH];
+    char subpath[NN_MAX_PATH];
+    if(nn_path_firstName(path, firstDirectory, subpath)) {
+        return nn_vf_find(node, firstDirectory);
+    }
+
+    nn_vfnode *dir = nn_vf_find(node, firstDirectory);
+    return nn_vf_resolvePathFromNode(dir, subpath);
+}
+
+nn_vfnode *nn_vf_resolvePath(nn_vfilesystem *fs, const char *path) {
+    return nn_vf_resolvePathFromNode(fs->root, path);
+}
+
 // methods
 
 void nn_vfs_deinit(nn_vfilesystem *fs) {
