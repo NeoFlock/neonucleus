@@ -6,8 +6,8 @@
 
 typedef struct nn_vfnode {
     struct nn_vfilesystem *fs;
-    struct nn_vfnode *parent;
     char name[NN_MAX_PATH];
+    struct nn_vfnode *parent;
     nn_bool_t isDirectory;
     union {
         // if directory
@@ -57,8 +57,8 @@ nn_vfnode *nn_vf_allocFile(nn_vfilesystem *fs, const char *name) {
     if(node == NULL) return NULL;
     *node = (nn_vfnode) {
         .fs = fs,
-        .parent = NULL,
         .lastModified = nn_vf_now(fs),
+        .parent = NULL,
         .isDirectory = false,
         .data = NULL,
         .len = 0,
@@ -81,8 +81,8 @@ nn_vfnode *nn_vf_allocDirectory(nn_vfilesystem *fs, const char *name) {
     }
     *node = (nn_vfnode) {
         .fs = fs,
-        .parent = NULL,
         .lastModified = nn_vf_now(fs),
+        .parent = NULL,
         .isDirectory = false,
         .entries = buffer,
         .len = 0,
@@ -119,6 +119,44 @@ nn_size_t nn_vf_spaceUsedByNode(nn_vfnode *node) {
     } else {
         return node->len;
     }
+}
+
+nn_vfnode *nn_vf_find(nn_vfnode *parent, const char *name) {
+    if(parent->isDirectory) return NULL;
+    for(nn_size_t i = 0; i < parent->len; i++) {
+        nn_vfnode *entry = parent->entries[i];
+
+        if(nn_strcmp(entry->name, name) == 0) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+nn_bool_t nn_vf_ensureFileCapacity(nn_vfnode *file, nn_size_t capacity) {
+    if(file->isDirectory) return false;
+    nn_Alloc *alloc = &file->fs->ctx.allocator;
+
+    if(file->cap >= capacity) return true; // already at that point
+
+    char *newData = nn_resize(alloc, file->data, file->cap, capacity);
+    if(newData == NULL) {
+        return false; // OOM
+    }
+    file->data = newData;
+    file->cap = capacity;
+
+    return true;
+}
+
+// this is used to compute exponential backoff
+// TODO: add an option to select either a slower growth rate or
+// linear backoff to reduce memory usage at the cost of speed
+nn_size_t nn_vf_getIdealCapacity(nn_vfnode *file, nn_size_t spaceNeeded) {
+    nn_size_t cap = file->cap;
+    if(cap == 0) cap = 1;
+    while(cap < spaceNeeded) cap *= 2; // this would mean a file with 1,048,577 bytes takes up 2,097,152 bytes, potentially wasting 1,048,575 bytes
+    return cap;
 }
 
 // methods

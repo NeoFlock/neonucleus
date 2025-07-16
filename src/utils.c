@@ -388,7 +388,14 @@ nn_bool_t nn_path_isValid(const char *path) {
     return nn_strlen(path) < NN_MAX_PATH; // less then because we depend on the terminator
 }
 
-nn_bool_t nn_path_canonical(const char path[NN_MAX_PATH], char canonical[NN_MAX_PATH]) {
+static nn_bool_t nni_path_isAllDots(const char *path, nn_size_t len) {
+    for(nn_size_t i = 0; i < len; i++) {
+        if(path[i] != '.') return false;
+    }
+    return true;
+}
+
+nn_bool_t nn_path_canonical(const char *path, char canonical[NN_MAX_PATH]) {
     // attempts to convert a random barely legal path
     // if this shit is ever bugged and a sandbox escape is done
     // by tricking it into sneaking some .. in there
@@ -396,23 +403,49 @@ nn_bool_t nn_path_canonical(const char path[NN_MAX_PATH], char canonical[NN_MAX_
 
     if(!nn_path_isValid(path)) {
         // HELL NO
-        return false;
+        return true;
     }
-
-    // tmp shit because lazy, maybe the optimizer be with us
-    char junk[NN_MAX_PATH];
 
     // 0'd out because it fills it up with terminators, simplifying the rest of the code
     // in theory this is suboptimal, however, I'm lazy
     nn_memset(canonical, 0, NN_MAX_PATH);
-    size_t ptr = 0;
+    nn_size_t ptr = 0;
+    nn_size_t i = 0;
 
     // TODO: burn it with fire and get banned from programming
-    for(nn_size_t i = 0; path[i]; i++) {
-        // all of this is very slow
+    while(true) {
+        while(path[i] == '/') i++; // just do not ask
+        if(path[i] == 0) break;
 
-        while(path[i] == '/') continue; // just do not ask
+        const char *subpath = path + i;
+        nn_size_t len = nn_path_firstSlash(subpath);
+
+        if(len == 0) {
+            len = nn_strlen(path) - i;
+        }
+
+        if(nni_path_isAllDots(subpath, len)) {
+            // we don't actually resolve them because they shouldn't be there
+            // to begin with
+            i += len;
+            continue;
+        }
+
+        if(ptr == 0) {
+            // at the start
+            nn_memcpy(canonical, subpath, len);
+            ptr = len;
+            i += len;
+            continue;
+        }
+        // just append to it
+        canonical[ptr] = '/';
+        ptr++;
+        nn_memcpy(canonical + ptr, subpath, len);
+        ptr += len;
+        i += len;
+        continue;
     }
 
-    return true;
+    return false;
 }

@@ -408,7 +408,7 @@ sandbox = {
         lower = string.lower,
 		wtrunc = function (str,space)
 			space = space - 1
-			return str:sub(1,(space >= utf8.len(str)) and (#str) or (utf8.offset(str,space+1)-1))
+            return unicode.sub(str, 1, space)
 		end,
     }),
     checkArg = checkArg,

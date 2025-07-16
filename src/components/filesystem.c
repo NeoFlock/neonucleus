@@ -102,16 +102,6 @@ void *nn_fs_unwrapFD(nn_filesystem *fs, nn_size_t fd) {
     return file;
 }
 
-nn_bool_t nn_fs_illegalPath(const char *path) {
-    // absolute disaster
-    const char *illegal = "\"\\:*?<>|";
-
-    for(nn_size_t i = 0; illegal[i] != '\0'; i++) {
-        if(nn_strchr(path, illegal[i]) != NULL) return true;
-    }
-    return false;
-}
-
 void nn_fs_readCost(nn_filesystem *fs, nn_size_t bytes, nn_component *component) {
     nn_filesystemControl control = fs->control;
     nn_computer *computer = nn_getComputerOfComponent(component);
@@ -201,13 +191,14 @@ void nn_fs_size(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
 
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t byteSize = fs->table.size(fs->table.userdata, path);
+    nn_size_t byteSize = fs->table.size(fs->table.userdata, canonical);
     nn_unlock(&fs->ctx, fs->lock);
 
     nn_return(computer, nn_values_integer(byteSize));
@@ -220,13 +211,14 @@ void nn_fs_remove(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
 
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t removed = fs->table.remove(fs->table.userdata, path);
+    nn_size_t removed = fs->table.remove(fs->table.userdata, canonical);
     nn_unlock(&fs->ctx, fs->lock);
     nn_return_boolean(computer, removed > 0);
 
@@ -240,13 +232,14 @@ void nn_fs_lastModified(nn_filesystem *fs, nn_componentMethod *_, nn_component *
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
 
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t t = fs->table.lastModified(fs->table.userdata, path);
+    nn_size_t t = fs->table.lastModified(fs->table.userdata, canonical);
     nn_unlock(&fs->ctx, fs->lock);
 
     // OpenOS does BULLSHIT with this thing, dividing it by 1000 and expecting it to be
@@ -264,7 +257,8 @@ void nn_fs_rename(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         nn_setCError(computer, "bad path #1 (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(from)) {
+    char canonicalFrom[NN_MAX_PATH];
+    if(nn_path_canonical(from, canonicalFrom)) {
         nn_setCError(computer, "bad path #1 (illegal path)");
         return;
     }
@@ -275,13 +269,14 @@ void nn_fs_rename(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         nn_setCError(computer, "bad path #2 (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(to)) {
+    char canonicalTo[NN_MAX_PATH];
+    if(nn_path_canonical(to, canonicalTo)) {
         nn_setCError(computer, "bad path #2 (illegal path)");
         return;
     }
 
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t movedCount = fs->table.rename(fs->table.userdata, from, to);
+    nn_size_t movedCount = fs->table.rename(fs->table.userdata, canonicalFrom, canonicalTo);
     nn_unlock(&fs->ctx, fs->lock);
     nn_return(computer, nn_values_boolean(movedCount > 0));
    
@@ -296,13 +291,14 @@ void nn_fs_exists(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
 
     nn_lock(&fs->ctx, fs->lock);
-    nn_return_boolean(computer, fs->table.exists(fs->table.userdata, path));
+    nn_return_boolean(computer, fs->table.exists(fs->table.userdata, canonical));
     nn_unlock(&fs->ctx, fs->lock);
 }
 
@@ -313,13 +309,14 @@ void nn_fs_isDirectory(nn_filesystem *fs, nn_componentMethod *_, nn_component *c
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
 
     nn_lock(&fs->ctx, fs->lock);
-    nn_return_boolean(computer, fs->table.isDirectory(fs->table.userdata, path));
+    nn_return_boolean(computer, fs->table.isDirectory(fs->table.userdata, canonical));
     nn_unlock(&fs->ctx, fs->lock);
 }
 
@@ -330,13 +327,14 @@ void nn_fs_makeDirectory(nn_filesystem *fs, nn_componentMethod *_, nn_component 
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
 
     nn_lock(&fs->ctx, fs->lock);
-    nn_return_boolean(computer, fs->table.makeDirectory(fs->table.userdata, path));
+    nn_return_boolean(computer, fs->table.makeDirectory(fs->table.userdata, canonical));
     nn_unlock(&fs->ctx, fs->lock);
 
     nn_fs_createCost(fs, 1, component);
@@ -349,7 +347,8 @@ void nn_fs_list(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
@@ -358,7 +357,7 @@ void nn_fs_list(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
 
     nn_size_t fileCount = 0;
     nn_lock(&fs->ctx, fs->lock);
-    char **files = fs->table.list(alloc, fs->table.userdata, path, &fileCount);
+    char **files = fs->table.list(alloc, fs->table.userdata, canonical, &fileCount);
     nn_unlock(&fs->ctx, fs->lock);
 
     if(files != NULL) {
@@ -380,7 +379,8 @@ void nn_fs_open(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
         nn_setCError(computer, "bad path (string expected)");
         return;
     }
-    if(nn_fs_illegalPath(path)) {
+    char canonical[NN_MAX_PATH];
+    if(nn_path_canonical(path, canonical)) {
         nn_setCError(computer, "bad path (illegal path)");
         return;
     }
@@ -406,7 +406,7 @@ void nn_fs_open(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
             return;
         }
     }
-    void *file = fs->table.open(fs->table.userdata, path, mode);
+    void *file = fs->table.open(fs->table.userdata, canonical, mode);
     if(file == NULL) {
         nn_unlock(&fs->ctx, fs->lock);
         nn_setCError(computer, "no such file or directory");
