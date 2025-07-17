@@ -181,6 +181,15 @@ nn_vfnode *nn_vf_resolvePath(nn_vfilesystem *fs, const char *path) {
     return nn_vf_resolvePathFromNode(fs->root, path);
 }
 
+nn_size_t nn_vf_countTree(nn_vfnode *node) {
+    if(!node->isDirectory) return 1;
+    nn_size_t n = 1;
+    for(nn_size_t i = 0; i < node->len; i++) {
+        n += nn_vf_countTree(node->entries[i]);
+    }
+    return n;
+}
+
 // methods
 
 void nn_vfs_deinit(nn_vfilesystem *fs) {
@@ -208,6 +217,137 @@ nn_bool_t nn_vfs_isReadOnly(nn_vfilesystem *fs) {
     return fs->opts.isReadOnly;
 }
 
+nn_size_t nn_vfs_size(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    if(node == NULL) {
+        nn_error_write(err, "No such file");
+        return 0;
+    }
+    if(node->isDirectory) return 0;
+    return node->len;
+}
+
+nn_size_t nn_vfs_remove(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    if(node == NULL) {
+        nn_error_write(err, "No such file");
+        return 0;
+    }
+    nn_vfnode *parent = node->parent;
+    if(parent == NULL) {
+        // root, can't delete
+        nn_error_write(err, "Unable to delete root");
+        return 0;
+    }
+    nn_size_t removed = nn_vf_countTree(node);
+    // it is super easy to delete a tree
+    nn_size_t j = 0;
+    for(nn_size_t i = 0; i < parent->len; i++) {
+        if(parent->entries[i] != node) {
+            parent->entries[j] = parent->entries[i];
+            j++;
+        }
+    }
+    parent->len = j;
+    parent->lastModified = nn_vf_now(fs);
+    nn_vf_freeNode(node);
+    return removed;
+}
+
+nn_size_t nn_vfs_lastModified(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    if(node == NULL) {
+        nn_error_write(err, "No such file");
+        return 0;
+    }
+    return node->lastModified;
+}
+
+nn_size_t nn_vfs_rename(nn_vfilesystem *fs, const char *from, const char *to, nn_errorbuf_t err) {
+    // TODO: implement rename
+    nn_error_write(err, "Unsupported operation");
+    return 0;
+}
+
+nn_bool_t nn_vfs_exists(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    return node != NULL;
+}
+
+nn_bool_t nn_vfs_isDirectory(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    if(node == NULL) {
+        nn_error_write(err, "No such file");
+        return 0;
+    }
+    return node->isDirectory;
+}
+
+nn_bool_t nn_vfs_makeDirectory(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    if(node != NULL) {
+        nn_error_write(err, "File already exists");
+        return 0;
+    }
+    char name[NN_MAX_PATH];
+    char parentPath[NN_MAX_PATH];
+    nn_path_lastName(path, name, parentPath);
+    nn_vfnode *parent = nn_vf_resolvePath(fs, path);
+    return false;
+}
+
+char **nn_vfs_list(nn_Alloc *alloc, nn_vfilesystem *fs, const char *path, nn_size_t *len, nn_errorbuf_t err) {
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    if(node == NULL) {
+        nn_error_write(err, "No such file");
+        return NULL;
+    }
+    if(!node->isDirectory) {
+        nn_error_write(err, "Not a directory");
+        return NULL;
+    }
+    nn_size_t count = node->len;
+    *len = count;
+    char **buf = nn_alloc(alloc, sizeof(char *) * count);
+    if(buf == NULL) {
+        nn_error_write(err, "Out of memory");
+        return NULL;
+    }
+    for(nn_size_t i = 0; i < count; i++) {
+        nn_vfnode *entry = node->entries[i];
+        char *s = NULL;
+        if(entry->isDirectory) {
+            nn_size_t l = nn_strlen(entry->name);
+            s = nn_alloc(alloc, l + 2);
+            if(s != NULL) {
+                nn_memcpy(s, entry->name, l);
+                entry->name[l] = '/';
+                entry->name[l+1] = 0;
+            }
+        } else {
+            s = nn_strdup(alloc, entry->name);
+        }
+        if(s == NULL) {
+            for(nn_size_t j = 0; j < i; j++) {
+                nn_deallocStr(alloc, buf[j]);
+            }
+            nn_error_write(err, "Out of memory");
+            return NULL;
+        }
+        buf[i] = s;
+    }
+    return buf;
+}
+
+void *nn_vfs_open(nn_vfilesystem *fs, const char *path, const char *mode, nn_errorbuf_t err) {
+    // TODO: complete
+    char m = mode[0];
+    nn_vfmode fmode = NN_VFMODE_READ;
+    if(m == 'w') fmode = NN_VFMODE_WRITE;
+    if(m == 'a') fmode = NN_VFMODE_APPEND;
+    return NULL;
+}
+
 // main funciton
 
 nn_filesystem *nn_volatileFilesystem(nn_Context *context, nn_vfilesystemOptions opts, nn_filesystemControl control) {
@@ -227,6 +367,12 @@ nn_filesystem *nn_volatileFilesystem(nn_Context *context, nn_vfilesystemOptions 
         .spaceUsed = (void *)nn_vfs_spaceUsed,
         .spaceTotal = opts.capacity,
         .isReadOnly = (void *)nn_vfs_isReadOnly,
+        .size = (void *)nn_vfs_size,
+        .remove = (void *)nn_vfs_remove,
+        .exists = (void *)nn_vfs_exists,
+        .isDirectory = (void *)nn_vfs_isDirectory,
+        .makeDirectory = (void *)nn_vfs_makeDirectory,
+        .list = (void *)nn_vfs_list,
     };
     return nn_newFilesystem(context, table, control);
 }
