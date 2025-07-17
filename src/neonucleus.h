@@ -527,12 +527,18 @@ nn_component *nn_iterComponent(nn_computer *computer, nn_size_t *internalIndex);
 typedef void *nn_componentConstructor(void *tableUserdata, void *componentUserdata);
 typedef void *nn_componentDestructor(void *tableUserdata, nn_component *component, void *componentUserdata);
 typedef void nn_componentMethod(void *componentUserdata, void *methodUserdata, nn_component *component, nn_computer *computer);
+typedef nn_bool_t nn_componentMethodCondition_t(void *componentUserdata, void *methodUserdata);
+typedef struct nn_method_t nn_method_t;
 
 nn_componentTable *nn_newComponentTable(nn_Alloc *alloc, const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
 void nn_destroyComponentTable(nn_componentTable *table);
-void nn_defineMethod(nn_componentTable *table, const char *methodName, nn_bool_t direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc);
+nn_method_t *nn_defineMethod(nn_componentTable *table, const char *methodName, nn_componentMethod *methodFunc, const char *methodDoc);
+void nn_method_setDirect(nn_method_t *method, nn_bool_t direct);
+void nn_method_setUserdata(nn_method_t *method, void *userdata);
+void nn_method_setCondition(nn_method_t *method, nn_componentMethodCondition_t *condition);
 const char *nn_getTableMethod(nn_componentTable *table, nn_size_t idx, nn_bool_t *outDirect);
 const char *nn_methodDoc(nn_componentTable *table, const char *methodName);
+nn_bool_t nn_isMethodEnabled(nn_component *component, const char *methodName);
 
 // Component calling
 

@@ -367,20 +367,20 @@ void nn_loadEepromTable(nn_universe *universe) {
     nn_componentTable *eepromTable = nn_newComponentTable(nn_getAllocator(universe), "eeprom", NULL, NULL, (void *)nn_eeprom_destroy);
     nn_storeUserdata(universe, "NN:EEPROM", eepromTable);
 
-    nn_defineMethod(eepromTable, "getSize", true, (void *)nn_eeprom_getSize, NULL, "getSize(): integer - Returns the maximum code capacity of the EEPROM.");
-    nn_defineMethod(eepromTable, "getDataSize", true, (void *)nn_eeprom_getDataSize, NULL, "getDataSize(): integer - Returns the maximum data capacity of the EEPROM.");
-    nn_defineMethod(eepromTable, "getLabel", true, (void *)nn_eeprom_getLabel, NULL, "getLabel(): string - Returns the current label.");
-    nn_defineMethod(eepromTable, "setLabel", true, (void *)nn_eeprom_setLabel, NULL, "setLabel(label: string): string - Sets the new label. Returns the actual label set to, which may be truncated.");
-    nn_defineMethod(eepromTable, "get", true, (void *)nn_eeprom_get, NULL, "get(): string - Reads the current code contents.");
-    nn_defineMethod(eepromTable, "set", true, (void *)nn_eeprom_set, NULL, "set(data: string) - Sets the current code contents.");
-    nn_defineMethod(eepromTable, "getData", true, (void *)nn_eeprom_getData, NULL, "getData(): string - Reads the current data contents.");
-    nn_defineMethod(eepromTable, "setData", true, (void *)nn_eeprom_setData, NULL, "setData(data: string) - Sets the current data contents.");
-    nn_defineMethod(eepromTable, "getArchitecture", true, (void *)nn_eeprom_getArchitecture, NULL, "getArchitecture(): string - Gets the intended architecture.");
-    nn_defineMethod(eepromTable, "setArchitecture", true, (void *)nn_eeprom_setArchitecture, NULL, "setArchitecture(data: string) - Sets the intended architecture.");
-    nn_defineMethod(eepromTable, "isReadOnly", true, (void *)nn_eeprom_isReadOnly, NULL, "isReadOnly(): boolean - Returns whether this EEPROM is read-only.");
-    nn_defineMethod(eepromTable, "makeReadOnly", false, (void *)nn_eeprom_makeReadonly, NULL, "makeReadOnly() - Makes the current EEPROM read-only. Normally, this cannot be undone.");
-    nn_defineMethod(eepromTable, "makeReadonly", false, (void *)nn_eeprom_makeReadonly, NULL, "makeReadonly() - Legacy alias to makeReadOnly()");
-    nn_defineMethod(eepromTable, "getChecksum", true, (void *)nn_eeprom_getChecksum, NULL, "getChecksum(): string - Returns a checksum of the data on the EEPROM.");
+    nn_defineMethod(eepromTable, "getSize", (void *)nn_eeprom_getSize, "getSize(): integer - Returns the maximum code capacity of the EEPROM.");
+    nn_defineMethod(eepromTable, "getDataSize", (void *)nn_eeprom_getDataSize, "getDataSize(): integer - Returns the maximum data capacity of the EEPROM.");
+    nn_defineMethod(eepromTable, "getLabel", (void *)nn_eeprom_getLabel, "getLabel(): string - Returns the current label.");
+    nn_defineMethod(eepromTable, "setLabel", (void *)nn_eeprom_setLabel, "setLabel(label: string): string - Sets the new label. Returns the actual label set to, which may be truncated.");
+    nn_defineMethod(eepromTable, "get", (void *)nn_eeprom_get, "get(): string - Reads the current code contents.");
+    nn_defineMethod(eepromTable, "set", (void *)nn_eeprom_set, "set(data: string) - Sets the current code contents.");
+    nn_defineMethod(eepromTable, "getData", (void *)nn_eeprom_getData, "getData(): string - Reads the current data contents.");
+    nn_defineMethod(eepromTable, "setData", (void *)nn_eeprom_setData, "setData(data: string) - Sets the current data contents.");
+    nn_defineMethod(eepromTable, "getArchitecture", (void *)nn_eeprom_getArchitecture, "getArchitecture(): string - Gets the intended architecture.");
+    nn_defineMethod(eepromTable, "setArchitecture", (void *)nn_eeprom_setArchitecture, "setArchitecture(data: string) - Sets the intended architecture.");
+    nn_defineMethod(eepromTable, "isReadOnly", (void *)nn_eeprom_isReadOnly, "isReadOnly(): boolean - Returns whether this EEPROM is read-only.");
+    nn_defineMethod(eepromTable, "makeReadOnly", (void *)nn_eeprom_makeReadonly, "makeReadOnly() - Makes the current EEPROM read-only. Normally, this cannot be undone.");
+    nn_defineMethod(eepromTable, "makeReadonly", (void *)nn_eeprom_makeReadonly, "makeReadonly() - Legacy alias to makeReadOnly()");
+    nn_defineMethod(eepromTable, "getChecksum", (void *)nn_eeprom_getChecksum, "getChecksum(): string - Returns a checksum of the data on the EEPROM.");
 }
 
 nn_component *nn_addEEPROM(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom) {

@@ -649,24 +649,24 @@ void nn_loadFilesystemTable(nn_universe *universe) {
     nn_componentTable *fsTable = nn_newComponentTable(nn_getAllocator(universe), "filesystem", NULL, NULL, (nn_componentDestructor *)nn_fs_destroy);
     nn_storeUserdata(universe, "NN:FILESYSTEM", fsTable);
 
-    nn_defineMethod(fsTable, "getLabel", true, (nn_componentMethod *)nn_fs_getLabel, NULL, "getLabel(): string - Returns the label of the filesystem.");
-    nn_defineMethod(fsTable, "setLabel", true, (nn_componentMethod *)nn_fs_setLabel, NULL, "setLabel(label: string): string - Sets a new label for the filesystem and returns the new label of the filesystem, which may have been truncated.");
-    nn_defineMethod(fsTable, "spaceUsed", true, (nn_componentMethod *)nn_fs_spaceUsed, NULL, "spaceUsed(): integer - Returns the amounts of bytes used.");
-    nn_defineMethod(fsTable, "spaceTotal", true, (nn_componentMethod *)nn_fs_spaceTotal, NULL, "spaceTotal(): integer - Returns the capacity of the filesystem.");
-    nn_defineMethod(fsTable, "isReadOnly", true, (nn_componentMethod *)nn_fs_isReadOnly, NULL, "isReadOnly(): boolean - Returns whether the filesystem is in read-only mode.");
-    nn_defineMethod(fsTable, "size", true, (nn_componentMethod *)nn_fs_size, NULL, "size(path: string): integer - Gets the size, in bytes, of a file.");
-    nn_defineMethod(fsTable, "remove", true, (nn_componentMethod *)nn_fs_remove, NULL, "remove(path: string): boolean - Removes a file. Returns whether the operation succeeded.");
-    nn_defineMethod(fsTable, "lastModified", true, (nn_componentMethod *)nn_fs_lastModified, NULL, "remove(path: string): boolean - Removes a file. Returns whether the operation succeeded.");
-    nn_defineMethod(fsTable, "rename", true, (nn_componentMethod *)nn_fs_rename, NULL, "rename(from: string, to: string): boolean - Moves files from one path to another.");
-    nn_defineMethod(fsTable, "exists", true, (nn_componentMethod *)nn_fs_exists, NULL, "exists(path: string): boolean - Checks whether a file exists.");
-    nn_defineMethod(fsTable, "isDirectory", true, (nn_componentMethod *)nn_fs_isDirectory, NULL, "isDirectory(path: string): boolean - Returns whether a file is actually a directory.");
-    nn_defineMethod(fsTable, "makeDirectory", true, (nn_componentMethod *)nn_fs_makeDirectory, NULL, "makeDirectory(path: string): boolean - Creates a new directory at the given path. Returns whether it succeeded.");
-    nn_defineMethod(fsTable, "list", true, (nn_componentMethod *)nn_fs_list, NULL, "list(path: string): string[] - Returns a list of file paths. Directories will have a / after them");
-    nn_defineMethod(fsTable, "open", true, (nn_componentMethod *)nn_fs_open, NULL, "open(path: string[, mode: string = \"r\"]): integer - Opens a file, may create it.");
-    nn_defineMethod(fsTable, "close", true, (nn_componentMethod *)nn_fs_close, NULL, "close(fd: integer): boolean - Closes a file.");
-    nn_defineMethod(fsTable, "write", true, (nn_componentMethod *)nn_fs_write, NULL, "write(fd: integer, data: string): boolean - Writes data to a file.");
-    nn_defineMethod(fsTable, "read", true, (nn_componentMethod *)nn_fs_read, NULL, "read(fd: integer, len: number): string - Reads bytes from a file. Infinity is a valid length, in which case it reads as much as possible.");
-    nn_defineMethod(fsTable, "seek", true, (nn_componentMethod *)nn_fs_seek, NULL, "seek(fd: integer, whence: string, offset: integer): integer - Seeks a file. Returns the new position. Valid whences are set, cur and end.");
+    nn_defineMethod(fsTable, "getLabel", (nn_componentMethod *)nn_fs_getLabel, "getLabel(): string - Returns the label of the filesystem.");
+    nn_defineMethod(fsTable, "setLabel", (nn_componentMethod *)nn_fs_setLabel, "setLabel(label: string): string - Sets a new label for the filesystem and returns the new label of the filesystem, which may have been truncated.");
+    nn_defineMethod(fsTable, "spaceUsed", (nn_componentMethod *)nn_fs_spaceUsed, "spaceUsed(): integer - Returns the amounts of bytes used.");
+    nn_defineMethod(fsTable, "spaceTotal", (nn_componentMethod *)nn_fs_spaceTotal, "spaceTotal(): integer - Returns the capacity of the filesystem.");
+    nn_defineMethod(fsTable, "isReadOnly", (nn_componentMethod *)nn_fs_isReadOnly, "isReadOnly(): boolean - Returns whether the filesystem is in read-only mode.");
+    nn_defineMethod(fsTable, "size", (nn_componentMethod *)nn_fs_size, "size(path: string): integer - Gets the size, in bytes, of a file.");
+    nn_defineMethod(fsTable, "remove", (nn_componentMethod *)nn_fs_remove, "remove(path: string): boolean - Removes a file. Returns whether the operation succeeded.");
+    nn_defineMethod(fsTable, "lastModified", (nn_componentMethod *)nn_fs_lastModified, "remove(path: string): boolean - Removes a file. Returns whether the operation succeeded.");
+    nn_defineMethod(fsTable, "rename", (nn_componentMethod *)nn_fs_rename, "rename(from: string, to: string): boolean - Moves files from one path to another.");
+    nn_defineMethod(fsTable, "exists", (nn_componentMethod *)nn_fs_exists, "exists(path: string): boolean - Checks whether a file exists.");
+    nn_defineMethod(fsTable, "isDirectory", (nn_componentMethod *)nn_fs_isDirectory, "isDirectory(path: string): boolean - Returns whether a file is actually a directory.");
+    nn_defineMethod(fsTable, "makeDirectory", (nn_componentMethod *)nn_fs_makeDirectory, "makeDirectory(path: string): boolean - Creates a new directory at the given path. Returns whether it succeeded.");
+    nn_defineMethod(fsTable, "list", (nn_componentMethod *)nn_fs_list, "list(path: string): string[] - Returns a list of file paths. Directories will have a / after them");
+    nn_defineMethod(fsTable, "open", (nn_componentMethod *)nn_fs_open, "open(path: string[, mode: string = \"r\"]): integer - Opens a file, may create it.");
+    nn_defineMethod(fsTable, "close", (nn_componentMethod *)nn_fs_close, "close(fd: integer): boolean - Closes a file.");
+    nn_defineMethod(fsTable, "write", (nn_componentMethod *)nn_fs_write, "write(fd: integer, data: string): boolean - Writes data to a file.");
+    nn_defineMethod(fsTable, "read", (nn_componentMethod *)nn_fs_read, "read(fd: integer, len: number): string - Reads bytes from a file. Infinity is a valid length, in which case it reads as much as possible.");
+    nn_defineMethod(fsTable, "seek", (nn_componentMethod *)nn_fs_seek, "seek(fd: integer, whence: string, offset: integer): integer - Seeks a file. Returns the new position. Valid whences are set, cur and end.");
 }
 
 nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int slot, nn_filesystem *filesystem) {

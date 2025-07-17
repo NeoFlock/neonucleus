@@ -23,33 +23,48 @@ void nn_destroyComponentTable(nn_componentTable *table) {
     nn_Alloc alloc = table->alloc;
     nn_deallocStr(&alloc, table->name);
     for(nn_size_t i = 0; i < table->methodCount; i++) {
-        nn_method method = table->methods[i];
+        nn_method_t method = table->methods[i];
         nn_deallocStr(&alloc, method.name);
         nn_deallocStr(&alloc, method.doc);
     }
     nn_dealloc(&alloc, table, sizeof(nn_componentTable));
 }
 
-void nn_defineMethod(nn_componentTable *table, const char *methodName, nn_bool_t direct, nn_componentMethod *methodFunc, void *methodUserdata, const char *methodDoc) {
-    if(table->methodCount == NN_MAX_METHODS) return;
-    nn_method method;
+nn_method_t *nn_defineMethod(nn_componentTable *table, const char *methodName, nn_componentMethod *methodFunc, const char *methodDoc) {
+    if(table->methodCount == NN_MAX_METHODS) return NULL;
+    nn_method_t method;
     method.method = methodFunc;
     method.name = nn_strdup(&table->alloc, methodName);
-    if(method.name == NULL) return;
-    method.direct = direct;
+    if(method.name == NULL) return NULL;
+    method.direct = true;
     method.doc = nn_strdup(&table->alloc, methodDoc);
     if(method.doc == NULL) {
         nn_deallocStr(&table->alloc, method.name);
-        return;
+        return NULL;
     }
-    method.userdata = methodUserdata;
+    method.userdata = NULL;
+    method.condition = NULL;
     table->methods[table->methodCount] = method;
+    nn_method_t *ptr = table->methods + table->methodCount;
     table->methodCount++;
+    return ptr;
+}
+
+void nn_method_setDirect(nn_method_t *method, nn_bool_t direct) {
+    method->direct = direct;
+}
+
+void nn_method_setUserdata(nn_method_t *method, void *userdata) {
+    method->userdata = userdata;
+}
+
+void nn_method_setCondition(nn_method_t *method, nn_componentMethodCondition_t *condition) {
+    method->condition = condition;
 }
 
 const char *nn_getTableMethod(nn_componentTable *table, nn_size_t idx, nn_bool_t *outDirect) {
     if(idx >= table->methodCount) return NULL;
-    nn_method method = table->methods[idx];
+    nn_method_t method = table->methods[idx];
     if(outDirect != NULL) *outDirect = method.direct;
     return method.name;
 }
@@ -61,6 +76,22 @@ const char *nn_methodDoc(nn_componentTable *table, const char *methodName) {
         }
     }
     return NULL;
+}
+
+static nn_bool_t nni_checkMethodEnabled(nn_method_t method, void *statePtr) {
+        if(method.condition == NULL) return true;
+        return method.condition(statePtr, method.userdata);
+}
+
+nn_bool_t nn_isMethodEnabled(nn_component *component, const char *methodName) {
+    nn_componentTable *table = component->table;
+    for(nn_size_t i = 0; i < table->methodCount; i++) {
+        if(nn_strcmp(table->methods[i].name, methodName) == 0) {
+            nn_method_t method = table->methods[i];
+            return nni_checkMethodEnabled(method, component->statePtr);
+        }
+    }
+    return false;
 }
 
 nn_computer *nn_getComputerOfComponent(nn_component *component) {
@@ -90,11 +121,14 @@ void *nn_getComponentUserdata(nn_component *component) {
 nn_bool_t nn_invokeComponentMethod(nn_component *component, const char *name) {
     nn_componentTable *table = component->table;
     for(nn_size_t i = 0; i < table->methodCount; i++) {
-        nn_method method = table->methods[i];
+        nn_method_t method = table->methods[i];
         if(nn_strcmp(method.name, name) == 0) {
             nn_callCost(component->computer, NN_CALL_COST);
             if(!method.direct) {
                 nn_triggerIndirect(component->computer);
+            }
+            if(!nni_checkMethodEnabled(method, component->statePtr)) {
+                return false; // pretend it's gone
             }
             method.method(component->statePtr, method.userdata, component, component->computer);
             return true;

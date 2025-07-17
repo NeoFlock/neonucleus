@@ -4,13 +4,14 @@
 #include "neonucleus.h"
 #include "computer.h"
 
-typedef struct nn_method {
+typedef struct nn_method_t {
     char *name;
     nn_componentMethod *method;
     void *userdata;
     char *doc;
     nn_bool_t direct;
-} nn_method;
+    nn_componentMethodCondition_t *condition;
+} nn_method_t;
 
 typedef struct nn_componentTable {
     char *name;
@@ -18,7 +19,7 @@ typedef struct nn_componentTable {
     void *userdata;
     nn_componentConstructor *constructor;
     nn_componentDestructor *destructor;
-    nn_method methods[NN_MAX_METHODS];
+    nn_method_t methods[NN_MAX_METHODS];
     nn_size_t methodCount;
 } nn_componentTable;
 

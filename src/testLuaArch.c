@@ -399,6 +399,7 @@ static int testLuaArch_component_methods(lua_State *L) {
         const char *name = nn_getTableMethod(table, i, &direct);
         if(name == NULL) break;
         i++;
+        if(!nn_isMethodEnabled(component, name)) continue;
         lua_pushboolean(L, direct);
         lua_setfield(L, methods, name);
     }

@@ -1,3 +1,11 @@
+# Code quality stuff
+
+- Use the same namespacing style everywhere, that being
+`nn_<class>_<method>` for functions related to "classes",
+`nn_<function>` for static functions,
+`nn_<type>_t` for types.
+- Rework to API to be much more future-proof to reduce potential breaking changes.
+
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
 - in-memory version of `filesystem`
