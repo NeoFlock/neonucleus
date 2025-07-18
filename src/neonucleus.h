@@ -609,6 +609,8 @@ void nn_loadDriveTable(nn_universe *universe);
 void nn_loadScreenTable(nn_universe *universe);
 void nn_loadGraphicsCardTable(nn_universe *universe);
 void nn_loadKeyboardTable(nn_universe *universe);
+void nn_loadModemTable(nn_universe *universe);
+void nn_loadTunnelTable(nn_universe *universe);
 
 nn_component *nn_mountKeyboard(nn_computer *computer, nn_address address, int slot);
 
@@ -897,7 +899,10 @@ typedef struct nn_networkControl {
     double energyPerFullPacket;
 } nn_networkControl;
 
+nn_bool_t nn_wakeupMatches(nn_value *values, nn_size_t valueLen, const char *wakeUp, nn_bool_t fuzzy);
+
 // NULL on success, error string on failure
+// this *retains* all of those values, meaning you must drop them after call this function
 const char *nn_pushNetworkMessage(nn_computer *computer, nn_address receiver, nn_address sender, nn_size_t port, double distance, nn_value *values, nn_size_t valueLen);
 
 typedef struct nn_modemTable {
@@ -909,23 +914,24 @@ typedef struct nn_modemTable {
     nn_bool_t wireless;
     nn_size_t maxValues;
     nn_size_t maxPacketSize;
+    nn_size_t maxOpenPorts;
 
     // ports
 
-    nn_bool_t (*isOpen)(void *userdata, nn_size_t port);
-    nn_bool_t (*open)(void *userdata, nn_size_t port);
-    // port 0 means close all
-    nn_bool_t (*close)(void *userdata, nn_size_t port);
+    nn_bool_t (*isOpen)(void *userdata, nn_size_t port, nn_errorbuf_t err);
+    nn_bool_t (*open)(void *userdata, nn_size_t port, nn_errorbuf_t err);
+    // port NN_TUNNEL_PORT means close all
+    nn_bool_t (*close)(void *userdata, nn_size_t port, nn_errorbuf_t err);
     
     // messages
 
     // Address is NULL if broadcasting
-    nn_bool_t (*send)(void *userdata, nn_address address, nn_size_t port, nn_value *values, nn_size_t valueCount);
+    nn_bool_t (*send)(void *userdata, nn_address address, nn_size_t port, nn_value *values, nn_size_t valueCount, nn_errorbuf_t err);
 
     // signal strength
     nn_size_t maxStrength;
-    nn_size_t (*getStrength)(void *userdata);
-    nn_bool_t (*setStrength)(void *userdata, nn_size_t strength);
+    nn_size_t (*getStrength)(void *userdata, nn_errorbuf_t err);
+    nn_bool_t (*setStrength)(void *userdata, nn_size_t strength, nn_errorbuf_t err);
 
     // wake message
     void (*getWakeMessage)(void *userdata, char *buf, nn_size_t *buflen);
@@ -948,6 +954,8 @@ nn_guard *nn_getModemLock(nn_modem *modem);
 void nn_retainModem(nn_modem *modem);
 nn_bool_t nn_destroyModem(nn_modem *modem);
 
+nn_component *nn_addModem(nn_computer *computer, nn_address address, int slot, nn_modem *modem);
+
 typedef struct nn_tunnelTable {
     void *userdata;
     void (*deinit)(void *userdata);
@@ -968,6 +976,8 @@ nn_tunnel *nn_debugLoopbackTunnel(nn_Context *context, nn_debugLoopbackNetworkOp
 nn_guard *nn_getTunnelLock(nn_tunnel *tunnel);
 void nn_retainTunnel(nn_tunnel *tunnel);
 nn_bool_t nn_destroyTunnel(nn_tunnel *tunnel);
+
+nn_component *nn_addTunnel(nn_computer *computer, nn_address address, int slot, nn_tunnel *modem);
 
 #ifdef __cplusplus
 }

@@ -38,6 +38,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/components/screen.c",
             "src/components/gpu.c",
             "src/components/keyboard.c",
+            "src/components/modem.c",
         },
         .flags = &.{
             if(opts.baremetal) "-DNN_BAREMETAL" else "",

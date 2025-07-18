@@ -524,6 +524,18 @@ nn_value nn_return_table(nn_computer *computer, nn_size_t len) {
     return val;
 }
 
+nn_bool_t nn_wakeupMatches(nn_value *values, nn_size_t valueLen, const char *wakeUp, nn_bool_t fuzzy) {
+    if(valueLen == 0) return false;
+    nn_value header = values[0];
+    const char *headerStr = nn_toCString(header);
+
+    if(fuzzy) {
+        return nn_strbegin(headerStr, wakeUp);
+    } else {
+        return nn_strcmp(headerStr, wakeUp) == 0;
+    }
+}
+
 const char *nn_pushNetworkMessage(nn_computer *computer, nn_address receiver, nn_address sender, nn_size_t port, double distance, nn_value *values, nn_size_t valueLen) {
     nn_Alloc *alloc = &computer->universe->ctx.allocator;
 
