@@ -213,6 +213,7 @@ char *nn_strcpy(char *dest, const char *src);
 const char *nn_strchr(const char *str, int ch);
 int nn_strcmp(const char *a, const char *b);
 nn_size_t nn_strlen(const char *a);
+nn_bool_t nn_strbegin(const char *s, const char *prefix);
 
 #ifndef NN_BAREMETAL
 nn_Alloc nn_libcAllocator(void);

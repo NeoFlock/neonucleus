@@ -176,7 +176,7 @@ static double nni_realTime(void) {
 
 #endif
 
-static double nni_realTimeClock(void *_) {
+double nni_realTimeClock(void *_) {
     return nni_realTime();
 }
 
@@ -246,6 +246,7 @@ void nn_memset(void *buf, unsigned char byte, nn_size_t len) {
 void nn_memcpy(void *dest, const void *src, nn_size_t len) {
     if(dest == NULL) return;
     if(src == NULL) return;
+    if(len == 0) return;
 
     char *destBytes = dest;
     const char *srcBytes = src;
@@ -301,6 +302,16 @@ nn_size_t nn_strlen(const char *a) {
     return l;
 }
 
+nn_bool_t nn_strbegin(const char *s, const char *prefix) {
+    nn_size_t i = 0;
+    while(true) {
+        if(prefix[i] == 0) return true; // prefix over, it matched
+        if(s[i] == 0) return false; // string over, it didn't match
+        if(s[i] != prefix[i]) return false;
+        i++;
+    }
+}
+
 nn_bool_t nn_error_isEmpty(nn_errorbuf_t buf) {
     if(buf == NULL) return true;
     return buf[0] == 0;
@@ -350,7 +361,7 @@ nn_bool_t nn_path_firstName(const char *path, char firstDirectory[NN_MAX_PATH], 
     if(!nn_path_hasSlash(path)) {
         nn_strcpy(firstDirectory, path);
         nn_strcpy(subpath, "");
-        return false; // end
+        return true; // end
     }
     nn_size_t slash = nn_path_firstSlash(path);
 
@@ -358,7 +369,7 @@ nn_bool_t nn_path_firstName(const char *path, char firstDirectory[NN_MAX_PATH], 
     firstDirectory[slash] = 0;
 
     nn_strcpy(subpath, path + slash + 1);
-    return true;
+    return false;
 }
 
 // returns whether it is the only name
@@ -366,7 +377,7 @@ nn_bool_t nn_path_lastName(const char *path, char name[NN_MAX_PATH], char parent
     if(!nn_path_hasSlash(path)) {
         nn_strcpy(name, path);
         nn_strcpy(parent, "");
-        return false; // end
+        return true; // end
     }
 
     nn_size_t slash = nn_path_lastSlash(path);
@@ -374,7 +385,7 @@ nn_bool_t nn_path_lastName(const char *path, char name[NN_MAX_PATH], char parent
 
     nn_memcpy(parent, path, slash);
     parent[slash] = 0;
-    return true;
+    return false;
 }
 
 const char *nn_path_illegal = "\"\\:*?<>|";

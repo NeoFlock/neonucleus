@@ -673,6 +673,20 @@ int main() {
     nn_filesystem *genericFS = nn_newFilesystem(&ctx, genericFSTable, ne_fs_ctrl);
     nn_addFileSystem(computer, NULL, 1, genericFS);
 
+    nn_vfilesystemOptions tmpfsOpts = {
+        .isReadOnly = false,
+        .capacity = 64*1024,
+        .label = "tmpfs",
+        .labelLen = 5,
+        .creationTime = 0, // we are at the start of time
+        .maxDirEntries = 64,
+    };
+    
+    nn_filesystem *tmpFS = nn_volatileFilesystem(&ctx, tmpfsOpts, ne_fs_ctrl);
+    nn_component *tmpfsComp = nn_addFileSystem(computer, NULL, 2, tmpFS);
+
+    nn_setTmpAddress(computer, nn_getComponentAddress(tmpfsComp));
+
     nn_vdriveOptions vdriveOpts = {
         .sectorSize = 512,
         .capacity = 1*1024*1024,

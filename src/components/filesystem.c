@@ -307,8 +307,20 @@ void nn_fs_rename(nn_filesystem *fs, nn_componentMethod *_, nn_component *compon
         return;
     }
 
+    // TODO: validate against cases such as a/b -> a or a -> a/b
+
     nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
+    if(!fs->table.exists(fs->table.userdata, canonicalFrom, err)) {
+        nn_unlock(&fs->ctx, fs->lock);
+        nn_setCError(computer, "No such file or directory");
+        return;
+    }
+    if(fs->table.exists(fs->table.userdata, canonicalTo, err)) {
+        nn_unlock(&fs->ctx, fs->lock);
+        nn_setCError(computer, "Destination exists");
+        return;
+    }
     nn_size_t movedCount = fs->table.rename(fs->table.userdata, canonicalFrom, canonicalTo, err);
     nn_unlock(&fs->ctx, fs->lock);
     if(!nn_error_isEmpty(err)) {
@@ -454,7 +466,7 @@ void nn_fs_open(nn_filesystem *fs, nn_componentMethod *_, nn_component *componen
     nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
     // technically wrongfully 
-    if(!fs->table.exists(fs->table.userdata, path, err)) {
+    if(!fs->table.exists(fs->table.userdata, canonical, err)) {
         nn_fs_createCost(fs, 1, component);
     }
     if(!nn_error_isEmpty(err)) {

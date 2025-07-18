@@ -83,7 +83,7 @@ nn_vfnode *nn_vf_allocDirectory(nn_vfilesystem *fs, const char *name) {
         .fs = fs,
         .lastModified = nn_vf_now(fs),
         .parent = NULL,
-        .isDirectory = false,
+        .isDirectory = true,
         .entries = buffer,
         .len = 0,
         .cap = fs->opts.maxDirEntries,
@@ -122,7 +122,7 @@ nn_size_t nn_vf_spaceUsedByNode(nn_vfnode *node) {
 }
 
 nn_vfnode *nn_vf_find(nn_vfnode *parent, const char *name) {
-    if(parent->isDirectory) return NULL;
+    if(!parent->isDirectory) return NULL;
     for(nn_size_t i = 0; i < parent->len; i++) {
         nn_vfnode *entry = parent->entries[i];
 
@@ -161,12 +161,18 @@ nn_size_t nn_vf_getIdealCapacity(nn_vfnode *file, nn_size_t spaceNeeded) {
 
 void nn_vf_clampHandlePosition(nn_vfhandle *handle) {
     nn_size_t len = handle->node->len;
+    if(handle->mode == NN_VFMODE_APPEND) {
+        handle->position = len;
+        return;
+    }
     if(handle->position < 0) handle->position = 0;
     if(handle->position > len) handle->position = len;
 }
 
 nn_vfnode *nn_vf_resolvePathFromNode(nn_vfnode *node, const char *path) {
-    if(path[0] == 0) return node;
+    if(path[0] == 0) {
+        return node;
+    }
     char firstDirectory[NN_MAX_PATH];
     char subpath[NN_MAX_PATH];
     if(nn_path_firstName(path, firstDirectory, subpath)) {
@@ -174,6 +180,8 @@ nn_vfnode *nn_vf_resolvePathFromNode(nn_vfnode *node, const char *path) {
     }
 
     nn_vfnode *dir = nn_vf_find(node, firstDirectory);
+    if(dir == NULL) return NULL;
+    if(!dir->isDirectory) return NULL;
     return nn_vf_resolvePathFromNode(dir, subpath);
 }
 
@@ -188,6 +196,14 @@ nn_size_t nn_vf_countTree(nn_vfnode *node) {
         n += nn_vf_countTree(node->entries[i]);
     }
     return n;
+}
+
+nn_bool_t nn_vf_treeHasHandles(nn_vfnode *node) {
+    if(!node->isDirectory) return node->handleCount > 0;
+    for(nn_size_t i = 0; i < node->len; i++) {
+        if(nn_vf_treeHasHandles(node->entries[i])) return true;
+    }
+    return false;
 }
 
 // methods
@@ -239,6 +255,10 @@ nn_size_t nn_vfs_remove(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err)
         nn_error_write(err, "Unable to delete root");
         return 0;
     }
+    if(nn_vf_treeHasHandles(node)) {
+        nn_error_write(err, "Files are pinned by handles");
+        return 0;
+    }
     nn_size_t removed = nn_vf_countTree(node);
     // it is super easy to delete a tree
     nn_size_t j = 0;
@@ -283,17 +303,47 @@ nn_bool_t nn_vfs_isDirectory(nn_vfilesystem *fs, const char *path, nn_errorbuf_t
     return node->isDirectory;
 }
 
-nn_bool_t nn_vfs_makeDirectory(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+static nn_bool_t nn_vfs_recursiveMkdir(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    // this code is horribly unoptimized, with a time complexity of O(F^U),
+    // where F is 8.1 * 10^53 (monsterous) and U is 7 * 10^27 (very human)
+    // TODO: burn it with fire and make something good
     nn_vfnode *node = nn_vf_resolvePath(fs, path);
     if(node != NULL) {
-        nn_error_write(err, "File already exists");
-        return 0;
+        if(node->isDirectory) {
+            return true;
+        }
+        nn_error_write(err, "Is a file");
+        return false;
     }
     char name[NN_MAX_PATH];
     char parentPath[NN_MAX_PATH];
-    nn_path_lastName(path, name, parentPath);
-    nn_vfnode *parent = nn_vf_resolvePath(fs, path);
-    return false;
+    nn_bool_t isRootDir = nn_path_lastName(path, name, parentPath);
+
+    if(!isRootDir) {
+        if(!nn_vfs_recursiveMkdir(fs, parentPath, err)) return false;
+    }
+    nn_vfnode *parent = isRootDir ? fs->root : nn_vf_resolvePath(fs, parentPath);
+    if(parent == NULL) {
+        nn_error_write(err, "Bad state"); // just a sanity check
+        return false;
+    }
+    if(parent->len == parent->cap) {
+        nn_error_write(err, "Too many entries");
+        return false;
+    }
+    nn_vfnode *dir = nn_vf_allocDirectory(fs, name);
+    if(dir == NULL) {
+        nn_error_write(err, "Out of memory");
+        return false;
+    }
+    dir->parent = parent;
+    parent->entries[parent->len] = dir;
+    parent->len++;
+    return true;
+}
+
+nn_bool_t nn_vfs_makeDirectory(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+    return nn_vfs_recursiveMkdir(fs, path, err);
 }
 
 char **nn_vfs_list(nn_Alloc *alloc, nn_vfilesystem *fs, const char *path, nn_size_t *len, nn_errorbuf_t err) {
@@ -321,8 +371,8 @@ char **nn_vfs_list(nn_Alloc *alloc, nn_vfilesystem *fs, const char *path, nn_siz
             s = nn_alloc(alloc, l + 2);
             if(s != NULL) {
                 nn_memcpy(s, entry->name, l);
-                entry->name[l] = '/';
-                entry->name[l+1] = 0;
+                s[l] = '/';
+                s[l+1] = 0;
             }
         } else {
             s = nn_strdup(alloc, entry->name);
@@ -339,13 +389,117 @@ char **nn_vfs_list(nn_Alloc *alloc, nn_vfilesystem *fs, const char *path, nn_siz
     return buf;
 }
 
-void *nn_vfs_open(nn_vfilesystem *fs, const char *path, const char *mode, nn_errorbuf_t err) {
+nn_vfhandle *nn_vfs_open(nn_vfilesystem *fs, const char *path, const char *mode, nn_errorbuf_t err) {
     // TODO: complete
     char m = mode[0];
     nn_vfmode fmode = NN_VFMODE_READ;
     if(m == 'w') fmode = NN_VFMODE_WRITE;
     if(m == 'a') fmode = NN_VFMODE_APPEND;
-    return NULL;
+
+    nn_vfnode *node = nn_vf_resolvePath(fs, path);
+    if(node == NULL && fmode != NN_VFMODE_READ && !fs->opts.isReadOnly) {
+        char parentPath[NN_MAX_PATH];
+        char name[NN_MAX_PATH];
+        nn_bool_t isRootFile = nn_path_lastName(path, name, parentPath);
+
+        nn_vfnode *parent = isRootFile ? fs->root : nn_vf_resolvePath(fs, parentPath);
+        if(parent == NULL) {
+            nn_error_write(err, "Missing parent directory");
+            return NULL;
+        }
+        if(!parent->isDirectory) {
+            nn_error_write(err, "Parent is not a directory");
+            return NULL;
+        }
+
+        if(parent->len == parent->cap) {
+            nn_error_write(err, "Too many entries");
+            return NULL;
+        }
+        
+        node = nn_vf_allocFile(fs, name);
+        if(node == NULL) {
+            nn_error_write(err, "Out of memory");
+            return NULL;
+        }
+        node->parent = parent;
+
+        parent->entries[parent->len] = node;
+        parent->len++;
+    }
+    if(node == NULL) {
+        nn_error_write(err, "No such file");
+        return NULL;
+    }
+    if(fs->opts.isReadOnly && fmode != NN_VFMODE_READ) {
+        nn_error_write(err, "readonly");
+        return NULL;
+    }
+    if(node->isDirectory) {
+        nn_error_write(err, "Is a directory");
+        return NULL;
+    }
+    if(fmode == NN_VFMODE_WRITE) {
+        node->len = 0;
+        node->lastModified = nn_vf_now(fs);
+    }
+    nn_vfhandle *handle = nn_alloc(&fs->ctx.allocator, sizeof(nn_vfhandle));
+    if(handle == NULL) {
+        nn_error_write(err, "Out of memory");
+        return NULL;
+    }
+    handle->mode = fmode;
+    handle->node = node;
+    handle->position = 0;
+    node->handleCount++;
+    return handle;
+}
+
+nn_bool_t nn_vfs_close(nn_vfilesystem *fs, nn_vfhandle *handle, nn_errorbuf_t err) {
+    handle->node->handleCount--;
+    nn_dealloc(&fs->ctx.allocator, handle, sizeof(nn_vfhandle));
+    return true;
+}
+
+nn_bool_t nn_vfs_write(nn_vfilesystem *fs, nn_vfhandle *handle, const char *buf, nn_size_t len, nn_errorbuf_t err) {
+    nn_vf_clampHandlePosition(handle);
+    if(!nn_vf_ensureFileCapacity(handle->node, handle->position + len)) {
+        nn_error_write(err, "Out of memory");
+        return false;
+    }
+    nn_memcpy(handle->node->data + handle->position, buf, len);
+    handle->position += len;
+    if(handle->node->len < handle->position) handle->node->len = handle->position;
+    return true;
+}
+
+nn_size_t nn_vfs_read(nn_vfilesystem *fs, nn_vfhandle *handle, char *buf, nn_size_t required, nn_errorbuf_t err) {
+    nn_size_t remaining = handle->node->len - handle->position;
+    if(required > remaining) required = remaining;
+    if(required == 0) return 0;
+    nn_memcpy(buf, handle->node->data + handle->position, required);
+    handle->position += required;
+    return required;
+}
+
+nn_size_t nn_vfs_seek(nn_vfilesystem *fs, nn_vfhandle *handle, const char *whence, int off, nn_errorbuf_t err) {
+    if(handle->mode == NN_VFMODE_APPEND) {
+        nn_error_write(err, "Bad file descriptor");
+        return handle->node->len;
+    }
+    nn_intptr_t ptr = handle->position;
+    if(nn_strcmp(whence, "set") == 0) {
+        ptr = off;
+    }
+    if(nn_strcmp(whence, "cur") == 0) {
+        ptr += off;
+    }
+    if(nn_strcmp(whence, "end") == 0) {
+        ptr = handle->node->len - off;
+    }
+    handle->position = ptr;
+    nn_vf_clampHandlePosition(handle);
+    return handle->position;
 }
 
 // main funciton
@@ -353,9 +507,9 @@ void *nn_vfs_open(nn_vfilesystem *fs, const char *path, const char *mode, nn_err
 nn_filesystem *nn_volatileFilesystem(nn_Context *context, nn_vfilesystemOptions opts, nn_filesystemControl control) {
     // TODO: handle OOM
     nn_vfilesystem *fs = nn_alloc(&context->allocator, sizeof(nn_vfilesystem));
+    fs->ctx = *context;
     nn_Clock c = fs->ctx.clock;
     double time = c.proc(c.userdata);
-    fs->ctx = *context;
     fs->birthday = time;
     fs->opts = opts;
     fs->root = nn_vf_allocDirectory(fs, "/");
@@ -369,10 +523,17 @@ nn_filesystem *nn_volatileFilesystem(nn_Context *context, nn_vfilesystemOptions 
         .isReadOnly = (void *)nn_vfs_isReadOnly,
         .size = (void *)nn_vfs_size,
         .remove = (void *)nn_vfs_remove,
+        .lastModified = (void *)nn_vfs_lastModified,
+        .rename = (void *)nn_vfs_rename,
         .exists = (void *)nn_vfs_exists,
         .isDirectory = (void *)nn_vfs_isDirectory,
         .makeDirectory = (void *)nn_vfs_makeDirectory,
         .list = (void *)nn_vfs_list,
+        .open = (void *)nn_vfs_open,
+        .close = (void *)nn_vfs_close,
+        .write = (void *)nn_vfs_write,
+        .read = (void *)nn_vfs_read,
+        .seek = (void *)nn_vfs_seek,
     };
     return nn_newFilesystem(context, table, control);
 }
