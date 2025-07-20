@@ -12,7 +12,6 @@
 - complete the screen implementation (bunch of missing methods)
 - `hologram` component
 - `computer` component
-- `modem` component
 - `tunnel` component
 - `data` component (with error correction codes and maybe synthesizing audio)
 - `redstone` component
