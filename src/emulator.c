@@ -723,9 +723,9 @@ int main() {
         .screenSetsPerTick = 32,
         .screenColorChangesPerTick = 64,
 
-        .heatPerPixelChange = 0.0005,
-        .heatPerPixelReset = 0.0001,
-        .heatPerVRAMChange = 0.000015,
+        .heatPerPixelChange = 0.00005,
+        .heatPerPixelReset = 0.00001,
+        .heatPerVRAMChange = 0.00000015,
 
         .energyPerPixelChange = 0.05,
         .energyPerPixelReset = 0.01,
@@ -916,16 +916,6 @@ render:
             }
         }
         
-        Color heatColor = GREEN;
-        if(heat > 60) heatColor = YELLOW;
-        if(heat > 80) heatColor = RED;
-
-        size_t memUsage = nn_getComputerMemoryUsed(computer);
-        size_t memTotal = nn_getComputerMemoryTotal(computer);
-
-        DrawText(TextFormat("Heat: %.02lf Memory Used: %.2lf%%", heat, (double)memUsage / memTotal * 100), 10, GetScreenHeight() - 30, 20, heatColor);
-        DrawFPS(10, 10);
-
         EndDrawing();
     }
 

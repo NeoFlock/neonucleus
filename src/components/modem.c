@@ -208,6 +208,16 @@ static void nni_modem_send(nn_modem *modem, void *_, nn_component *component, nn
         vals[i] = nn_getArgument(computer, i + 2);
     }
 
+	nn_size_t bytesSent = nn_measurePacketSize(vals, valLen);
+	if(bytesSent > modem->table.maxPacketSize) {
+        nn_setCError(computer, "packet too big");
+        return;
+	}
+	nn_simulateBufferedIndirect(component, bytesSent, modem->ctrl.packetBytesPerTick);
+	double d = (double)bytesSent / modem->table.maxPacketSize;
+	nn_addHeat(computer, d * modem->ctrl.heatPerFullPacket);
+	nn_removeEnergy(computer, d * modem->ctrl.energyPerFullPacket);
+
     nn_errorbuf_t err = "";
     nn_lock(&modem->ctx, modem->lock);
     nn_bool_t res = modem->table.send(modem->table.userdata, addr, port, vals, valLen, err);
@@ -238,6 +248,16 @@ static void nni_modem_broadcast(nn_modem *modem, void *_, nn_component *componen
     for(nn_size_t i = 0; i < valLen; i++) {
         vals[i] = nn_getArgument(computer, i + 1);
     }
+	
+	nn_size_t bytesSent = nn_measurePacketSize(vals, valLen);
+	if(bytesSent > modem->table.maxPacketSize) {
+        nn_setCError(computer, "packet too big");
+        return;
+	}
+	nn_simulateBufferedIndirect(component, bytesSent, modem->ctrl.packetBytesPerTick);
+	double d = (double)bytesSent / modem->table.maxPacketSize;
+	nn_addHeat(computer, d * modem->ctrl.heatPerFullPacket);
+	nn_removeEnergy(computer, d * modem->ctrl.energyPerFullPacket);
 
     nn_errorbuf_t err = "";
     nn_lock(&modem->ctx, modem->lock);
