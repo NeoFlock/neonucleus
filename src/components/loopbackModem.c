@@ -86,6 +86,26 @@ nn_bool_t nn_loopModem_send(nn_modemLoop *loop, nn_address address, nn_size_t po
 	return true;
 }
 
+double nn_loopModem_getStrength(nn_modemLoop *loop, nn_errorbuf_t err) {
+	return loop->strength;
+}
+
+double nn_loopModem_setStrength(nn_modemLoop *loop, double n, nn_errorbuf_t err) {
+	loop->strength = n;
+	return n;
+}
+
+nn_size_t nn_loopModem_getWakeMessage(nn_modemLoop *loop, char *msg, nn_errorbuf_t err) {
+	nn_memcpy(msg, loop->wakeup, loop->wakeupLen);
+	return loop->wakeupLen;
+}
+
+nn_size_t nn_loopModem_setWakeMessage(nn_modemLoop *loop, const char *msg, nn_size_t msglen, nn_bool_t fuzzy, nn_errorbuf_t err) {
+	loop->wakeupLen = msglen;
+	nn_memcpy(loop->wakeup, msg, loop->wakeupLen);
+	return loop->wakeupLen;
+}
+
 nn_modem *nn_debugLoopbackModem(nn_Context *context, nn_debugLoopbackNetworkOpts opts, nn_networkControl control) {
     opts.address = nn_strdup(&context->allocator, opts.address);
     nn_modemLoop *m = nn_alloc(&context->allocator, sizeof(nn_modemLoop));
@@ -114,6 +134,11 @@ nn_modem *nn_debugLoopbackModem(nn_Context *context, nn_debugLoopbackNetworkOpts
 		.send = (void *)nn_loopModem_send,
 
         .maxStrength = opts.maxStrength,
+		.getStrength = (void *)nn_loopModem_getStrength,
+		.setStrength = (void *)nn_loopModem_setStrength,
+
+		.setWakeMessage = (void *)nn_loopModem_setWakeMessage,
+		.getWakeMessage = (void *)nn_loopModem_getWakeMessage,
     };
     return nn_newModem(context, table, control);
 }

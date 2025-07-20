@@ -931,13 +931,13 @@ typedef struct nn_modemTable {
     nn_bool_t (*send)(void *userdata, nn_address address, nn_size_t port, nn_value *values, nn_size_t valueCount, nn_errorbuf_t err);
 
     // signal strength
-    nn_size_t maxStrength;
-    nn_size_t (*getStrength)(void *userdata, nn_errorbuf_t err);
-    nn_bool_t (*setStrength)(void *userdata, nn_size_t strength, nn_errorbuf_t err);
+    double maxStrength;
+    double (*getStrength)(void *userdata, nn_errorbuf_t err);
+    double (*setStrength)(void *userdata, double strength, nn_errorbuf_t err);
 
     // wake message
-    void (*getWakeMessage)(void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy);
+    nn_size_t (*getWakeMessage)(void *userdata, char *buf, nn_errorbuf_t err);
+    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy, nn_errorbuf_t err);
 } nn_modemTable;
 
 typedef struct nn_modem nn_modem;
@@ -948,7 +948,7 @@ typedef struct nn_debugLoopbackNetworkOpts {
     nn_size_t maxValues;
     nn_size_t maxPacketSize;
     nn_size_t maxOpenPorts;
-    nn_size_t maxStrength;
+    double maxStrength;
     nn_bool_t isWireless;
 } nn_debugLoopbackNetworkOpts;
 

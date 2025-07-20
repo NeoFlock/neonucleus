@@ -154,13 +154,11 @@ nn_bool_t ne_eeprom_set(void *addr, const char *buf, size_t len, nn_errorbuf_t e
 }
 
 nn_size_t ne_eeprom_getData(void *_, char *buf, nn_errorbuf_t err) {
-    nn_error_write(err, "unsupported");
     return 0;
 }
 
 nn_bool_t ne_eeprom_setData(void *_, const char *buf, size_t len, nn_errorbuf_t err) {
-    nn_error_write(err, "unsupported");
-    return false;
+    return true;
 }
     
 nn_bool_t ne_eeprom_isReadonly(void *userdata, nn_errorbuf_t err) {
@@ -708,7 +706,7 @@ int main() {
     nn_drive *genericDrive = nn_volatileDrive(&ctx, vdriveOpts, vdriveCtrl);
     nn_addDrive(computer, NULL, 4, genericDrive);
 
-    int maxWidth = 80, maxHeight = 32;
+    int maxWidth = 160, maxHeight = 48;
 
     nn_screen *s = nn_newScreen(&ctx, maxWidth, maxHeight, 24, 16, 256);
     nn_setDepth(s, 4); // looks cool

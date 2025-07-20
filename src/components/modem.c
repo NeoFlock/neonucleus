@@ -65,7 +65,42 @@ static nn_bool_t nni_modem_wirelessOnly(nn_modem *modem, void *_) {
 }
 
 static void nni_modem_maxStrength(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
-    nn_return_integer(computer, modem->table.maxStrength);
+    nn_return_number(computer, modem->table.maxStrength);
+}
+
+static void nni_modem_getStrength(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+	nn_errorbuf_t err = "";
+
+	nn_lock(&modem->ctx, modem->lock);
+	double n = modem->table.getStrength(modem->table.userdata, err);
+	nn_unlock(&modem->ctx, modem->lock);
+
+	if(!nn_error_isEmpty(err)) {
+		nn_setError(computer, err);
+		return;
+	}
+
+	nn_return_number(computer, n);
+}
+
+static void nni_modem_setStrength(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+	double n = nn_toNumber(nn_getArgument(computer, 0));
+
+	if(n < 0) n = 0;
+	if(n > modem->table.maxStrength) n = modem->table.maxStrength;
+   
+	nn_errorbuf_t err = "";
+
+	nn_lock(&modem->ctx, modem->lock);
+	n = modem->table.setStrength(modem->table.userdata, n, err);
+	nn_unlock(&modem->ctx, modem->lock);
+
+	if(!nn_error_isEmpty(err)) {
+		nn_setError(computer, err);
+		return;
+	}
+
+	nn_return_number(computer, n);
 }
 
 static nn_bool_t nni_modem_validSendPort(nn_intptr_t port) {
@@ -216,6 +251,51 @@ static void nni_modem_broadcast(nn_modem *modem, void *_, nn_component *componen
     nn_return_boolean(computer, res);
 }
 
+static void nni_modem_getWake(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+	char msg[NN_MAX_WAKEUPMSG];
+	nn_errorbuf_t err = "";
+
+    nn_lock(&modem->ctx, modem->lock);
+	nn_size_t len = modem->table.getWakeMessage(modem->table.userdata, msg, err);
+    nn_unlock(&modem->ctx, modem->lock);
+
+	if(!nn_error_isEmpty(err)) {
+		nn_setError(computer, err);
+		return;
+	}
+
+	nn_return_string(computer, msg, len);
+}
+
+static void nni_modem_setWake(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+	nn_size_t buflen;
+	const char *buf = nn_toString(nn_getArgument(computer, 0), &buflen);
+
+	if(buf == NULL) {
+		nn_setCError(computer, "invalid wake message");
+		return;
+	}
+
+	if(buflen > NN_MAX_WAKEUPMSG) {
+		buflen = NN_MAX_WAKEUPMSG;
+	}
+
+	nn_bool_t fuzzy = nn_toBoolean(nn_getArgument(computer, 1)); // nil is false
+
+	nn_errorbuf_t err = "";
+
+    nn_lock(&modem->ctx, modem->lock);
+	buflen = modem->table.setWakeMessage(modem->table.userdata, buf, buflen, fuzzy, err);
+	nn_unlock(&modem->ctx, modem->lock);
+
+	if(!nn_error_isEmpty(err)) {
+		nn_setError(computer, err);
+		return;
+	}
+
+	nn_return_string(computer, buf, buflen);
+}
+
 void nn_loadModemTable(nn_universe *universe) {
     nn_componentTable *modemTable = nn_newComponentTable(nn_getAllocator(universe), "modem", NULL, NULL, (nn_componentDestructor *)nn_modem_destroy);
     nn_storeUserdata(universe, "NN:MODEM", modemTable);
@@ -231,9 +311,17 @@ void nn_loadModemTable(nn_universe *universe) {
     nn_defineMethod(modemTable, "getPorts", (nn_componentMethod *)nni_modem_getPorts, "close([port: integer]): boolean - Closes a port, or nil for all ports");
     nn_defineMethod(modemTable, "send", (nn_componentMethod *)nni_modem_send, "send(address: string, port: integer, ...): boolean - Sends a message to the specified address at the given port. It returns whether the message was sent, not received");
     nn_defineMethod(modemTable, "broadcast", (nn_componentMethod *)nni_modem_broadcast, "broadcast(port: integer, ...): boolean - Broadcasts a message at the given port. It returns whether the message was sent, not received");
+    nn_defineMethod(modemTable, "setWakeMessage", (nn_componentMethod *)nni_modem_setWake, "setWakeMessage(msg: string[, fuzzy: boolean]): string - Sets the wake-up message. This will be compared with the first value of modem messages to turn on computers. Set it to nothing to disable this functionality.");
+    nn_defineMethod(modemTable, "getWakeMessage", (nn_componentMethod *)nni_modem_getWake, "getWakeMessage(): string - Returns the current wake-up message");
 
     // wireless stuff
-    method = nn_defineMethod(modemTable, "maxStrength", (nn_componentMethod *)nni_modem_maxStrength, "maxStrength(): integer - Returns the maximum strength of the device");
+    method = nn_defineMethod(modemTable, "maxStrength", (nn_componentMethod *)nni_modem_maxStrength, "maxStrength(): number - Returns the maximum strength of the device");
+    nn_method_setCondition(method, (nn_componentMethodCondition_t *)nni_modem_wirelessOnly);
+    
+	method = nn_defineMethod(modemTable, "getStrength", (nn_componentMethod *)nni_modem_getStrength, "getStrength(): number - Returns the current strength of the device");
+    nn_method_setCondition(method, (nn_componentMethodCondition_t *)nni_modem_wirelessOnly);
+	
+	method = nn_defineMethod(modemTable, "setStrength", (nn_componentMethod *)nni_modem_setStrength, "setStrength(value: number): number - Returns the current strength of the device");
     nn_method_setCondition(method, (nn_componentMethodCondition_t *)nni_modem_wirelessOnly);
 }
 

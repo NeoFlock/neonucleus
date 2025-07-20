@@ -431,6 +431,10 @@ void nni_gpu_maxDepth(nni_gpu *gpu, void *_, nn_component *component, nn_compute
     nn_return(computer, nn_values_integer(gpu->currentScreen->maxDepth));
 }
 
+void nni_gpu_useless(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	nn_return_boolean(computer, true);
+}
+
 void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_componentTable *gpuTable = nn_newComponentTable(nn_getAllocator(universe), "gpu", NULL, NULL, (nn_componentDestructor *)nni_gpuDeinit);
     nn_storeUserdata(universe, "NN:GPU", gpuTable);
@@ -456,6 +460,8 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_defineMethod(gpuTable, "fill", (nn_componentMethod *)nni_gpu_fill, "fill(x: integer, y: integer, w: integer, h: integer, s: string)");
     nn_defineMethod(gpuTable, "copy", (nn_componentMethod *)nni_gpu_copy, "copy(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer) - Copies stuff");
     nn_defineMethod(gpuTable, "getViewport", (nn_componentMethod *)nni_gpu_getViewport, "getViewport(): integer, integer - Gets the current viewport resolution");
+
+    nn_defineMethod(gpuTable, "freeAllBuffers", (nn_componentMethod *)nni_gpu_useless, "dummy for now");
 }
 
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control) {
