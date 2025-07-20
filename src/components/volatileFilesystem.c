@@ -206,6 +206,26 @@ nn_bool_t nn_vf_treeHasHandles(nn_vfnode *node) {
     return false;
 }
 
+void nn_vf_appendNode(nn_vfnode *parent, nn_vfnode *node) {
+    if(!parent->isDirectory) return;
+    if(parent->len == parent->cap) return;
+    parent->entries[parent->len] = node;
+    parent->len++;
+    node->parent = parent; // just to be sure
+}
+
+void nn_vf_removeNode(nn_vfnode *parent, nn_vfnode *node) {
+    if(!parent->isDirectory) return;
+    nn_size_t j = 0;
+    for(nn_size_t i = 0; i < parent->len; i++) {
+        if(parent->entries[i] != node) {
+            parent->entries[j] = parent->entries[i];
+            j++;
+        }
+    }
+    parent->len = j;
+}
+
 // methods
 
 void nn_vfs_deinit(nn_vfilesystem *fs) {
@@ -261,14 +281,7 @@ nn_size_t nn_vfs_remove(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err)
     }
     nn_size_t removed = nn_vf_countTree(node);
     // it is super easy to delete a tree
-    nn_size_t j = 0;
-    for(nn_size_t i = 0; i < parent->len; i++) {
-        if(parent->entries[i] != node) {
-            parent->entries[j] = parent->entries[i];
-            j++;
-        }
-    }
-    parent->len = j;
+    nn_vf_removeNode(parent, node);
     parent->lastModified = nn_vf_now(fs);
     nn_vf_freeNode(node);
     return removed;
@@ -286,7 +299,48 @@ nn_size_t nn_vfs_lastModified(nn_vfilesystem *fs, const char *path, nn_errorbuf_
 nn_size_t nn_vfs_rename(nn_vfilesystem *fs, const char *from, const char *to, nn_errorbuf_t err) {
     // TODO: implement rename
     nn_error_write(err, "Unsupported operation");
-    return 0;
+    nn_vfnode *srcNode = nn_vf_resolvePath(fs, from);
+    if(srcNode == NULL) {
+        nn_error_write(err, "No such file");
+        return 0;
+    }
+    nn_vfnode *srcParent = srcNode->parent;
+    if(srcParent == NULL) {
+        // root, can't move
+        nn_error_write(err, "Unable to move root");
+        return 0;
+    }
+    if(nn_vf_treeHasHandles(srcNode)) {
+        nn_error_write(err, "Files are pinned by handles");
+        return 0;
+    }
+
+    char name[NN_MAX_PATH];
+    char parentPath[NN_MAX_PATH];
+    nn_bool_t rootOut = nn_path_lastName(to, name, parentPath);
+    nn_vfnode *destParent = rootOut ? fs->root : nn_vf_resolvePath(fs, parentPath);
+    if(destParent == NULL) {
+        nn_error_write(err, "No such directory");
+        return 0;
+    }
+    if(!destParent->isDirectory) {
+        nn_error_write(err, "Is a file");
+        return 0;
+    }
+    if(nn_vf_find(destParent, name) != NULL) {
+        nn_error_write(err, "Already exists");
+        return 0;
+    }
+
+    if(destParent->len == destParent->cap) {
+        nn_error_write(err, "Too many entries");
+        return 0;
+    }
+    nn_size_t moved = nn_vf_countTree(srcNode);
+    // super efficient moving
+    nn_vf_removeNode(srcParent, srcNode);
+    nn_vf_appendNode(destParent, srcNode);
+    return moved;
 }
 
 nn_bool_t nn_vfs_exists(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {

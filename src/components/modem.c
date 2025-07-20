@@ -44,9 +44,197 @@ void nn_modem_destroy(void *_, nn_component *component, nn_modem *modem) {
     nn_destroyModem(modem);
 }
 
+static void nni_modem_isWireless(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_boolean(computer, modem->table.wireless);
+}
+
+static void nni_modem_maxPacketSize(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, modem->table.maxPacketSize);
+}
+
+static void nni_modem_maxOpenPorts(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, modem->table.maxOpenPorts);
+}
+
+static void nni_modem_maxValues(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, modem->table.maxValues);
+}
+
+static nn_bool_t nni_modem_wirelessOnly(nn_modem *modem, void *_) {
+    return modem->table.wireless;
+}
+
+static void nni_modem_maxStrength(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, modem->table.maxStrength);
+}
+
+static nn_bool_t nni_modem_validSendPort(nn_intptr_t port) {
+    // 9 quintillion ports just died
+    if(port < 0) return false;
+    // the only valid range
+    if(port > NN_PORT_MAX) return false;
+    if(port < 1) return false;
+    // whichever it is reserved as (clean code moment)
+    if(port == NN_TUNNEL_PORT) return false;
+    return true;
+}
+
+static void nni_modem_isOpen(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_intptr_t port = nn_toInt(nn_getArgument(computer, 0));
+    if(!nni_modem_validSendPort(port)) {
+        nn_setCError(computer, "invalid port");
+        return;
+    }
+    nn_errorbuf_t err = "";
+    nn_lock(&modem->ctx, modem->lock);
+    nn_bool_t res = modem->table.isOpen(modem->table.userdata, port, err);
+    nn_unlock(&modem->ctx, modem->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+    nn_return_boolean(computer, res);
+}
+
+static void nni_modem_open(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_intptr_t port = nn_toInt(nn_getArgument(computer, 0));
+    if(!nni_modem_validSendPort(port)) {
+        nn_setCError(computer, "invalid port");
+        return;
+    }
+    nn_errorbuf_t err = "";
+    nn_lock(&modem->ctx, modem->lock);
+    nn_bool_t res = modem->table.open(modem->table.userdata, port, err);
+    nn_unlock(&modem->ctx, modem->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+    nn_return_boolean(computer, res);
+}
+
+static void nni_modem_close(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_value portVal = nn_getArgument(computer, 0);
+    nn_intptr_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
+    if(!nni_modem_validSendPort(port) && port != NN_PORT_CLOSEALL) {
+        nn_setCError(computer, "invalid port");
+        return;
+    }
+    nn_errorbuf_t err = "";
+    nn_lock(&modem->ctx, modem->lock);
+    nn_bool_t res = modem->table.close(modem->table.userdata, port, err);
+    nn_unlock(&modem->ctx, modem->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+    nn_return_boolean(computer, res);
+}
+
+static void nni_modem_getPorts(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_size_t ports[modem->table.maxOpenPorts];
+    nn_errorbuf_t err = "";
+    nn_lock(&modem->ctx, modem->lock);
+    nn_size_t portCount = modem->table.getPorts(modem->table.userdata, ports, err);
+    nn_unlock(&modem->ctx, modem->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+
+    nn_value arr = nn_return_array(computer, portCount);
+    for(nn_size_t i = 0; i < portCount; i++) {
+        nn_values_set(arr, i, nn_values_integer(ports[i]));
+    }
+}
+
+static void nni_modem_send(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    // we pinky promise it won't do a fucky wucky
+    nn_address addr = (nn_address)nn_toCString(nn_getArgument(computer, 0));
+    if(addr == NULL) {
+        nn_setCError(computer, "invalid address");
+        return;
+    }
+    nn_value portVal = nn_getArgument(computer, 1);
+    nn_intptr_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
+    if(!nni_modem_validSendPort(port) && port != NN_PORT_CLOSEALL) {
+        nn_setCError(computer, "invalid port");
+        return;
+    }
+    nn_value vals[modem->table.maxValues];
+    nn_size_t valLen = nn_getArgumentCount(computer) - 2;
+
+    if(valLen > modem->table.maxValues) {
+        nn_setCError(computer, "too many values");
+        return;
+    }
+
+    for(nn_size_t i = 0; i < valLen; i++) {
+        vals[i] = nn_getArgument(computer, i + 2);
+    }
+
+    nn_errorbuf_t err = "";
+    nn_lock(&modem->ctx, modem->lock);
+    nn_bool_t res = modem->table.send(modem->table.userdata, addr, port, vals, valLen, err);
+    nn_unlock(&modem->ctx, modem->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+
+    nn_return_boolean(computer, res);
+}
+
+static void nni_modem_broadcast(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
+    nn_value portVal = nn_getArgument(computer, 0);
+    nn_intptr_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
+    if(!nni_modem_validSendPort(port) && port != NN_PORT_CLOSEALL) {
+        nn_setCError(computer, "invalid port");
+        return;
+    }
+    nn_value vals[modem->table.maxValues];
+    nn_size_t valLen = nn_getArgumentCount(computer) - 1;
+
+    if(valLen > modem->table.maxValues) {
+        nn_setCError(computer, "too many values");
+        return;
+    }
+
+    for(nn_size_t i = 0; i < valLen; i++) {
+        vals[i] = nn_getArgument(computer, i + 1);
+    }
+
+    nn_errorbuf_t err = "";
+    nn_lock(&modem->ctx, modem->lock);
+    nn_bool_t res = modem->table.send(modem->table.userdata, NULL, port, vals, valLen, err);
+    nn_unlock(&modem->ctx, modem->lock);
+    if(!nn_error_isEmpty(err)) {
+        nn_setError(computer, err);
+        return;
+    }
+
+    nn_return_boolean(computer, res);
+}
+
 void nn_loadModemTable(nn_universe *universe) {
     nn_componentTable *modemTable = nn_newComponentTable(nn_getAllocator(universe), "modem", NULL, NULL, (nn_componentDestructor *)nn_modem_destroy);
     nn_storeUserdata(universe, "NN:MODEM", modemTable);
+
+    nn_method_t *method;
+    nn_defineMethod(modemTable, "isWireless", (nn_componentMethod *)nni_modem_isWireless, "isWireless(): boolean - Returns whether this modem has wireless capabilities");
+    nn_defineMethod(modemTable, "maxPacketSize", (nn_componentMethod *)nni_modem_maxPacketSize, "maxPacketSize(): integer - Returns the maximum size of a packet");
+    nn_defineMethod(modemTable, "maxOpenPorts", (nn_componentMethod *)nni_modem_maxOpenPorts, "maxOpenPorts(): integer - Returns the maximum number of ports that can be open at the same time");
+    nn_defineMethod(modemTable, "maxValues", (nn_componentMethod *)nni_modem_maxValues, "maxValues(): integer - Returns the maximum number of values which can be sent in a packet");
+    nn_defineMethod(modemTable, "isOpen", (nn_componentMethod *)nni_modem_isOpen, "isOpen(port: integer): boolean - Returns whether a port is open (allows receiving)");
+    nn_defineMethod(modemTable, "open", (nn_componentMethod *)nni_modem_open, "open(port: integer): boolean - Opens a port, returns whether it was successful");
+    nn_defineMethod(modemTable, "close", (nn_componentMethod *)nni_modem_close, "close([port: integer]): boolean - Closes a port, or nil for all ports");
+    nn_defineMethod(modemTable, "getPorts", (nn_componentMethod *)nni_modem_getPorts, "close([port: integer]): boolean - Closes a port, or nil for all ports");
+    nn_defineMethod(modemTable, "send", (nn_componentMethod *)nni_modem_send, "send(address: string, port: integer, ...): boolean - Sends a message to the specified address at the given port. It returns whether the message was sent, not received");
+    nn_defineMethod(modemTable, "broadcast", (nn_componentMethod *)nni_modem_broadcast, "broadcast(port: integer, ...): boolean - Broadcasts a message at the given port. It returns whether the message was sent, not received");
+
+    // wireless stuff
+    method = nn_defineMethod(modemTable, "maxStrength", (nn_componentMethod *)nni_modem_maxStrength, "maxStrength(): integer - Returns the maximum strength of the device");
+    nn_method_setCondition(method, (nn_componentMethodCondition_t *)nni_modem_wirelessOnly);
 }
 
 nn_component *nn_addModem(nn_computer *computer, nn_address address, int slot, nn_modem *modem) {

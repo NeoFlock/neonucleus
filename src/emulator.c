@@ -736,6 +736,28 @@ int main() {
 
     nn_addGPU(computer, NULL, 3, &gpuCtrl);
 
+    nn_networkControl modemCtrl = {
+        .energyPerFullPacket = 5,
+        .heatPerFullPacket = 8,
+        .packetBytesPerTick = 16384,
+    };
+
+	nn_address networkAddr = "lan";
+
+    nn_debugLoopbackNetworkOpts opts = {
+        .isWireless = true,
+        .maxPacketSize = 8192,
+        .maxOpenPorts = 16,
+        .maxValues = 8,
+        .maxStrength = 400,
+		.computer = computer,
+		.address = networkAddr,
+    };
+
+    nn_modem *modem = nn_debugLoopbackModem(&ctx, opts, modemCtrl);
+
+    nn_addModem(computer, networkAddr, 12, modem);
+
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");
 

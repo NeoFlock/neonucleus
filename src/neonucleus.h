@@ -118,6 +118,7 @@ extern "C" {
 #define NN_MAX_WAKEUPMSG 2048
 #define NN_MAX_CHANNEL_SIZE 256
 #define NN_TUNNEL_PORT 0
+#define NN_PORT_CLOSEALL 0
 
 #define NN_OVERHEAT_MIN 100
 #define NN_CALL_HEAT 0.05
@@ -920,8 +921,9 @@ typedef struct nn_modemTable {
 
     nn_bool_t (*isOpen)(void *userdata, nn_size_t port, nn_errorbuf_t err);
     nn_bool_t (*open)(void *userdata, nn_size_t port, nn_errorbuf_t err);
-    // port NN_TUNNEL_PORT means close all
+    // port NN_PORT_CLOSEALL means close all
     nn_bool_t (*close)(void *userdata, nn_size_t port, nn_errorbuf_t err);
+    nn_size_t (*getPorts)(void *userdata, nn_size_t *ports, nn_errorbuf_t err);
     
     // messages
 
@@ -945,11 +947,13 @@ typedef struct nn_debugLoopbackNetworkOpts {
     nn_address address;
     nn_size_t maxValues;
     nn_size_t maxPacketSize;
+    nn_size_t maxOpenPorts;
+    nn_size_t maxStrength;
     nn_bool_t isWireless;
 } nn_debugLoopbackNetworkOpts;
 
 nn_modem *nn_newModem(nn_Context *context, nn_modemTable table, nn_networkControl control);
-nn_modem *nn_debugLoopbackModem(nn_Context *context, nn_modemTable table, nn_networkControl control);
+nn_modem *nn_debugLoopbackModem(nn_Context *context, nn_debugLoopbackNetworkOpts opts, nn_networkControl control);
 nn_guard *nn_getModemLock(nn_modem *modem);
 void nn_retainModem(nn_modem *modem);
 nn_bool_t nn_destroyModem(nn_modem *modem);
