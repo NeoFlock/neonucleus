@@ -872,6 +872,7 @@ nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, 
 typedef struct nn_gpuControl {
     // VRAM Buffers
     int totalVRAM;
+	int maximumBufferCount;
 
     // Calls per tick, only applicable to screens
     double screenCopyPerTick;

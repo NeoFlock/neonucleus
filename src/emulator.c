@@ -718,6 +718,8 @@ int main() {
 
     nn_gpuControl gpuCtrl = {
         .totalVRAM = 16*1024,
+		.maximumBufferCount = 64, // probably too many
+
         .screenCopyPerTick = 8,
         .screenFillPerTick = 16,
         .screenSetsPerTick = 32,

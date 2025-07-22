@@ -1,6 +1,12 @@
 #include "../neonucleus.h"
 #include "screen.h"
 
+typedef struct nni_buffer {
+	int width;
+	int height;
+	nn_scrchr_t *data;
+} nni_buffer;
+
 typedef struct nni_gpu {
     nn_Alloc alloc;
     nn_screen *currentScreen;
@@ -11,7 +17,23 @@ typedef struct nni_gpu {
     nn_bool_t isFgPalette;
     nn_bool_t isBgPalette;
     // TODO: think about buffers and stuff
+	int usedVRAM;
+	int activeBuffer;
+	int *vramIDBuf; // pre-allocated memory
+	nni_buffer **buffers; // array of pointers
 } nni_gpu;
+
+// utils
+
+nn_scrchr_t nni_gpu_makePixel(nni_gpu *gpu, const char *s) {
+    return (nn_scrchr_t) {
+        .codepoint = nn_unicode_codepointAt(s, 0),
+        .fg = gpu->currentFg,
+        .bg = gpu->currentBg,
+        .isFgPalette = gpu->isFgPalette,
+        .isBgPalette = gpu->isBgPalette,
+    };
+}
 
 nn_bool_t nni_samePixel(nn_scrchr_t a, nn_scrchr_t b) {
     return
@@ -33,6 +55,76 @@ nn_bool_t nni_inBounds(nni_gpu *gpu, int x, int y) {
         true;
 }
 
+// VRAM
+
+nni_buffer *nni_vram_newBuffer(nn_Alloc *alloc, int width, int height) {
+	int area = width * height;
+	nni_buffer *buf = nn_alloc(alloc, sizeof(nni_buffer));
+	if(buf == NULL) {
+		return NULL;
+	}
+	buf->width = width;
+	buf->height = height;
+	buf->data = nn_alloc(alloc, sizeof(nn_scrchr_t) * area);
+	if(buf->data == NULL) {
+		nn_dealloc(alloc, buf, sizeof(nni_buffer));
+	}
+	return buf;
+}
+
+void nni_vram_deinit(nn_Alloc *alloc, nni_buffer *buffer) {
+	int area = buffer->width * buffer->height;
+	nn_dealloc(alloc, buffer->data, sizeof(nn_scrchr_t) * area);
+	nn_dealloc(alloc, buffer, sizeof(nni_buffer));
+}
+
+nn_bool_t nni_vram_inBounds(nni_buffer *buffer, int x, int y) {
+	return
+		x >= 0 &&
+		y >= 0 &&
+		x < buffer->width &&
+		y < buffer->height
+		;
+}
+
+nn_scrchr_t nni_vram_getPixel(nni_buffer *buffer, int x, int y) {
+	if(!nni_vram_inBounds(buffer, x, y)) {
+		return (nn_scrchr_t) {
+			.codepoint = 0,
+			.fg = 0xFFFFFF,
+			.bg = 0x000000,
+			.isFgPalette = false,
+			.isBgPalette = false,
+		};
+	}
+	return buffer->data[x + y * buffer->width];
+}
+
+void nni_vram_setPixel(nni_buffer *buffer, int x, int y, nn_scrchr_t pixel) {
+	if(!nni_vram_inBounds(buffer, x, y)) return;
+	buffer->data[x + y * buffer->width] = pixel;
+}
+
+void nni_vram_set(nni_gpu *gpu, int x, int y, const char *s, nn_bool_t vertical) {
+	nni_buffer *buffer = gpu->buffers[gpu->activeBuffer - 1];
+
+	nn_size_t cur = 0;
+	while(s[cur]) {
+		unsigned int cp = nn_unicode_nextCodepointPermissive(s, &cur);
+		char encoded[NN_MAXIMUM_UNICODE_BUFFER];
+		nn_unicode_codepointToChar(encoded, cp, NULL);
+		nni_vram_setPixel(buffer, x, y, nni_gpu_makePixel(gpu, encoded));
+		// peak software
+		if(vertical) {
+			y++;
+		} else {
+			x++;
+		}
+	}
+}
+
+// GPU stuff
+
 nni_gpu *nni_newGPU(nn_Alloc *alloc, nn_gpuControl *ctrl) {
     nni_gpu *gpu = nn_alloc(alloc, sizeof(nni_gpu));
     if(gpu == NULL) return NULL;
@@ -44,6 +136,22 @@ nni_gpu *nni_newGPU(nn_Alloc *alloc, nn_gpuControl *ctrl) {
     gpu->currentBg = 0x000000;
     gpu->isFgPalette = false;
     gpu->isBgPalette = false;
+	gpu->vramIDBuf = nn_alloc(alloc, sizeof(int) * ctrl->maximumBufferCount);
+	if(gpu->vramIDBuf == NULL) {
+		nn_dealloc(alloc, gpu, sizeof(nni_gpu));
+		return NULL;
+	}
+	// gpu->vramIDBuf can be left uninitialized! Its only tmp storage!
+	gpu->buffers = nn_alloc(alloc, sizeof(nn_screen *) * ctrl->maximumBufferCount);
+	if(gpu->buffers == NULL) {
+		nn_dealloc(alloc, gpu->vramIDBuf, sizeof(int) * ctrl->maximumBufferCount);
+		nn_dealloc(alloc, gpu, sizeof(nni_gpu));
+		return NULL;
+	}
+	for(int i = 0; i < ctrl->maximumBufferCount; i++) {
+		gpu->buffers[i] = NULL;
+	}
+	gpu->usedVRAM = 0;
     return gpu;
 }
 
@@ -55,17 +163,17 @@ void nni_gpuDeinit(nni_gpu *gpu) {
     if(gpu->screenAddress != NULL) {
         nn_deallocStr(&a, gpu->screenAddress);
     }
+	int maximumBufferCount = gpu->ctrl.maximumBufferCount;
+	for(int i = 0; i < maximumBufferCount; i++) {
+	}
+	nn_dealloc(&a, gpu->vramIDBuf, sizeof(int) * maximumBufferCount);
+	nn_dealloc(&a, gpu->buffers, sizeof(nn_screen) * maximumBufferCount);
     nn_dealloc(&a, gpu, sizeof(nni_gpu));
 }
 
-nn_scrchr_t nni_gpu_makePixel(nni_gpu *gpu, const char *s) {
-    return (nn_scrchr_t) {
-        .codepoint = nn_unicode_codepointAt(s, 0),
-        .fg = gpu->currentFg,
-        .bg = gpu->currentBg,
-        .isFgPalette = gpu->isFgPalette,
-        .isBgPalette = gpu->isBgPalette,
-    };
+nn_bool_t nni_gpu_validActiveScreen(nni_gpu *gpu, int activeBuffer) {
+	if(activeBuffer < 0 || activeBuffer > gpu->ctrl.maximumBufferCount) return false;
+	return true;
 }
 
 void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
@@ -461,6 +569,7 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_defineMethod(gpuTable, "copy", (nn_componentMethod *)nni_gpu_copy, "copy(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer) - Copies stuff");
     nn_defineMethod(gpuTable, "getViewport", (nn_componentMethod *)nni_gpu_getViewport, "getViewport(): integer, integer - Gets the current viewport resolution");
 
+	// VRAM buffers
     nn_defineMethod(gpuTable, "freeAllBuffers", (nn_componentMethod *)nni_gpu_useless, "dummy for now");
 }
 

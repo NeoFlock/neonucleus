@@ -78,7 +78,8 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
     const alloc = b.allocator;
     const dirName = @tagName(version);
 
-    const c = b.addObject(.{
+    // its a static library because COFF is a pile of shit
+    const c = b.addStaticLibrary(.{
         .name = "lua",
         .link_libc = true,
         .optimize = .ReleaseFast,
@@ -192,7 +193,7 @@ pub fn build(b: *std.Build) !void {
         try includeTheRightLua(b, emulator, luaVer);
 
         // forces us to link in everything too
-        emulator.addObject(l);
+        emulator.linkLibrary(l);
         emulator.linkLibrary(engineStatic);
 
         const emulatorStep = b.step("emulator", "Builds the emulator");
