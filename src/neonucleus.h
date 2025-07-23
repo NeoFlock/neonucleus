@@ -727,6 +727,14 @@ typedef struct nn_filesystemTable {
 
 typedef struct nn_filesystem nn_filesystem;
 
+typedef struct nn_vfilesystemImageNode {
+	const char *name;
+	// if NULL, the node is a directory
+	const char *data;
+	// if it is a directory, this is the amount of entries encoded afterwards
+	nn_size_t len;
+} nn_vfilesystemImageNode;
+
 typedef struct nn_vfilesystemOptions {
     // used to compute lastModified
     nn_size_t creationTime;
@@ -735,6 +743,9 @@ typedef struct nn_vfilesystemOptions {
     nn_bool_t isReadOnly;
     char label[NN_LABEL_SIZE];
     nn_size_t labelLen;
+	// loading the files into the tmpfs
+	nn_vfilesystemImageNode *image;
+	nn_size_t rootEntriesInImage;
 } nn_vfilesystemOptions;
 
 nn_filesystem *nn_newFilesystem(nn_Context *context, nn_filesystemTable table, nn_filesystemControl control);

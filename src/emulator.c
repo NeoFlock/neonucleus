@@ -671,6 +671,14 @@ int main() {
     nn_filesystem *genericFS = nn_newFilesystem(&ctx, genericFSTable, ne_fs_ctrl);
     nn_addFileSystem(computer, NULL, 1, genericFS);
 
+	nn_vfilesystemImageNode tmpfsImg[] = {
+		(nn_vfilesystemImageNode) {
+			.name = "testScript.lua",
+			.data = "print('Hello, world!')",
+			.len = nn_strlen("print('Hello, world!')"),
+		},
+	};
+
     nn_vfilesystemOptions tmpfsOpts = {
         .isReadOnly = false,
         .capacity = 64*1024,
@@ -678,6 +686,8 @@ int main() {
         .labelLen = 5,
         .creationTime = 0, // we are at the start of time
         .maxDirEntries = 64,
+		.image = tmpfsImg,
+		.rootEntriesInImage = 1,
     };
     
     nn_filesystem *tmpFS = nn_volatileFilesystem(&ctx, tmpfsOpts, ne_fs_ctrl);
