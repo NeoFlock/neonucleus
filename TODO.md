@@ -8,7 +8,6 @@
 
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- complete the screen implementation (bunch of missing methods)
 - `hologram` component
 - `computer` component
 - `tunnel` component
