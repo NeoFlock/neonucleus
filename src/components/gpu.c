@@ -956,7 +956,7 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_defineMethod(gpuTable, "freeBuffer", (nn_componentMethod *)nni_gpu_freeBuffer, "freeBuffer([buffer: integer]): boolean - Frees a buffer. By default, the current buffer. If the current buffer is freed, it will switch back to the screen.");
     nn_defineMethod(gpuTable, "freeAllBuffers", (nn_componentMethod *)nni_gpu_freeAllBuffers, "freeAllBuffers() - Frees every VRAM buffer (if any). Also switches back to the screen.");
     nn_defineMethod(gpuTable, "getBufferSize", (nn_componentMethod *)nni_gpu_getBufferSize, "getBufferSize(buffer: integer): integer, integer - Returns the size of the specified buffer.");
-    nn_defineMethod(gpuTable, "bitblt", (nn_componentMethod *)nni_gpu_bitblt, "dummy func");
+    nn_defineMethod(gpuTable, "bitblt", (nn_componentMethod *)nni_gpu_bitblt, "bitblt([dst: integer, x: integer, y: integer, w: integer, h: integer, src: integer, fromCol: integer, fromRow: integer]) - Copy regions between buffers");
 }
 
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control) {

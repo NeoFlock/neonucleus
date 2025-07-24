@@ -8,7 +8,6 @@
 
 # Parity with Vanilla OC (only the stuff that makes sense for an emulator)
 
-- complete the GPU implementation (screen buffers and missing methods)
 - complete the screen implementation (bunch of missing methods)
 - `hologram` component
 - `computer` component

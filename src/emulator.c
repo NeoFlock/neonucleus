@@ -644,7 +644,7 @@ int main() {
 
     nn_addEEPROM(computer, NULL, 0, genericEEPROM);
 
-    nn_address fsFolder = "Halyde";
+    nn_address fsFolder = "OpenOS";
     nn_filesystemTable genericFSTable = {
         .userdata = fsFolder,
         .deinit = NULL,
@@ -909,28 +909,30 @@ render:
 
         ClearBackground(BLACK);
 
-        int scrW = 1, scrH = 1;
-        nn_getResolution(s, &scrW, &scrH);
-        int pixelHeight = GetScreenHeight() / scrH;
-        float spacing = (float)pixelHeight/10;
-        int pixelWidth = MeasureTextEx(unscii, "A", pixelHeight, spacing).x;
+		if(nn_isOn(s)) {
+			int scrW = 1, scrH = 1;
+			nn_getResolution(s, &scrW, &scrH);
+			int pixelHeight = GetScreenHeight() / scrH;
+			float spacing = (float)pixelHeight/10;
+			int pixelWidth = MeasureTextEx(unscii, "A", pixelHeight, spacing).x;
 
-        int depth = nn_getDepth(s);
+			int depth = nn_getDepth(s);
 
-        int offX = (GetScreenWidth() - scrW * pixelWidth) / 2;
-        int offY = (GetScreenHeight() - scrH * pixelHeight) / 2;
+			int offX = (GetScreenWidth() - scrW * pixelWidth) / 2;
+			int offY = (GetScreenHeight() - scrH * pixelHeight) / 2;
 
-        for(size_t x = 0; x < scrW; x++) {
-            for(size_t y = 0; y < scrH; y++) {
-                ne_premappedPixel p = ne_getPremap(premap, s, x, y);
+			for(size_t x = 0; x < scrW; x++) {
+				for(size_t y = 0; y < scrH; y++) {
+					ne_premappedPixel p = ne_getPremap(premap, s, x, y);
 
-                // fuck palettes
-                Color fgColor = ne_processColor(p.mappedFgRes);
-                Color bgColor = ne_processColor(p.mappedBgRes);
-                DrawRectangle(x * pixelWidth + offX, y * pixelHeight + offY, pixelWidth, pixelHeight, bgColor);
-                DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight - 5, fgColor);
-            }
-        }
+					// fuck palettes
+					Color fgColor = ne_processColor(p.mappedFgRes);
+					Color bgColor = ne_processColor(p.mappedBgRes);
+					DrawRectangle(x * pixelWidth + offX, y * pixelHeight + offY, pixelWidth, pixelHeight, bgColor);
+					DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight - 5, fgColor);
+				}
+			}
+		}
 
         EndDrawing();
     }

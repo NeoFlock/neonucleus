@@ -236,12 +236,97 @@ void nn_screenComp_getAspectRatio(nn_screen *screen, void *_, nn_component *comp
     nn_return_integer(computer, h);
 }
 
+void nn_screenComp_isOn(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_lockScreen(screen);
+
+	nn_bool_t isOn = nn_isOn(screen);
+
+    nn_unlockScreen(screen);
+
+    nn_return_boolean(computer, isOn);
+}
+
+void nn_screenComp_turnOn(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_lockScreen(screen);
+
+	nn_bool_t isOff = !nn_isOn(screen);
+	nn_setOn(screen, true);
+
+    nn_unlockScreen(screen);
+
+    nn_return_boolean(computer, isOff);
+    nn_return_boolean(computer, true);
+}
+
+void nn_screenComp_turnOff(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_lockScreen(screen);
+
+	nn_bool_t isOn = nn_isOn(screen);
+	nn_setOn(screen, false);
+
+    nn_unlockScreen(screen);
+
+    nn_return_boolean(computer, isOn);
+    nn_return_boolean(computer, false);
+}
+
+void nn_screenComp_setPrecise(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+	nn_bool_t isPrecise = nn_toBooleanOr(nn_getArgument(computer, 0), true);
+
+    nn_lockScreen(screen);
+
+	nn_setPrecise(screen, isPrecise);
+
+    nn_unlockScreen(screen);
+
+    nn_return_boolean(computer, isPrecise);
+}
+
+void nn_screenComp_isPrecise(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_lockScreen(screen);
+	
+	nn_bool_t isPrecise = nn_isPrecise(screen);
+
+    nn_unlockScreen(screen);
+
+    nn_return_boolean(computer, isPrecise);
+}
+
+void nn_screenComp_setTouchModeInverted(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+	nn_bool_t isTouchModeInverted = nn_toBooleanOr(nn_getArgument(computer, 0), true);
+
+    nn_lockScreen(screen);
+
+	nn_setTouchModeInverted(screen, isTouchModeInverted);
+
+    nn_unlockScreen(screen);
+
+    nn_return_boolean(computer, isTouchModeInverted);
+}
+
+void nn_screenComp_isTouchModeInverted(nn_screen *screen, void *_, nn_component *component, nn_computer *computer) {
+    nn_lockScreen(screen);
+	
+	nn_bool_t isTouchModeInverted = nn_isTouchModeInverted(screen);
+
+    nn_unlockScreen(screen);
+
+    nn_return_boolean(computer, isTouchModeInverted);
+}
+
 void nn_loadScreenTable(nn_universe *universe) {
     nn_componentTable *screenTable = nn_newComponentTable(nn_getAllocator(universe), "screen", NULL, NULL, (nn_componentDestructor *)nn_screenComp_destroy);
     nn_storeUserdata(universe, "NN:SCREEN", screenTable);
 
     nn_defineMethod(screenTable, "getKeyboards", (nn_componentMethod *)nn_screenComp_getKeyboards, "getKeyboards(): string[] - Returns the keyboards registered to this screen.");
-    nn_defineMethod(screenTable, "getAspectRatio", (nn_componentMethod *)nn_screenComp_getAspectRatio, "");
+    nn_defineMethod(screenTable, "getAspectRatio", (nn_componentMethod *)nn_screenComp_getAspectRatio, "getAspectRatio(): integer, integer - Returns the dimensions, in blocks, of the screen.");
+    nn_defineMethod(screenTable, "isOn", (nn_componentMethod *)nn_screenComp_isOn, "isOn(): boolean - Returns whether the screen is on.");
+    nn_defineMethod(screenTable, "turnOn", (nn_componentMethod *)nn_screenComp_turnOn, "turnOn(): boolean, boolean - Turns the screen on. Returns whether the screen was off and the new power state.");
+    nn_defineMethod(screenTable, "turnOff", (nn_componentMethod *)nn_screenComp_turnOff, "turnOff(): boolean, boolean - Turns the screen off. Returns whether the screen was on and the new power state.");
+    nn_defineMethod(screenTable, "setPrecise", (nn_componentMethod *)nn_screenComp_setPrecise, "setPrecise(precise: boolean) - Sets whether precise (sub-pixel) mouse events are enabled");
+    nn_defineMethod(screenTable, "isPrecise", (nn_componentMethod *)nn_screenComp_isPrecise, "isPrecise(): boolean - Checks whether precise mouse events are enabled");
+    nn_defineMethod(screenTable, "setTouchModeInverted", (nn_componentMethod *)nn_screenComp_setTouchModeInverted, "setTouchModeInverted(mode: boolean) - Sets whether inverted touch mode is enabled");
+    nn_defineMethod(screenTable, "isTouchModeInverted", (nn_componentMethod *)nn_screenComp_isTouchModeInverted, "isTouchModeInverted(): boolean - Checks whether inverted touch mode is enabled");
 }
 
 nn_componentTable *nn_getScreenTable(nn_universe *universe) {
