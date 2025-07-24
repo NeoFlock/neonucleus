@@ -55,6 +55,17 @@ nn_bool_t nni_inBounds(nni_gpu *gpu, int x, int y) {
         true;
 }
 
+nn_size_t nni_vramNeededForSize(int w, int h) {
+	return w * h;
+}
+
+nn_size_t nni_vramNeededForScreen(nn_screen *screen) {
+	if(screen == NULL) return 0;
+	int w, h;
+	nn_maxResolution(screen, &w, &h);
+	return nni_vramNeededForSize(w, h);
+}
+
 // VRAM
 
 nni_buffer *nni_vram_newBuffer(nn_Alloc *alloc, int width, int height) {
@@ -66,6 +77,15 @@ nni_buffer *nni_vram_newBuffer(nn_Alloc *alloc, int width, int height) {
 	buf->width = width;
 	buf->height = height;
 	buf->data = nn_alloc(alloc, sizeof(nn_scrchr_t) * area);
+	for(int i = 0; i < area; i++) {
+		buf->data[i] = (nn_scrchr_t) {
+			.codepoint = ' ',
+			.fg = 0xFFFFFF,
+			.bg = 0x000000,
+			.isFgPalette = false,
+			.isBgPalette = false,
+		};
+	}
 	if(buf->data == NULL) {
 		nn_dealloc(alloc, buf, sizeof(nni_buffer));
 	}
@@ -121,6 +141,55 @@ void nni_vram_set(nni_gpu *gpu, int x, int y, const char *s, nn_bool_t vertical)
 			x++;
 		}
 	}
+}
+
+void nni_vram_fill(nni_gpu *gpu, int x, int y, int w, int h, const char *s) {
+	nni_buffer *buffer = gpu->buffers[gpu->activeBuffer - 1];
+	// DoS mitigation
+	if(x < 0) x = 0;
+	if(y < 0) y = 0;
+	if(w > buffer->width) w = buffer->width - x;
+	if(h > buffer->height) h = buffer->height - y;
+
+	nn_scrchr_t p = nni_gpu_makePixel(gpu, s);
+
+	for(int py = 0; py < h; py++) {
+		for(int px = 0; px < w; px++) {
+			nni_vram_setPixel(buffer, px, py, p);
+		}
+	}
+}
+
+void nni_vram_copy(nni_gpu *gpu, int x, int y, int w, int h, int tx, int ty, nn_errorbuf_t err) {
+	nni_buffer *buffer = gpu->buffers[gpu->activeBuffer - 1];
+	// DoS mitigation
+	if(x < 0) x = 0;
+	if(y < 0) y = 0;
+	if(w > buffer->width) w = buffer->width - x;
+	if(h > buffer->height) h = buffer->height - y;
+
+	nn_size_t tmpBufSize = sizeof(nn_scrchr_t) * w * h;
+	nn_scrchr_t *tmpBuf = nn_alloc(&gpu->alloc, tmpBufSize);
+	if(tmpBuf == NULL) {
+		nn_error_write(err, "out of memory");
+		return;
+	}
+
+	// copy
+	for(int iy = 0; iy < h; iy++) {
+		for(int ix = 0; ix < w; ix++) {
+			tmpBuf[ix + iy * w] = nni_vram_getPixel(buffer, x, y);
+		}
+	}
+	
+	for(int iy = 0; iy < h; iy++) {
+		for(int ix = 0; ix < w; ix++) {
+			nn_scrchr_t p = tmpBuf[ix + iy * w];
+			nni_vram_setPixel(buffer, x + ix + tx, y + iy + ty, p);
+		}
+	}
+
+	nn_dealloc(&gpu->alloc, tmpBuf, tmpBufSize);
 }
 
 // GPU stuff
@@ -200,11 +269,22 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
         return;
     }
 
+	nn_screen *oldScreen = gpu->currentScreen;
+	nn_size_t oldScreenVRAM = nni_vramNeededForScreen(oldScreen);
     nn_screen *screen = nn_getComponentUserdata(c);
+	nn_size_t screenVRAM = nni_vramNeededForScreen(screen);
+
+	if(gpu->usedVRAM - oldScreenVRAM + screenVRAM > gpu->ctrl.totalVRAM) {
+		nn_setCError(computer, "out of vram");
+		return;
+	}
+
+	gpu->usedVRAM -= oldScreenVRAM;
+	gpu->usedVRAM += screenVRAM;
+
     nn_retainScreen(screen);
-    if(gpu->currentScreen != NULL) nn_destroyScreen(gpu->currentScreen);
+    if(oldScreen != NULL) nn_destroyScreen(oldScreen);
     gpu->currentScreen = screen;
-    
 
     if(reset) {
         for(nn_size_t i = 0; i < screen->width; i++) {
@@ -222,13 +302,13 @@ void nni_gpu_bind(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
     if(gpu->screenAddress != NULL) {
         nn_deallocStr(&gpu->alloc, gpu->screenAddress);
     }
+	// TODO: fix OOM here
     gpu->screenAddress = nn_strdup(&gpu->alloc, addr);
 
     nn_return(computer, nn_values_boolean(true));
 }
 
 void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
-    if(gpu->currentScreen == NULL) return;
     int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
     int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     const char *s = nn_toCString(nn_getArgument(computer, 2));
@@ -238,6 +318,14 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
         nn_setCError(computer, "bad argument #3 (string expected in set)");
         return;
     }
+
+	if(gpu->activeBuffer != 0) {
+		nni_buffer *buffer = gpu->buffers[gpu->activeBuffer - 1];
+		nni_vram_set(gpu, x, y, s, isVertical);
+		return;
+	}
+
+    if(gpu->currentScreen == NULL) return;
 
     nn_size_t current = 0;
     while(s[current] != 0) {
@@ -343,8 +431,6 @@ void nni_gpu_setBackground(nni_gpu *gpu, void *_, nn_component *component, nn_co
     gpu->currentBg = color;
     gpu->isBgPalette = isPalette;
     
-    nn_simulateBufferedIndirect(component, 1, gpu->ctrl.screenColorChangesPerTick);
-
     nn_return(computer, nn_values_integer(old));
     if(idx != -1) {
         nn_return(computer, nn_values_integer(idx));
@@ -375,8 +461,6 @@ void nni_gpu_setForeground(nni_gpu *gpu, void *_, nn_component *component, nn_co
     gpu->currentFg = color;
     gpu->isFgPalette = isPalette;
     
-    nn_simulateBufferedIndirect(component, 1, gpu->ctrl.screenColorChangesPerTick);
-
     nn_return(computer, nn_values_integer(old));
     if(idx != -1) {
         nn_return(computer, nn_values_integer(idx));
@@ -388,7 +472,6 @@ void nni_gpu_getForeground(nni_gpu *gpu, void *_, nn_component *component, nn_co
 }
 
 void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
-    if(gpu->currentScreen == NULL) return;
     int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
     int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     int w = nn_toInt(nn_getArgument(computer, 2));
@@ -398,6 +481,13 @@ void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
         nn_setCError(computer, "bad argument #5 (character expected)");
         return;
     }
+	
+	if(gpu->activeBuffer != 0) {
+		nni_vram_fill(gpu, x, y, w, h, s);
+		return;
+	}
+	
+	if(gpu->currentScreen == NULL) return;
 
     nn_size_t startIdx = 0;
     int codepoint = nn_unicode_nextCodepointPermissive(s, &startIdx);
@@ -436,13 +526,23 @@ void nni_gpu_fill(nni_gpu *gpu, void *_, nn_component *component, nn_computer *c
 }
 
 void nni_gpu_copy(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
-    if(gpu->currentScreen == NULL) return;
     int x = nn_toInt(nn_getArgument(computer, 0)) - 1;
     int y = nn_toInt(nn_getArgument(computer, 1)) - 1;
     int w = nn_toInt(nn_getArgument(computer, 2));
     int h = nn_toInt(nn_getArgument(computer, 3));
     int tx = nn_toInt(nn_getArgument(computer, 4));
     int ty = nn_toInt(nn_getArgument(computer, 5));
+
+	if(gpu->activeBuffer != 0) {
+		nn_errorbuf_t err = "";
+		nni_vram_copy(gpu, x, y, w, h, tx, ty, err);
+		if(!nn_error_isEmpty(err)) {
+			nn_setError(computer, err);
+		}
+		return;
+	}
+    
+	if(gpu->currentScreen == NULL) return;
 
     // prevent DoS
     if(x < 0) x = 0;
@@ -539,8 +639,284 @@ void nni_gpu_maxDepth(nni_gpu *gpu, void *_, nn_component *component, nn_compute
     nn_return(computer, nn_values_integer(gpu->currentScreen->maxDepth));
 }
 
-void nni_gpu_useless(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
-	nn_return_boolean(computer, true);
+void nni_gpu_totalMemory(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, gpu->ctrl.totalVRAM);
+}
+
+void nni_gpu_usedMemory(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, gpu->usedVRAM);
+}
+
+void nni_gpu_freeMemory(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, gpu->ctrl.totalVRAM - gpu->usedVRAM);
+}
+
+void nni_gpu_getActiveBuffer(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+    nn_return_integer(computer, gpu->activeBuffer);
+}
+
+void nni_gpu_setActiveBuffer(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	int buf = nn_toInt(nn_getArgument(computer, 0));
+	if(!nni_gpu_validActiveScreen(gpu, buf)) {
+		nn_setCError(computer, "invalid buffer");
+		return;
+	}
+
+	gpu->activeBuffer = buf;
+	nn_return_integer(computer, buf);
+}
+
+void nni_gpu_buffers(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	int bufCount = 0;
+	for(int i = 0; i < gpu->ctrl.maximumBufferCount; i++) {
+		if(gpu->buffers[i] != NULL) {
+			gpu->vramIDBuf[bufCount] = i + 1;
+			bufCount++;
+		}
+	}
+
+	nn_value arr = nn_return_array(computer, bufCount);
+	for(int i = 0; i < bufCount; i++) {
+		nn_values_set(arr, i, nn_values_integer(gpu->vramIDBuf[i]));
+	}
+}
+
+void nni_gpu_allocateBuffer(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	int width = gpu->ctrl.defaultBufferWidth;
+	int height = gpu->ctrl.defaultBufferHeight;
+
+	nn_value widthVal = nn_getArgument(computer, 0);
+	nn_value heightVal = nn_getArgument(computer, 1);
+
+	if(widthVal.tag != NN_VALUE_NIL) {
+		width = nn_toInt(widthVal);
+	}
+	if(heightVal.tag != NN_VALUE_NIL) {
+		height = nn_toInt(heightVal);
+	}
+
+	if(width < 0 || height < 0) {
+		nn_setCError(computer, "invalid size");
+		return;
+	}
+
+	nn_size_t vramNeeded = nni_vramNeededForSize(width, height);
+
+	if(gpu->usedVRAM + vramNeeded > gpu->ctrl.totalVRAM) {
+		nn_setCError(computer, "out of vram");
+		return;
+	}
+
+	nn_size_t idx = 0;
+	for(nn_size_t i = 0; i < gpu->ctrl.maximumBufferCount; i++) {
+		if(gpu->buffers[i] == NULL) {
+			idx = i + 1;
+			break;
+		}
+	}
+
+	if(idx == 0) {
+		nn_setCError(computer, "too many buffers");
+		return;
+	}
+
+	nni_buffer *buf = nni_vram_newBuffer(&gpu->alloc, width, height);
+	if(buf == NULL) {
+		nn_setCError(computer, "out of memory");
+		return;
+	}
+	gpu->buffers[idx - 1] = buf;
+
+	gpu->usedVRAM += vramNeeded;
+	
+	nn_return_integer(computer, idx);
+}
+
+void nni_gpu_freeBuffer(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	int bufidx = gpu->activeBuffer;
+	nn_value bufVal = nn_getArgument(computer, 0);
+	if(bufVal.tag != NN_VALUE_NIL) {
+		bufidx = nn_toInt(bufVal);
+	}
+
+	if(!nni_gpu_validActiveScreen(gpu, bufidx) || bufidx == 0) {
+		nn_setCError(computer, "invalid buffer");
+		return;
+	}
+
+	nni_buffer *buf = gpu->buffers[bufidx - 1];
+	if(buf == NULL) {
+		nn_setCError(computer, "invalid buffer");
+		return;
+	}
+
+	int vramUsed = buf->width * buf->height;
+	nni_vram_deinit(&gpu->alloc, buf);
+	gpu->buffers[bufidx - 1] = NULL;
+
+	if(bufidx == gpu->activeBuffer) gpu->activeBuffer = 0;
+	gpu->usedVRAM -= vramUsed;
+}
+
+void nni_gpu_freeAllBuffers(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	gpu->activeBuffer = 0;
+	
+	for(nn_size_t i = 0; i < gpu->ctrl.maximumBufferCount; i++) {
+		if(gpu->buffers[i] != NULL) {
+			int vramUsed = gpu->buffers[i]->width * gpu->buffers[i]->height;
+			nni_vram_deinit(&gpu->alloc, gpu->buffers[i]);
+			gpu->buffers[i] = NULL;
+			gpu->usedVRAM -= vramUsed;
+		}
+	}
+}
+
+void nni_gpu_getBufferSize(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	int bufidx = gpu->activeBuffer;
+	nn_value bufVal = nn_getArgument(computer, 0);
+	if(bufVal.tag != NN_VALUE_NIL) {
+		bufidx = nn_toInt(bufVal);
+	}
+
+	if(!nni_gpu_validActiveScreen(gpu, bufidx)) {
+		nn_setCError(computer, "invalid buffer");
+		return;
+	}
+
+	if(bufidx == 0) {
+		if(gpu->currentScreen == NULL) {
+			nn_setCError(computer, "invalid buffer");
+			return;
+		}
+		int w, h;
+		nn_getResolution(gpu->currentScreen, &w, &h);
+		nn_return_integer(computer, w);
+		nn_return_integer(computer, h);
+		return;
+	}
+
+	nni_buffer *buf = gpu->buffers[bufidx - 1];
+	if(buf == NULL) {
+		nn_setCError(computer, "invalid buffer");
+		return;
+	}
+
+	nn_return_integer(computer, buf->width);
+	nn_return_integer(computer, buf->height);
+}
+
+void nni_gpu_bitblt(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
+	// I will kill OC creators for this
+	int dst = nn_toIntOr(nn_getArgument(computer, 0), 0);
+	int x = nn_toIntOr(nn_getArgument(computer, 1), 1);
+	int y = nn_toIntOr(nn_getArgument(computer, 2), 1);
+	int width = nn_toIntOr(nn_getArgument(computer, 3), 0);
+	int height = nn_toIntOr(nn_getArgument(computer, 4), 0);
+	int src = nn_toIntOr(nn_getArgument(computer, 5), gpu->activeBuffer);
+	int fromCol = nn_toIntOr(nn_getArgument(computer, 6), 1);
+	int fromRow = nn_toIntOr(nn_getArgument(computer, 7), 1);
+
+	if(x < 1) x = 1;
+	if(y < 1) y = 1;
+	if(fromCol < 1) fromCol = 1;
+	if(fromRow < 1) fromRow = 1;
+
+	if(!nni_gpu_validActiveScreen(gpu, dst)) {
+		nn_setCError(computer, "invalid destination buffer");
+		return;
+	}
+	
+	if(!nni_gpu_validActiveScreen(gpu, src)) {
+		nn_setCError(computer, "invalid source buffer");
+		return;
+	}
+	
+	// such great parsing
+	if(dst == 0) {
+		if(gpu->currentScreen == NULL) return;
+		int w, h;
+		nn_getResolution(gpu->currentScreen, &w, &h);
+		width = width == 0 ? w : width;
+		height = height == 0 ? h : height;
+	} else {
+		nni_buffer *buffer = gpu->buffers[dst - 1];
+		if(buffer == NULL) return;
+		width = width == 0 ? buffer->width : width;
+		height = height == 0 ? buffer->height : height;
+	}
+
+	if(dst == src) {
+		nn_setCError(computer, "invalid operation, use copy() instead");
+		return;
+	}
+
+	// from buffer to screen
+	if(dst == 0 && src != 0) {
+		nn_screen *screen = gpu->currentScreen;
+		nni_buffer *buf = gpu->buffers[src - 1];
+		if(buf == NULL) {
+			nn_setCError(computer, "invalid source buffer");
+			return;
+		}
+		
+		int w, h;
+		nn_getResolution(gpu->currentScreen, &w, &h);
+
+		if(width > w) width = w;
+		if(height > h) height = h;
+
+		for(int j = 0; j < height; j++) {
+			for(int i = 0; i < width; i++) {
+				nn_scrchr_t src = nni_vram_getPixel(buf, i + fromCol - 1, j + fromRow - 1);
+				nn_setPixel(screen, i + x - 1, j + y - 1, src);
+			}
+		}
+		return;
+	}
+	// from screen to buffer 
+	if(dst != 0 && src == 0) {
+		nn_screen *screen = gpu->currentScreen;
+		nni_buffer *buf = gpu->buffers[dst - 1];
+		if(buf == NULL) {
+			nn_setCError(computer, "invalid destination buffer");
+			return;
+		}
+		
+		if(width > buf->width) width = buf->width;
+		if(height > buf->height) height = buf->height;
+
+		for(int j = 0; j < height; j++) {
+			for(int i = 0; i < width; i++) {
+				nn_scrchr_t src = nn_getPixel(screen, i + fromCol - 1, j + fromRow - 1);
+				nni_vram_setPixel(buf, i + x - 1, j + y - 1, src);
+			}
+		}
+		return;
+	}
+	// from buffer to buffer
+	if(dst != 0 && src != 0) {
+		nni_buffer *srcBuf = gpu->buffers[src - 1];
+		if(srcBuf == NULL) {
+			nn_setCError(computer, "invalid destination buffer");
+			return;
+		}
+		nni_buffer *destBuf = gpu->buffers[dst - 1];
+		if(destBuf == NULL) {
+			nn_setCError(computer, "invalid destination buffer");
+			return;
+		}
+		
+		if(width > destBuf->width) width = destBuf->width;
+		if(height > destBuf->height) height = destBuf->height;
+
+		for(int j = 0; j < height; j++) {
+			for(int i = 0; i < width; i++) {
+				nn_scrchr_t src = nni_vram_getPixel(srcBuf, i + fromCol - 1, j + fromRow - 1);
+				nni_vram_setPixel(destBuf, i + x - 1, j + y - 1, src);
+			}
+		}
+		return;
+	}
 }
 
 void nn_loadGraphicsCardTable(nn_universe *universe) {
@@ -570,7 +946,17 @@ void nn_loadGraphicsCardTable(nn_universe *universe) {
     nn_defineMethod(gpuTable, "getViewport", (nn_componentMethod *)nni_gpu_getViewport, "getViewport(): integer, integer - Gets the current viewport resolution");
 
 	// VRAM buffers
-    nn_defineMethod(gpuTable, "freeAllBuffers", (nn_componentMethod *)nni_gpu_useless, "dummy for now");
+    nn_defineMethod(gpuTable, "totalMemory", (nn_componentMethod *)nni_gpu_totalMemory, "totalMemory(): integer - Returns the VRAM capacity of the card");
+    nn_defineMethod(gpuTable, "usedMemory", (nn_componentMethod *)nni_gpu_usedMemory, "usedMemory(): integer - Returns the amount of used VRAM");
+    nn_defineMethod(gpuTable, "freeMemory", (nn_componentMethod *)nni_gpu_freeMemory, "freeMemory(): integer - Returns the amount of unused VRAM");
+    nn_defineMethod(gpuTable, "buffers", (nn_componentMethod *)nni_gpu_buffers, "buffers(): integer[] - Returns the VRAM buffers allocated (not including the screen)");
+    nn_defineMethod(gpuTable, "setActiveBuffer", (nn_componentMethod *)nni_gpu_setActiveBuffer, "setActiveBuffer(buffer: integer): integer - Changes the current buffer");
+    nn_defineMethod(gpuTable, "getActiveBuffer", (nn_componentMethod *)nni_gpu_getActiveBuffer, "getActiveBuffer(): integer - Returns the current buffer");
+    nn_defineMethod(gpuTable, "allocateBuffer", (nn_componentMethod *)nni_gpu_allocateBuffer, "allocateBuffer([width: integer, height: integer]): integer - Allocates a new VRAM buffer. Default size depends on GPU.");
+    nn_defineMethod(gpuTable, "freeBuffer", (nn_componentMethod *)nni_gpu_freeBuffer, "freeBuffer([buffer: integer]): boolean - Frees a buffer. By default, the current buffer. If the current buffer is freed, it will switch back to the screen.");
+    nn_defineMethod(gpuTable, "freeAllBuffers", (nn_componentMethod *)nni_gpu_freeAllBuffers, "freeAllBuffers() - Frees every VRAM buffer (if any). Also switches back to the screen.");
+    nn_defineMethod(gpuTable, "getBufferSize", (nn_componentMethod *)nni_gpu_getBufferSize, "getBufferSize(buffer: integer): integer, integer - Returns the size of the specified buffer.");
+    nn_defineMethod(gpuTable, "bitblt", (nn_componentMethod *)nni_gpu_bitblt, "dummy func");
 }
 
 nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control) {

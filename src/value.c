@@ -205,6 +205,23 @@ const char *nn_toString(nn_value val, nn_size_t *len) {
     return c;
 }
 
+nn_intptr_t nn_toIntOr(nn_value val, nn_intptr_t defaultVal) {
+    if(val.tag == NN_VALUE_INT) return val.integer;
+    if(val.tag == NN_VALUE_NUMBER) return val.number;
+    return defaultVal;
+}
+
+double nn_toNumberOr(nn_value val, double defaultVal) {
+    if(val.tag == NN_VALUE_INT) return val.integer;
+    if(val.tag == NN_VALUE_NUMBER) return val.number;
+    return defaultVal;
+}
+
+nn_bool_t nn_toBooleanOr(nn_value val, nn_bool_t defaultVal) {
+    if(val.tag == NN_VALUE_BOOL) return val.boolean;
+    return defaultVal;
+}
+
 nn_size_t nn_measurePacketSize(nn_value *vals, nn_size_t len) {
     nn_size_t size = 0;
     for(nn_size_t i = 0; i < len; i++) {

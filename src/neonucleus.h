@@ -592,6 +592,10 @@ nn_bool_t nn_toBoolean(nn_value val);
 const char *nn_toCString(nn_value val);
 const char *nn_toString(nn_value val, nn_size_t *len);
 
+nn_intptr_t nn_toIntOr(nn_value val, nn_intptr_t defaultVal);
+double nn_toNumberOr(nn_value val, double defaultVal);
+nn_bool_t nn_toBooleanOr(nn_value val, nn_bool_t defaultVal);
+
 /*
  * Computes the "packet size" of the values, using the same algorithm as OC.
  * This is used by pushSignal to check the size
@@ -884,12 +888,13 @@ typedef struct nn_gpuControl {
     // VRAM Buffers
     int totalVRAM;
 	int maximumBufferCount;
+	int defaultBufferWidth;
+	int defaultBufferHeight;
 
     // Calls per tick, only applicable to screens
     double screenCopyPerTick;
     double screenFillPerTick;
     double screenSetsPerTick;
-    double screenColorChangesPerTick;
     double bitbltPerTick; // for bitblit
 
     // Heat

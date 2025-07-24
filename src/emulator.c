@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -11,8 +12,6 @@
 #ifdef NN_BAREMETAL
 
 #ifdef NN_POSIX
-
-#include <time.h>
 
 static double nni_realTime() {
     struct timespec time;
@@ -621,7 +620,7 @@ int main() {
     // 1MB of RAM, 16 components max
     nn_computer *computer = nn_newComputer(universe, "testMachine", arch, NULL, 1*1024*1024, 16);
     nn_setEnergyInfo(computer, 5000, 5000);
-    //nn_setCallBudget(computer, 18000);
+    nn_setCallBudget(computer, 1*1024*1024);
     nn_addSupportedArchitecture(computer, arch);
 
     nn_eepromTable genericEEPROMTable = {
@@ -645,7 +644,7 @@ int main() {
 
     nn_addEEPROM(computer, NULL, 0, genericEEPROM);
 
-    nn_address fsFolder = "OpenOS";
+    nn_address fsFolder = "Halyde";
     nn_filesystemTable genericFSTable = {
         .userdata = fsFolder,
         .deinit = NULL,
@@ -716,7 +715,7 @@ int main() {
     nn_drive *genericDrive = nn_volatileDrive(&ctx, vdriveOpts, vdriveCtrl);
     nn_addDrive(computer, NULL, 4, genericDrive);
 
-    int maxWidth = 160, maxHeight = 48;
+    int maxWidth = 80, maxHeight = 32;
 
     nn_screen *s = nn_newScreen(&ctx, maxWidth, maxHeight, 24, 16, 256);
     nn_setDepth(s, 4); // looks cool
@@ -729,11 +728,12 @@ int main() {
     nn_gpuControl gpuCtrl = {
         .totalVRAM = 16*1024,
 		.maximumBufferCount = 64, // probably too many
+		.defaultBufferWidth = maxWidth,
+		.defaultBufferHeight = maxHeight,
 
         .screenCopyPerTick = 8,
         .screenFillPerTick = 16,
         .screenSetsPerTick = 32,
-        .screenColorChangesPerTick = 64,
 
         .heatPerPixelChange = 0.00005,
         .heatPerPixelReset = 0.00001,
@@ -782,12 +782,15 @@ int main() {
     double idleTime = 0;
     int tps = 20; // mc TPS
     double interval = 1.0/tps;
+	double totalTime = 0;
 
     while(true) {
         if(WindowShouldClose()) break;
         nn_setEnergyInfo(computer, 5000, 5000);
         
         double dt = GetFrameTime();
+
+		totalTime += dt;
         
         double heat = nn_getTemperature(computer);
         double roomHeat = nn_getRoomTemperature(computer);
@@ -797,6 +800,7 @@ int main() {
         // remove some heat per second
         nn_removeHeat(computer, dt * (rand() % 3) * tx * (heat - roomHeat));
         if(nn_isOverheating(computer)) {
+			TraceLog(LOG_WARNING, "%3.2lf OVERHEATING", totalTime);
             goto render;
         }
             
@@ -927,7 +931,7 @@ render:
                 DrawTextCodepoint(unscii, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight - 5, fgColor);
             }
         }
-        
+
         EndDrawing();
     }
 

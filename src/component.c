@@ -123,13 +123,13 @@ nn_bool_t nn_invokeComponentMethod(nn_component *component, const char *name) {
     for(nn_size_t i = 0; i < table->methodCount; i++) {
         nn_method_t method = table->methods[i];
         if(nn_strcmp(method.name, name) == 0) {
-            nn_callCost(component->computer, NN_CALL_COST);
-            if(!method.direct) {
-                nn_triggerIndirect(component->computer);
-            }
-            if(!nni_checkMethodEnabled(method, component->statePtr)) {
-                return false; // pretend it's gone
-            }
+			nn_callCost(component->computer, NN_CALL_COST);
+			if(!method.direct) {
+				nn_triggerIndirect(component->computer);
+			}
+			if(!nni_checkMethodEnabled(method, component->statePtr)) {
+				return false; // pretend it's gone
+			}
             method.method(component->statePtr, method.userdata, component, component->computer);
             return true;
         }

@@ -43,7 +43,7 @@
 
 # Internal changes
 
-- rework some interfaces to account for possibility of errors
+- make sure OOMs are recoverable
+- rework some interfaces to use pre-allocated or stack-allocated memory more
 - use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging
 - setup an extensive testing system to find bugs easier
-- check if ports are open in `nn_pushNetworkMessage`
