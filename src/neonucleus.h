@@ -1047,7 +1047,31 @@ nn_bool_t nn_destroyDiskDrive(nn_diskDrive *diskDrive);
 
 nn_component *nn_addDiskDrive(nn_computer *computer, nn_address address, int slot, nn_diskDrive *diskDrive);
 
-#ifdef __cplusplus
+typedef struct nn_hologram nn_hologram;
+
+nn_hologram *nn_newHologram(nn_Context *context, int pallette_len, int width_x, int width_z, int height, int depth);
+nn_guard *nn_getHologramLock(nn_hologram *hologram);
+void nn_retainHologram(nn_hologram *hologram);
+nn_bool_t nn_destroyHologram(nn_hologram *hologram);
+
+nn_component *nn_addHologram(nn_computer *computer, nn_address address, int slot, nn_hologram *hologram);
+
+int nn_XYZtoIndex(int x, int y, int z);
+
+void nn_hologram_clear(nn_hologram *hologram);
+int nn_hologram_get(nn_hologram *hologram, int x, int y, int z);
+void nn_hologram_set(nn_hologram *hologram, int x, int y, int z, int value);
+void nn_hologram_fill(nn_hologram *hologram, int x, int z, int minY, int maxY, int value);
+void nn_hologram_copy(nn_hologram *hologram, int x, int z, int sx, int sz, int tx, int tz);
+float nn_hologram_getScale(nn_hologram *hologram);
+void nn_hologram_setScale(nn_hologram *hologram, float value);
+void nn_hologram_getTranslation(nn_hologram *hologram, int *x, int *y, int *z);
+void nn_hologram_setTranslation(nn_hologram *hologram, int x, int y, int z);
+int nn_hologram_maxDepth(nn_hologram *hologram);
+int nn_hologram_getPaletteColor(nn_hologram *hologram, int index);
+int nn_hologram_setPaletteColor(nn_hologram *hologram, int index, int value);
+
+#ifdef __cplusplus // c++ sucks
 }
 #endif
 
