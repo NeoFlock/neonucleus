@@ -24,6 +24,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/lock.c",
             "src/utils.c",
             "src/value.c",
+            "src/resource.c",
             "src/component.c",
             "src/computer.c",
             "src/universe.c",
@@ -40,6 +41,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/components/keyboard.c",
             "src/components/modem.c",
             "src/components/loopbackModem.c",
+            "src/components/diskDrive.c",
         },
         .flags = &.{
             if(opts.baremetal) "-DNN_BAREMETAL" else "",
@@ -178,7 +180,7 @@ pub fn build(b: *std.Build) !void {
             emulator.linkLibrary(raylib.artifact("raylib"));
         }
 
-        const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua52;
+        const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua53;
         emulator.addCSourceFiles(.{
             .files = &.{
                 "src/testLuaArch.c",

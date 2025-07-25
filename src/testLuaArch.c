@@ -160,6 +160,7 @@ static void testLuaArch_pushValue(lua_State *L, nn_value val) {
         }
         return;
     }
+	luaL_error(L, "invalid return type: %d", t);
 }
 
 static int testLuaArch_computer_clearError(lua_State *L) {

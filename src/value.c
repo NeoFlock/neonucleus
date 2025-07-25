@@ -82,6 +82,13 @@ nn_value nn_values_table(nn_Alloc *alloc, nn_size_t pairCount) {
     return (nn_value) {.tag = NN_VALUE_TABLE, .table = table};
 }
 
+nn_value nn_values_resource(nn_size_t id) {
+	return (nn_value) {
+		.tag = NN_VALUE_RESOURCE,
+		.resourceID = id,
+	};
+}
+
 nn_size_t nn_values_getType(nn_value val) {
     return val.tag;
 }

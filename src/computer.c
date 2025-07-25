@@ -2,6 +2,7 @@
 #include "component.h"
 #include "universe.h"
 #include "neonucleus.h"
+#include "resource.h"
 
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, nn_size_t memoryLimit, nn_size_t componentLimit) {
     nn_Alloc *alloc = &universe->ctx.allocator;
@@ -57,6 +58,11 @@ nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_archit
         nn_dealloc(alloc, c, sizeof(nn_computer));
         return NULL;
     }
+
+	c->rid = NN_NULL_RESOURCE;
+	for(nn_size_t i = 0; i < NN_MAX_CONCURRENT_RESOURCES; i++) {
+		c->resources[i].id = NN_NULL_RESOURCE;
+	}
 
     return c;
 }
@@ -135,6 +141,11 @@ void nn_deleteComputer(nn_computer *computer) {
     for(nn_size_t i = 0; i < computer->userCount; i++) {
         nn_deallocStr(a, computer->users[i]);
     }
+	for(nn_size_t i = 0; i < NN_MAX_CONCURRENT_RESOURCES; i++) {
+		if(computer->resources[i].id != NN_NULL_RESOURCE) {
+			nn_resource_release(computer, computer->resources[i].id);
+		}
+	}
     computer->arch->teardown(computer, computer->archState, computer->arch->userdata);
     nn_deleteGuard(&computer->universe->ctx, computer->lock);
     nn_deallocStr(a, computer->address);
@@ -524,6 +535,10 @@ nn_value nn_return_table(nn_computer *computer, nn_size_t len) {
     return val;
 }
 
+void nn_return_resource(nn_computer *computer, nn_size_t userdata) {
+	nn_return(computer, nn_values_resource(userdata));
+}
+
 nn_bool_t nn_wakeupMatches(nn_value *values, nn_size_t valueLen, const char *wakeUp, nn_bool_t fuzzy) {
     if(valueLen == 0) return false;
     nn_value header = values[0];
@@ -550,4 +565,84 @@ const char *nn_pushNetworkMessage(nn_computer *computer, nn_address receiver, nn
     }
 
     return nn_pushSignal(computer, buffer, valueLen + 5);
+}
+
+static nn_resource_t *nn_resource_find(nn_computer *computer, nn_size_t id) {
+	for(nn_size_t i = 0; i < NN_MAX_CONCURRENT_RESOURCES; i++) {
+		if(computer->resources[i].id == id) {
+			return computer->resources + i;
+		}
+	}
+	return NULL;
+}
+
+nn_size_t nn_resource_allocate(nn_computer *computer, void *userdata, nn_resourceTable_t *table) {
+	nn_size_t i = 0;
+	for(nn_size_t j = 0; j < NN_MAX_CONCURRENT_RESOURCES; j++) {
+		if(computer->resources[j].id == NN_NULL_RESOURCE) {
+			i = j;
+			goto slotFound;
+		}
+	}
+	return NN_NULL_RESOURCE;
+slotFound:
+	computer->rid++;
+	nn_size_t rid = computer->rid;
+	computer->resources[i] = (nn_resource_t) {
+		.id = rid,
+		.ptr = userdata,
+		.table = table,
+	};
+	return rid;
+}
+
+void nn_resource_release(nn_computer *computer, nn_size_t id) {
+	nn_resource_t *res = nn_resource_find(computer, id);
+	if(res == NULL) return;
+	res->id = NN_NULL_RESOURCE;
+	if(res->table->dtor != NULL) {
+		res->table->dtor(res->ptr);	
+	}
+}
+
+nn_resourceTable_t *nn_resource_fetchTable(nn_computer *computer, nn_size_t resourceID) {
+	nn_resource_t *res = nn_resource_find(computer, resourceID);
+	if(res == NULL) return NULL;
+	return res->table;
+}
+
+nn_bool_t nn_resource_invoke(nn_computer *computer, nn_size_t resourceID, const char *method) {
+	nn_resource_t *res = nn_resource_find(computer, resourceID);
+	if(res == NULL) return false;
+	nn_resourceTable_t *t = res->table;
+	for(nn_size_t i = 0; i < t->methodCount; i++) {
+		nn_resourceMethod_t m = t->methods[i];
+		if(nn_strcmp(m.name, method) != 0) continue;
+		if(m.condition != NULL) {
+			if(!m.condition(res->ptr, m.userdata)) continue;
+		}
+		m.callback(res->ptr, m.userdata, computer);
+		return true;
+	}
+	return false;
+}
+
+// returns the name, and NULL for out of bounds
+const char *nn_resource_nextMethodInfo(nn_computer *computer, nn_size_t id, const char **doc, nn_size_t *idx) {
+	nn_resource_t *res = nn_resource_find(computer, id);
+	if(res == NULL) return false;
+	nn_resourceTable_t *t = res->table;
+	for(nn_size_t i = *idx; i < t->methodCount; i++) {
+		nn_resourceMethod_t method = t->methods[i];
+		if(method.condition != NULL) {
+			if(!method.condition(res->ptr, method.userdata)) {
+				continue;
+			}
+		}
+
+		*idx = i + 1;
+		*doc = method.doc;
+		return method.name;
+	}
+	return NULL;
 }

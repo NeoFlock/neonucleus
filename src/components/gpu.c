@@ -220,6 +220,7 @@ nni_gpu *nni_newGPU(nn_Alloc *alloc, nn_gpuControl *ctrl) {
 	for(int i = 0; i < ctrl->maximumBufferCount; i++) {
 		gpu->buffers[i] = NULL;
 	}
+	gpu->activeBuffer = 0;
 	gpu->usedVRAM = 0;
     return gpu;
 }
@@ -320,7 +321,6 @@ void nni_gpu_set(nni_gpu *gpu, void *_, nn_component *component, nn_computer *co
     }
 
 	if(gpu->activeBuffer != 0) {
-		nni_buffer *buffer = gpu->buffers[gpu->activeBuffer - 1];
 		nni_vram_set(gpu, x, y, s, isVertical);
 		return;
 	}

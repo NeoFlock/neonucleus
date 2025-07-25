@@ -119,6 +119,8 @@ extern "C" {
 #define NN_MAX_CHANNEL_SIZE 256
 #define NN_TUNNEL_PORT 0
 #define NN_PORT_CLOSEALL 0
+#define NN_MAX_CONCURRENT_RESOURCES 64
+#define NN_NULL_RESOURCE 0
 
 #define NN_OVERHEAT_MIN 100
 #define NN_CALL_HEAT 0.05
@@ -243,6 +245,7 @@ void nn_error_clear(nn_errorbuf_t buf);
 #define NN_VALUE_ARRAY 5
 #define NN_VALUE_TABLE 6
 #define NN_VALUE_NIL 7
+#define NN_VALUE_RESOURCE 8
 
 typedef struct nn_string {
     char *data;
@@ -275,6 +278,7 @@ typedef struct nn_value {
         nn_string *string;
         nn_array *array;
         nn_table *table;
+		nn_size_t resourceID;
     };
 } nn_value;
 
@@ -542,6 +546,27 @@ const char *nn_getTableMethod(nn_componentTable *table, nn_size_t idx, nn_bool_t
 const char *nn_methodDoc(nn_componentTable *table, const char *methodName);
 nn_bool_t nn_isMethodEnabled(nn_component *component, const char *methodName);
 
+// Resource stuff
+
+typedef struct nn_resourceTable_t nn_resourceTable_t;
+typedef struct nn_resourceMethod_t nn_resourceMethod_t;
+
+typedef void nn_resourceDestructor_t(void *userdata);
+typedef void nn_resourceMethodCallback_t(void *userdata, void *methodUserdata, nn_computer *computer);
+typedef nn_bool_t nn_resourceMethodCondition_t(void *userdata, void *methodUserdata);
+
+nn_resourceTable_t *nn_resource_newTable(nn_Context *ctx, nn_resourceDestructor_t *dtor);
+nn_resourceMethod_t *nn_resource_addMethod(nn_resourceTable_t *table, const char *methodName, nn_resourceMethodCallback_t *method, const char *doc);
+void nn_resource_setUserdata(nn_resourceMethod_t *method, void *methodUserdata);
+void nn_resource_setCondition(nn_resourceMethod_t *method, nn_resourceMethodCondition_t *methodCondition);
+nn_bool_t nn_resource_invoke(nn_computer *computer, nn_size_t resourceID, const char *method);
+// returns the name, and NULL for out of bounds
+const char *nn_resource_nextMethodInfo(nn_computer *computer, nn_size_t id, const char **doc, nn_size_t *idx);
+
+nn_resourceTable_t *nn_resource_fetchTable(nn_computer *computer, nn_size_t resourceID);
+nn_size_t nn_resource_allocate(nn_computer *computer, void *userdata, nn_resourceTable_t *table);
+void nn_resource_release(nn_computer *computer, nn_size_t id);
+
 // Component calling
 
 /* Returns false if the method does not exist */
@@ -565,6 +590,7 @@ nn_value nn_values_cstring(const char *string);
 nn_value nn_values_string(nn_Alloc *alloc, const char *string, nn_size_t len);
 nn_value nn_values_array(nn_Alloc *alloc, nn_size_t len);
 nn_value nn_values_table(nn_Alloc *alloc, nn_size_t pairCount);
+nn_value nn_values_resource(nn_size_t id);
 
 void nn_return_nil(nn_computer *computer);
 void nn_return_integer(nn_computer *computer, nn_intptr_t integer);
@@ -574,6 +600,7 @@ void nn_return_cstring(nn_computer *computer, const char *cstr);
 void nn_return_string(nn_computer *computer, const char *str, nn_size_t len);
 nn_value nn_return_array(nn_computer *computer, nn_size_t len);
 nn_value nn_return_table(nn_computer *computer, nn_size_t len);
+void nn_return_resource(nn_computer *computer, nn_size_t userdata);
 
 nn_size_t nn_values_getType(nn_value val);
 nn_value nn_values_retain(nn_value val);
@@ -616,6 +643,7 @@ void nn_loadGraphicsCardTable(nn_universe *universe);
 void nn_loadKeyboardTable(nn_universe *universe);
 void nn_loadModemTable(nn_universe *universe);
 void nn_loadTunnelTable(nn_universe *universe);
+void nn_loadDiskDriveTable(nn_universe *universe);
 
 nn_component *nn_mountKeyboard(nn_computer *computer, nn_address address, int slot);
 
@@ -998,7 +1026,26 @@ nn_guard *nn_getTunnelLock(nn_tunnel *tunnel);
 void nn_retainTunnel(nn_tunnel *tunnel);
 nn_bool_t nn_destroyTunnel(nn_tunnel *tunnel);
 
-nn_component *nn_addTunnel(nn_computer *computer, nn_address address, int slot, nn_tunnel *modem);
+nn_component *nn_addTunnel(nn_computer *computer, nn_address address, int slot, nn_tunnel *tunnel);
+
+typedef struct nn_diskDriveTable {
+	void *userdata;
+	void (*deinit)(void *userdata);
+
+	// velocity is 0 or less for "default"
+	void (*eject)(void *userdata, double velocity, nn_errorbuf_t err);
+	nn_bool_t (*isEmpty)(void *userdata);
+	nn_address (*media)(void *userdata, nn_Alloc *alloc, nn_errorbuf_t err);
+} nn_diskDriveTable;
+
+typedef struct nn_diskDrive nn_diskDrive;
+
+nn_diskDrive *nn_newDiskDrive(nn_Context *context, nn_diskDriveTable table);
+nn_guard *nn_getDiskDriveLock(nn_diskDrive *diskDrive);
+void nn_retainDiskDrive(nn_diskDrive *diskDrive);
+nn_bool_t nn_destroyDiskDrive(nn_diskDrive *diskDrive);
+
+nn_component *nn_addDiskDrive(nn_computer *computer, nn_address address, int slot, nn_diskDrive *diskDrive);
 
 #ifdef __cplusplus
 }
