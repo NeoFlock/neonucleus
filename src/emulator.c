@@ -175,8 +175,8 @@ nn_filesystemControl ne_fs_ctrl = {
     .removeFilesPerTick = 16,
     .createFilesPerTick = 16,
     
-    .readHeatPerByte = 0.0000015,
-    .writeHeatPerByte = 0.000015,
+    .readHeatPerByte = 0.00000015,
+    .writeHeatPerByte = 0.0000015,
     .removeHeat = 0.035,
     .createHeat = 0.045,
 
@@ -233,6 +233,7 @@ void *ne_fs_open(nn_address address, const char *path, const char *mode, nn_erro
     if(f == NULL) {
         nn_error_write(err, strerror(errno));
     }
+	setvbuf(f, NULL, _IONBF, BUFSIZ);
     return f;
 }
 
@@ -246,8 +247,13 @@ bool ne_fs_write(nn_address addr, FILE *f, const char *buf, size_t len, nn_error
 }
 
 size_t ne_fs_read(nn_address addr, FILE *f, char *buf, size_t required, nn_errorbuf_t err) {
-    if(feof(f)) return 0;
-    return fread(buf, sizeof(char), required, f);
+	nn_size_t len = 0;
+	while(true) {
+		if(feof(f)) break;
+		if(len >= required) break;
+		len += fread(buf + len, 1, required - len, f);
+	}
+	return len;
 }
 
 size_t ne_fs_seek(nn_address addr, FILE *f, const char *whence, int off, nn_errorbuf_t err) {
@@ -258,7 +264,9 @@ size_t ne_fs_seek(nn_address addr, FILE *f, const char *whence, int off, nn_erro
     if(strcmp(whence, "end") == 0) {
         w = SEEK_END;
     }
-    fseek(f, w, off);
+    if(fseek(f, off, w) != 0) {
+		nn_error_write(err, strerror(errno));
+	}
     return ftell(f);
 }
 
@@ -603,6 +611,13 @@ typedef struct ne_pressedKey {
     bool repeat;
 } ne_pressedKey;
 
+void ne_log(void *_, void *__, nn_component *component, nn_computer *computer) {
+	const char *s = nn_toCString(nn_getArgument(computer, 0));
+	if(s) {
+		printf("Sandbox: %s\n", s);
+	}
+}
+
 int main() {
     printf("Setting up universe\n");
     nn_Context ctx = nn_libcContext();
@@ -618,10 +633,16 @@ int main() {
     assert(arch != NULL && "Loading architecture failed");
 
     // 1MB of RAM, 16 components max
-    nn_computer *computer = nn_newComputer(universe, "testMachine", arch, NULL, 1*1024*1024, 16);
+    nn_computer *computer = nn_newComputer(universe, "testMachine", arch, NULL, 4*1024*1024, 16);
     nn_setEnergyInfo(computer, 5000, 5000);
     nn_setCallBudget(computer, 1*1024*1024);
     nn_addSupportedArchitecture(computer, arch);
+
+	// sandbox shit
+	nn_componentTable *sandboxTable = nn_newComponentTable(&alloc, "sandbox", NULL, NULL, NULL);
+	nn_defineMethod(sandboxTable, "log", ne_log, "log(msg: string) - Basic logging");
+
+	nn_newComponent(computer, NULL, -1, sandboxTable, NULL);
 
     nn_eepromTable genericEEPROMTable = {
         .userdata = "luaBios.lua",
@@ -746,28 +767,6 @@ int main() {
 
     nn_addGPU(computer, NULL, 3, &gpuCtrl);
 
-    nn_networkControl modemCtrl = {
-        .energyPerFullPacket = 5,
-        .heatPerFullPacket = 8,
-        .packetBytesPerTick = 16384,
-    };
-
-	nn_address networkAddr = "lan";
-
-    nn_debugLoopbackNetworkOpts opts = {
-        .isWireless = true,
-        .maxPacketSize = 8192,
-        .maxOpenPorts = 16,
-        .maxValues = 8,
-        .maxStrength = 400,
-		.computer = computer,
-		.address = networkAddr,
-    };
-
-    nn_modem *modem = nn_debugLoopbackModem(&ctx, opts, modemCtrl);
-
-    nn_addModem(computer, networkAddr, 12, modem);
-
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(800, 600, "emulator");
 
@@ -813,6 +812,16 @@ int main() {
             }
 
             if (keycode != 0) {
+				if(keycode == KEY_ENTER) {
+					unicode = '\r';
+				}
+				if(keycode == KEY_BACKSPACE) {
+					unicode = '\b';
+				}
+				if(keycode == KEY_TAB) {
+					unicode = '\t';
+				}
+
                 release_check_list[release_check_ptr].keycode = keycode;
                 release_check_list[release_check_ptr].charcode = unicode;
                 release_check_list[release_check_ptr].repeat = false;
