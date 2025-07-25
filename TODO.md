@@ -14,7 +14,6 @@
 - `data` component (with error correction codes and maybe synthesizing audio)
 - `redstone` component
 - `internet` component
-- `disk_drive` component
 - `computer.getDeviceInfo()`, and subsequently, component device information
 - `computer.beep(frequency?: number, duration?: number, volume?: number)`, frequency between 20 and 2000 Hz, duration up to 5 seconds, volume from 0 to 1.
 
