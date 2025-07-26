@@ -9,7 +9,7 @@ typedef struct nn_signal {
 } nn_signal;
 
 typedef struct nn_resource_t {
-	size_t id;
+	nn_size_t id;
 	void *ptr;
 	nn_resourceTable_t *table;
 } nn_resource_t;
