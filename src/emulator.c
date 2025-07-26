@@ -557,7 +557,10 @@ typedef struct ne_premappedPixel {
     int mappedFgRes;
     int mappedBgFor;
     int mappedBgRes;
+	nn_bool_t legacyColors;
 } ne_premappedPixel;
+
+bool ne_legacyColors = false;
 
 ne_premappedPixel ne_getPremap(ne_premappedPixel *pixels, nn_screen *screen, int x, int y) {
     int maxW, maxH;
@@ -570,6 +573,11 @@ ne_premappedPixel ne_getPremap(ne_premappedPixel *pixels, nn_screen *screen, int
     nn_scrchr_t pixel = nn_getPixel(screen, x, y);
     int fg = pixel.fg;
     int bg = pixel.bg;
+	
+	if(premapped.legacyColors != ne_legacyColors) {
+		premapped.legacyColors = ne_legacyColors;
+		premapped.mappedDepth = -1;
+	}
 
     if(premapped.mappedDepth != depth) {
         premapped.mappedDepth = depth;
@@ -578,14 +586,15 @@ ne_premappedPixel ne_getPremap(ne_premappedPixel *pixels, nn_screen *screen, int
     }
 
     bool miss = false;
+
     if(premapped.mappedFgFor != fg) {
         premapped.mappedFgFor = fg;
-        premapped.mappedFgRes = nn_mapDepth(fg, depth);
+        premapped.mappedFgRes = nn_mapDepth(fg, depth, ne_legacyColors);
         miss = true;
     }
     if(premapped.mappedBgFor != bg) {
         premapped.mappedBgFor = bg;
-        premapped.mappedBgRes = nn_mapDepth(bg, depth);
+        premapped.mappedBgRes = nn_mapDepth(bg, depth, ne_legacyColors);
         miss = true;
     }
     premapped.codepoint = pixel.codepoint;
@@ -914,6 +923,19 @@ int main(int argc, char **argv) {
         }
 
 render:
+		if(IsKeyPressed(KEY_F1)) {
+			nn_setDepth(s, 1);
+		}
+		if(IsKeyPressed(KEY_F2)) {
+			nn_setDepth(s, 4);
+		}
+		if(IsKeyPressed(KEY_F3)) {
+			nn_setDepth(s, 8);
+		}
+		if(IsKeyPressed(KEY_F4)) {
+			ne_legacyColors = !ne_legacyColors;
+		}
+
         BeginDrawing();
 
         ClearBackground(BLACK);

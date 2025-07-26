@@ -218,7 +218,7 @@ double nn_colorDistance(int colorA, int colorB) {
     delta.g = a.g - b.g;
     delta.b = a.b - b.b;
 
-    return delta.r*delta.r + delta.g*delta.g + delta.b*delta.b;
+    return 0.2126 * delta.r*delta.r + 0.7152 * delta.g*delta.g + 0.0722 * delta.b*delta.b;
 }
 
 int nn_mapColor(int color, int *palette, int paletteSize) {

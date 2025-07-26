@@ -894,9 +894,13 @@ const char *nn_depthName(int depth);
 double nn_colorDistance(int colorA, int colorB);
 int nn_mapColor(int color, int *palette, int paletteSize);
 
-int nn_mapDepth(int color, int depth);
+int nn_mapDepth(int color, int depth, nn_bool_t legacy);
 void nn_getStd4BitPalette(int color[16]);
 void nn_getStd8BitPalette(int color[256]);
+
+// Std4bit uses actual MC dye colors, except for white and black
+// Legacy uses OC's versions that were brightened
+void nn_getLegacy4BitPalette(int color[16]);
 
 void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel);
 nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y);

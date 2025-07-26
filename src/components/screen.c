@@ -360,6 +360,27 @@ void nn_getStd4BitPalette(int color[16]) {
     color[15] = nni_mcBlack; // black
 }
 
+void nn_getLegacy4BitPalette(int color[16]) {
+	// taken from https://github.com/MightyPirates/OpenComputers/blob/master-MC1.12/src/main/scala/li/cil/oc/util/PackedColor.scala
+	
+	color[0] = 0xFFFFFF;
+	color[1] = 0xFFCC33;
+	color[2] = 0xCC66CC;
+	color[3] = 0x6699FF;
+	color[4] = 0xFFFF33;
+	color[5] = 0x33CC33;
+	color[6] = 0xFF6699;
+	color[7] = 0x333333;
+	color[8] = 0xCCCCCC;
+	color[9] = 0x336699;
+	color[10] = 0x9933CC;
+	color[11] = 0x333399;
+	color[12] = 0x663300;
+	color[13] = 0x336600;
+	color[14] = 0xFF3333;
+	color[15] = 0x000000;
+}
+
 void nn_getStd8BitPalette(int color[256]) {
     // source: https://ocdoc.cil.li/component:gpu
     int reds[6] = {0x00, 0x33, 0x66, 0x99, 0xCC, 0xFF};
@@ -399,17 +420,28 @@ static nn_bool_t nni_4bit_did = false;
 static int nni_8bit_colors[256];
 static nn_bool_t nni_8bit_did = false;
 
-int nn_mapDepth(int color, int depth) {
+static int nni_4bitl_colors[16];
+static nn_bool_t nni_4bitl_did = false;
+
+int nn_mapDepth(int color, int depth, nn_bool_t legacy) {
     if(depth == 1) {
-        if(color == 0) return nni_mcBlack;
-        return nni_mcWhite;
+		if(color == 0) return nni_mcBlack;
+		return nni_mcWhite;
     }
     if(depth == 4) {
-        if(!nni_4bit_did) {
-            nni_4bit_did = true;
-            nn_getStd4BitPalette(nni_4bit_colors);
-        }
-        return nn_mapColor(color, nni_4bit_colors, 16);
+		if(legacy) {
+			if(!nni_4bitl_did) {
+				nni_4bitl_did = true;
+				nn_getLegacy4BitPalette(nni_4bitl_colors);
+			}
+			return nn_mapColor(color, nni_4bitl_colors, 16);
+		} else {
+			if(!nni_4bit_did) {
+				nni_4bit_did = true;
+				nn_getStd4BitPalette(nni_4bit_colors);
+			}
+			return nn_mapColor(color, nni_4bit_colors, 16);
+		}
     }
     if(depth == 8) {
         if(!nni_8bit_did) {
