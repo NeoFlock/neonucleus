@@ -338,8 +338,8 @@ nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, 
     return nn_newComponent(computer, address, slot, screenTable, screen);
 }
 
-static const int nni_mcBlack = 0x1D1D21;
-static const int nni_mcWhite = 0xFFF9FE;
+static const int nni_mcBlack = 0x000000;
+static const int nni_mcWhite = 0xFFFFFF;
 
 void nn_getStd4BitPalette(int color[16]) {
     color[0] = nni_mcWhite; // white

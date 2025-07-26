@@ -739,7 +739,7 @@ int main(int argc, char **argv) {
     int maxWidth = 80, maxHeight = 32;
 
     nn_screen *s = nn_newScreen(&ctx, maxWidth, maxHeight, 24, 16, 256);
-    nn_setDepth(s, 4); // looks cool
+    nn_setDepth(s, 8); // looks cool
     nn_addKeyboard(s, "shitty keyboard");
     nn_mountKeyboard(computer, "shitty keyboard", 2);
     nn_addScreen(computer, NULL, 2, s);
