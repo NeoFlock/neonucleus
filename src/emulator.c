@@ -618,7 +618,7 @@ void ne_log(void *_, void *__, nn_component *component, nn_computer *computer) {
 	}
 }
 
-int main() {
+int main(int argc, char **argv) {
     printf("Setting up universe\n");
     nn_Context ctx = nn_libcContext();
     nn_Alloc alloc = ctx.allocator;
@@ -665,7 +665,7 @@ int main() {
 
     nn_addEEPROM(computer, NULL, 0, genericEEPROM);
 
-    nn_address fsFolder = "OpenOS";
+    nn_address fsFolder = argc > 1 ? argv[1] : "OpenOS";
     nn_filesystemTable genericFSTable = {
         .userdata = fsFolder,
         .deinit = NULL,

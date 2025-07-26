@@ -1056,8 +1056,6 @@ nn_bool_t nn_destroyHologram(nn_hologram *hologram);
 
 nn_component *nn_addHologram(nn_computer *computer, nn_address address, int slot, nn_hologram *hologram);
 
-int nn_XYZtoIndex(int x, int y, int z);
-
 void nn_hologram_clear(nn_hologram *hologram);
 int nn_hologram_get(nn_hologram *hologram, int x, int y, int z);
 void nn_hologram_set(nn_hologram *hologram, int x, int y, int z, int value);
