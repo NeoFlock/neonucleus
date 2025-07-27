@@ -423,11 +423,44 @@ static nn_bool_t nni_8bit_did = false;
 static int nni_4bitl_colors[16];
 static nn_bool_t nni_4bitl_did = false;
 
+const char *nn_depthName(int depth) {
+    if(depth == 1) return "OneBit";
+    if(depth == 2) return "TwoBit";
+    if(depth == 3) return "ThreeBit";
+    if(depth == 4) return "FourBit";
+    if(depth == 8) return "EightBit";
+    if(depth == 16) return "SixteenBit";
+    if(depth == 24) return "TwentyFourBit";
+    return NULL;
+}
+
 int nn_mapDepth(int color, int depth, nn_bool_t legacy) {
     if(depth == 1) {
 		if(color == 0) return nni_mcBlack;
 		return nni_mcWhite;
     }
+	if(depth == 2) {
+		int palette[4] = {
+			0x000000,
+			0x444444,
+			0x999999,
+			0xFFFFFF,
+		};
+		return nn_mapColor(color, palette, 4);
+	}
+	if(depth == 3) {
+		int palette[8] = {
+			0x000000,
+			0xFF0000,
+			0x00FF00,
+			0xFFFF00,
+			0x0000FF,
+			0xFF00FF,
+			0x00FFFF,
+			0xFFFFFF,
+		};
+		return nn_mapColor(color, palette, 8);
+	}
     if(depth == 4) {
 		if(legacy) {
 			if(!nni_4bitl_did) {

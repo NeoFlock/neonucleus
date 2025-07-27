@@ -604,15 +604,6 @@ void nni_gpu_getDepth(nni_gpu *gpu, void *_, nn_component *component, nn_compute
     nn_return(computer, nn_values_integer(gpu->currentScreen->depth));
 }
 
-const char *nn_depthName(int depth) {
-    if(depth == 1) return "OneBit";
-    if(depth == 4) return "FourBit";
-    if(depth == 8) return "EightBit";
-    if(depth == 16) return "SixteenBit";
-    if(depth == 24) return "TwentyFourBit";
-    return NULL;
-}
-
 void nni_gpu_setDepth(nni_gpu *gpu, void *_, nn_component *component, nn_computer *computer) {
     if(gpu->currentScreen == NULL) return;
     int depth = nn_toInt(nn_getArgument(computer, 0));

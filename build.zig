@@ -41,6 +41,8 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/components/keyboard.c",
             "src/components/modem.c",
             "src/components/loopbackModem.c",
+            "src/components/tunnel.c",
+            "src/components/loopbackTunnel.c",
             "src/components/diskDrive.c",
         },
         .flags = &.{

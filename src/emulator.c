@@ -745,6 +745,25 @@ int main(int argc, char **argv) {
     nn_drive *genericDrive = nn_volatileDrive(&ctx, vdriveOpts, vdriveCtrl);
     nn_addDrive(computer, NULL, 4, genericDrive);
 
+	nn_networkControl netCtrl = {
+		.energyPerFullPacket = 0,
+		.heatPerFullPacket = 0,
+		.packetBytesPerTick = 16384,
+	};
+
+	nn_debugLoopbackNetworkOpts netOpts = {
+		.computer = computer,
+		.address = "loop",
+		.isWireless = false,
+		.maxValues = 8,
+		.maxOpenPorts = 64,
+		.maxPacketSize = 8192,
+		.maxStrength = 200,
+	};
+
+	nn_tunnel *t = nn_debugLoopbackTunnel(&ctx, netOpts, netCtrl);
+	nn_addTunnel(computer, NULL, -1, t);
+
     int maxWidth = 80, maxHeight = 32;
 
     nn_screen *s = nn_newScreen(&ctx, maxWidth, maxHeight, 24, 16, 256);
@@ -791,6 +810,8 @@ int main(int argc, char **argv) {
     int tps = 20; // mc TPS
     double interval = 1.0/tps;
 	double totalTime = 0;
+
+	SetTargetFPS(144);
 
     while(true) {
         if(WindowShouldClose()) break;
