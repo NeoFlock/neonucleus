@@ -44,3 +44,4 @@
 - rework some interfaces to use pre-allocated or stack-allocated memory more
 - use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging
 - setup an extensive testing system to find bugs easier
+- use compiler hints to let the optimizer make the code even faster
