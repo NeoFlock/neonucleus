@@ -52,6 +52,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             if(strict) "-Werror" else "",
             "-std=gnu23",
             "-Wno-keyword-macro", // cuz bools
+            "-fPIC",
         },
     });
 
@@ -60,6 +61,9 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         dataMod.addCSourceFiles(.{
             .files = &.{
                 "src/tinycthread.c",
+            },
+            .flags = &.{
+                "-fPIC",
             },
         });
     }
