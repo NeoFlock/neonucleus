@@ -704,7 +704,7 @@ size_t testLuaArch_getMemoryUsage(nn_computer *computer, testLuaArch *arch, void
     return arch->memoryUsed;
 }
 
-char *testLuaArch_serialize(nn_computer *computer, testLuaArch *arch, void *_, size_t *len) {
+char *testLuaArch_serialize(nn_computer *computer, nn_Alloc *alloc, testLuaArch *arch, void *_, size_t *len) {
     *len = 0;
     return NULL;
 }

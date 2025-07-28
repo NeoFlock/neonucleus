@@ -140,18 +140,6 @@ typedef struct nn_universe nn_universe;
 typedef struct nn_computer nn_computer;
 typedef struct nn_component nn_component;
 typedef struct nn_componentTable nn_componentTable;
-typedef struct nn_architecture {
-    void *userdata;
-    const char *archName;
-    void *(*setup)(nn_computer *computer, void *userdata);
-    void (*teardown)(nn_computer *computer, void *state, void *userdata);
-    nn_size_t (*getMemoryUsage)(nn_computer *computer, void *state, void *userdata);
-    void (*tick)(nn_computer *computer, void *state, void *userdata);
-    /* Pointer returned should be allocated with nn_malloc or nn_realloc, so it can be freed with nn_free */
-    char *(*serialize)(nn_computer *computer, void *state, void *userdata, nn_size_t *len);
-    void (*deserialize)(nn_computer *computer, const char *data, nn_size_t len, void *state, void *userdata);
-} nn_architecture;
-typedef char *nn_address;
 
 // A non-zero malloc is a null ptr, with a 0 oldSize, but a non-0 newSize.
 // A zero malloc is never called, the proc address itself is returned, which is ignored when freeing.
@@ -163,6 +151,19 @@ typedef struct nn_Alloc {
     void *userdata;
     nn_AllocProc *proc;
 } nn_Alloc;
+
+typedef struct nn_architecture {
+    void *userdata;
+    const char *archName;
+    void *(*setup)(nn_computer *computer, void *userdata);
+    void (*teardown)(nn_computer *computer, void *state, void *userdata);
+    nn_size_t (*getMemoryUsage)(nn_computer *computer, void *state, void *userdata);
+    void (*tick)(nn_computer *computer, void *state, void *userdata);
+    /* Pointer returned should be allocated with nn_malloc or nn_realloc, so it can be freed with nn_free */
+    char *(*serialize)(nn_computer *computer, nn_Alloc *alloc, void *state, void *userdata, nn_size_t *len);
+    void (*deserialize)(nn_computer *computer, const char *data, nn_size_t len, void *state, void *userdata);
+} nn_architecture;
+typedef char *nn_address;
 
 #define NN_LOCK_DEFAULT 0
 #define NN_LOCK_IMMEDIATE 1
@@ -436,12 +437,12 @@ double nn_getCallCost(nn_computer *computer);
 nn_bool_t nn_isOverworked(nn_computer *computer);
 void nn_triggerIndirect(nn_computer *computer);
 
-/* The memory returned can be freed with nn_free() */
-char *nn_serializeProgram(nn_computer *computer, nn_size_t *len);
+/* The memory returned can be freed with nn_dealloc() */
+char *nn_serializeProgram(nn_computer *computer, nn_Alloc *alloc, nn_size_t *len);
 void nn_deserializeProgram(nn_computer *computer, const char *memory, nn_size_t len);
 
-void nn_lockComputer(nn_computer *computer);
-void nn_unlockComputer(nn_computer *computer);
+nn_Context *nn_getComputerContext(nn_computer *computer);
+nn_guard *nn_getComputerLock(nn_computer *computer);
 
 /// This means the computer has not yet started.
 #define NN_STATE_SETUP 0

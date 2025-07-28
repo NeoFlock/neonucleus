@@ -473,20 +473,20 @@ nn_size_t nn_getReturnCount(nn_computer *computer) {
     return computer->retc;
 }
 
-char *nn_serializeProgram(nn_computer *computer, nn_size_t *len) {
-    return computer->arch->serialize(computer, computer->archState, computer->arch->userdata, len);
+char *nn_serializeProgram(nn_computer *computer, nn_Alloc *alloc, nn_size_t *len) {
+    return computer->arch->serialize(computer, alloc, computer->archState, computer->arch->userdata, len);
 }
 
 void nn_deserializeProgram(nn_computer *computer, const char *memory, nn_size_t len) {
     computer->arch->deserialize(computer, memory, len, computer->archState, computer->arch->userdata);
 }
 
-void nn_lockComputer(nn_computer *computer) {
-    nn_lock(&computer->universe->ctx, computer->lock);
+nn_Context *nn_getComputerContext(nn_computer *computer) {
+	return &computer->universe->ctx;
 }
 
-void nn_unlockComputer(nn_computer *computer) {
-    nn_unlock(&computer->universe->ctx, computer->lock);
+nn_guard *nn_getComputerLock(nn_computer *computer) {
+	return computer->lock;
 }
 
 void nn_return_nil(nn_computer *computer) {
