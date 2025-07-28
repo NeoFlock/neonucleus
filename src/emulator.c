@@ -811,8 +811,6 @@ int main(int argc, char **argv) {
     double interval = 1.0/tps;
 	double totalTime = 0;
 
-	SetTargetFPS(144);
-
     while(true) {
         if(WindowShouldClose()) break;
         nn_setEnergyInfo(computer, 5000, 5000);

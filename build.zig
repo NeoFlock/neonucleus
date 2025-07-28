@@ -52,7 +52,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             if(strict) "-Werror" else "",
             "-std=gnu23",
             "-Wno-keyword-macro", // cuz bools
-            "-fPIC",
+            "-fPIE",
         },
     });
 
@@ -63,7 +63,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
                 "src/tinycthread.c",
             },
             .flags = &.{
-                "-fPIC",
+                "-fPIE",
             },
         });
     }
@@ -153,12 +153,14 @@ pub fn build(b: *std.Build) !void {
         .name = "neonucleus",
         .root_module = engineMod,
         .pic = true,
+        .code_model = .default,
     });
     
     const engineShared = b.addSharedLibrary(.{
         .name = if(os == .windows) "neonucleusdll" else "neonucleus",
         .root_module = engineMod,
         .pic = true,
+        .code_model = .default,
     });
 
     const engineStep = b.step("engine", "Builds the engine as a static library");
