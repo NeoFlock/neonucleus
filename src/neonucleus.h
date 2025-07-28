@@ -1017,10 +1017,10 @@ typedef struct nn_tunnelTable {
     nn_size_t maxValues;
     nn_size_t maxPacketSize;
     
-    nn_bool_t (*send)(void *userdata, nn_value *values, nn_size_t valueCount);
-    void (*getChannel)(void *userdata, char *buf, nn_size_t *buflen);
-    void (*getWakeMessage)(void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy);
+    void (*send)(void *userdata, nn_value *values, nn_size_t valueCount, nn_errorbuf_t err);
+    nn_size_t (*getChannel)(void *userdata, char *buf, nn_errorbuf_t err);
+    nn_size_t (*getWakeMessage)(void *userdata, char *buf, nn_errorbuf_t err);
+    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy, nn_errorbuf_t err);
 } nn_tunnelTable;
 
 typedef struct nn_tunnel nn_tunnel;
