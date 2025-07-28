@@ -148,11 +148,13 @@ pub fn build(b: *std.Build) !void {
     const engineStatic = b.addStaticLibrary(.{
         .name = "neonucleus",
         .root_module = engineMod,
+        .pic = true,
     });
     
     const engineShared = b.addSharedLibrary(.{
         .name = if(os == .windows) "neonucleusdll" else "neonucleus",
         .root_module = engineMod,
+        .pic = true,
     });
 
     const engineStep = b.step("engine", "Builds the engine as a static library");
