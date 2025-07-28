@@ -20,43 +20,43 @@ static void nni_veeprom_deinit(nn_veeprom *veeprom) {
     nn_dealloc(&a, veeprom, sizeof(nn_veeprom));
 }
 
-static void nni_veeprom_getLabel(nn_veeprom *veeprom, char *buf, nn_size_t *buflen) {
+static void nni_veeprom_getLabel(nn_veeprom *veeprom, char *buf, nn_size_t *buflen, nn_errorbuf_t err) {
     nn_memcpy(buf, veeprom->label, veeprom->labelLen);
     *buflen = veeprom->labelLen;
 }
 
-static nn_size_t nni_veeprom_setLabel(nn_veeprom *veeprom, const char *buf, nn_size_t buflen) {
+static nn_size_t nni_veeprom_setLabel(nn_veeprom *veeprom, const char *buf, nn_size_t buflen, nn_errorbuf_t err) {
     if(buflen > NN_LABEL_SIZE) buflen = NN_LABEL_SIZE;
     nn_memcpy(veeprom->label, buf, buflen);
     veeprom->labelLen = buflen;
     return buflen;
 }
 
-static nn_size_t nni_veeprom_get(nn_veeprom *veeprom, char *buf) {
+static nn_size_t nni_veeprom_get(nn_veeprom *veeprom, char *buf, nn_errorbuf_t err) {
     nn_memcpy(buf, veeprom->code, veeprom->codeLen);
     return veeprom->codeLen;
 }
 
-static void nni_veeprom_set(nn_veeprom *veeprom, const char *buf, nn_size_t len) {
+static void nni_veeprom_set(nn_veeprom *veeprom, const char *buf, nn_size_t len, nn_errorbuf_t err) {
     nn_memcpy(veeprom->code, buf, len);
     veeprom->codeLen = len;
 }
 
-static nn_size_t nni_veeprom_getData(nn_veeprom *veeprom, char *buf) {
+static nn_size_t nni_veeprom_getData(nn_veeprom *veeprom, char *buf, nn_errorbuf_t err) {
     nn_memcpy(buf, veeprom->data, veeprom->dataLen);
     return veeprom->dataLen;
 }
 
-static void nni_veeprom_setData(nn_veeprom *veeprom, const char *buf, nn_size_t len) {
+static void nni_veeprom_setData(nn_veeprom *veeprom, const char *buf, nn_size_t len, nn_errorbuf_t err) {
     nn_memcpy(veeprom->data, buf, len);
     veeprom->dataLen = len;
 }
 
-static nn_bool_t nni_veeprom_isReadonly(nn_veeprom *eeprom) {
+static nn_bool_t nni_veeprom_isReadonly(nn_veeprom *eeprom, nn_errorbuf_t err) {
     return eeprom->isReadOnly;
 }
 
-static void nni_veeprom_makeReadonly(nn_veeprom *eeprom) {
+static void nni_veeprom_makeReadonly(nn_veeprom *eeprom, nn_errorbuf_t err) {
     eeprom->isReadOnly = true;
 }
 
