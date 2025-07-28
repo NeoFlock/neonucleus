@@ -10,7 +10,6 @@
 
 - `hologram` component
 - `computer` component
-- `tunnel` component
 - `data` component (with error correction codes and maybe synthesizing audio)
 - `redstone` component
 - `internet` component
