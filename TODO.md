@@ -44,3 +44,5 @@
 - use dynamic arrays for signals (and maybe components), but still keep the maximums to prevent memory hogging
 - setup an extensive testing system to find bugs easier
 - use compiler hints to let the optimizer make the code even faster
+- (maybe) rework a bunch of internal structures to use tagged unions over vtables (such as components). This may make certain APIs unnecessary or slightly
+different. This can improve performance at the cost of making the codebase more complex
