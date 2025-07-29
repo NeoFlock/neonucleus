@@ -141,6 +141,8 @@ typedef struct nn_computer nn_computer;
 typedef struct nn_component nn_component;
 typedef struct nn_componentTable nn_componentTable;
 
+typedef unsigned long long nn_timestamp_t;
+
 // A non-zero malloc is a null ptr, with a 0 oldSize, but a non-0 newSize.
 // A zero malloc is never called, the proc address itself is returned, which is ignored when freeing.
 // A free is a non-null ptr, with a non-zero oldSize, but a newSize of 0.
@@ -778,7 +780,7 @@ typedef struct nn_filesystemTable {
     // general operations
     nn_size_t (*size)(void *userdata, const char *path, nn_errorbuf_t err);
     nn_size_t (*remove)(void *userdata, const char *path, nn_errorbuf_t err);
-    nn_size_t (*lastModified)(void *userdata, const char *path, nn_errorbuf_t err);
+    nn_timestamp_t (*lastModified)(void *userdata, const char *path, nn_errorbuf_t err);
     nn_size_t (*rename)(void *userdata, const char *from, const char *to, nn_errorbuf_t err);
     nn_bool_t (*exists)(void *userdata, const char *path, nn_errorbuf_t err);
 
@@ -813,7 +815,7 @@ typedef struct nn_vfilesystemImageNode {
 
 typedef struct nn_vfilesystemOptions {
     // used to compute lastModified
-    nn_size_t creationTime;
+    nn_timestamp_t creationTime;
     nn_size_t maxDirEntries;
     nn_size_t capacity;
     nn_bool_t isReadOnly;

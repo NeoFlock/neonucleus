@@ -232,6 +232,7 @@ void *ne_fs_open(nn_address address, const char *path, const char *mode, nn_erro
     FILE *f = fopen(p, trueMode);
     if(f == NULL) {
         nn_error_write(err, strerror(errno));
+		return NULL;
     }
 	setvbuf(f, NULL, _IONBF, BUFSIZ);
     return f;

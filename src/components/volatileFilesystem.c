@@ -15,7 +15,7 @@ typedef struct nn_vfnode {
     };
     nn_size_t len;
     nn_size_t cap;
-    nn_size_t lastModified;
+    nn_timestamp_t lastModified;
     // this is used to block deleting
     nn_refc handleCount;
 } nn_vfnode;
@@ -41,11 +41,11 @@ typedef struct nn_vfilesystem {
 
 // virtual node helpers
 
-nn_size_t nn_vf_now(nn_vfilesystem *fs) {
+nn_timestamp_t nn_vf_now(nn_vfilesystem *fs) {
     nn_Clock c = fs->ctx.clock;
     double time = c.proc(c.userdata);
     double elapsed = time - fs->birthday;
-    nn_size_t elapsedMS = elapsed * 1000;
+    nn_timestamp_t elapsedMS = elapsed * 1000;
     return fs->opts.creationTime + elapsedMS;
 }
 
@@ -285,7 +285,7 @@ nn_size_t nn_vfs_remove(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err)
     return removed;
 }
 
-nn_size_t nn_vfs_lastModified(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
+nn_timestamp_t nn_vfs_lastModified(nn_vfilesystem *fs, const char *path, nn_errorbuf_t err) {
     nn_vfnode *node = nn_vf_resolvePath(fs, path);
     if(node == NULL) {
         nn_error_write(err, "No such file");

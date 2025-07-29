@@ -267,7 +267,7 @@ void nn_fs_lastModified(nn_filesystem *fs, nn_componentMethod *_, nn_component *
 
     nn_errorbuf_t err = "";
     nn_lock(&fs->ctx, fs->lock);
-    nn_size_t t = fs->table.lastModified(fs->table.userdata, canonical, err);
+    nn_timestamp_t t = fs->table.lastModified(fs->table.userdata, canonical, err);
     nn_unlock(&fs->ctx, fs->lock);
     if(!nn_error_isEmpty(err)) {
         nn_setError(computer, err);
