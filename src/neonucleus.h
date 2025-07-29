@@ -409,6 +409,48 @@ void *nn_queryUserdata(nn_universe *universe, const char *name);
 void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
 double nn_getTime(nn_universe *universe);
 
+// Device info
+
+typedef struct nn_deviceInfoList_t nn_deviceInfoList_t;
+typedef struct nn_deviceInfo_t nn_deviceInfo_t;
+
+// Common / standard keys
+#define NN_DEVICEINFO_KEY_CLASS "class"
+#define NN_DEVICEINFO_KEY_VENDOR "vendor"
+#define NN_DEVICEINFO_KEY_PRODUCT "product"
+#define NN_DEVICEINFO_KEY_CAPACITY "capacity"
+#define NN_DEVICEINFO_KEY_CLOCK "clock"
+#define NN_DEVICEINFO_KEY_DESCRIPTION "description"
+
+// Common / standard values
+#define NN_DEVICEINFO_CLASS_INPUT "input"
+#define NN_DEVICEINFO_CLASS_RAM "memory"
+#define NN_DEVICEINFO_CLASS_ROM "memory" // not a mistake, they both use memory
+#define NN_DEVICEINFO_CLASS_CPU "processor" // also used by data card
+#define NN_DEVICEINFO_CLASS_DATA "processor" // also used by data card
+#define NN_DEVICEINFO_CLASS_GPU "display" // not a mistake, it and screen have the same class
+#define NN_DEVICEINFO_CLASS_SCREEN "display"
+#define NN_DEVICEINFO_CLASS_COMPUTER "system"
+#define NN_DEVICEINFO_CLASS_STORAGE "volume"
+#define NN_DEVICEINFO_CLASS_INTERNET "communication"
+#define NN_DEVICEINFO_CLASS_REDSTONE "communication" // why do they use the same one? idfk
+#define NN_DEVICEINFO_CLASS_MODEM "network"
+#define NN_DEVICEINFO_CLASS_TUNNEL "network"
+#define NN_DEVICEINFO_CLASS_GENERIC "generic"
+
+nn_deviceInfoList_t *nn_newDeviceInfoList(nn_Context *ctx, nn_size_t preallocate);
+void nn_deleteDeviceInfoList(nn_deviceInfoList_t *deviceInfoList);
+nn_deviceInfo_t *nn_addDeviceInfo(nn_deviceInfoList_t *list, nn_address address, nn_size_t maxKeys);
+void nn_removeDeviceInfo(nn_deviceInfoList_t *list, const char *key);
+nn_bool_t nn_registerDeviceKey(nn_deviceInfo_t *deviceInfo, const char *key, const char *value);
+nn_deviceInfo_t *nn_getDeviceInfoAt(nn_deviceInfoList_t *list, nn_size_t idx);
+nn_size_t nn_getDeviceCount(nn_deviceInfoList_t *list);
+const char *nn_getDeviceInfoAddress(nn_deviceInfo_t *deviceInfo);
+const char *nn_iterateDeviceInfoKeys(nn_deviceInfo_t *deviceInfo, nn_size_t idx, const char **value);
+nn_size_t nn_getDeviceKeyCount(nn_deviceInfo_t *deviceInfo);
+
+// Computer running states
+
 nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, nn_size_t memoryLimit, nn_size_t componentLimit);
 nn_universe *nn_getUniverse(nn_computer *computer);
 int nn_tickComputer(nn_computer *computer);
@@ -436,6 +478,7 @@ void nn_callCost(nn_computer *computer, double cost);
 double nn_getCallCost(nn_computer *computer);
 nn_bool_t nn_isOverworked(nn_computer *computer);
 void nn_triggerIndirect(nn_computer *computer);
+nn_deviceInfoList_t *nn_getComputerDeviceInfoList(nn_computer *computer);
 
 /* The memory returned can be freed with nn_dealloc() */
 char *nn_serializeProgram(nn_computer *computer, nn_Alloc *alloc, nn_size_t *len);
@@ -1068,11 +1111,31 @@ void nn_hologram_fill(nn_hologram *hologram, int x, int z, int minY, int maxY, i
 void nn_hologram_copy(nn_hologram *hologram, int x, int z, int sx, int sz, int tx, int tz);
 float nn_hologram_getScale(nn_hologram *hologram);
 void nn_hologram_setScale(nn_hologram *hologram, float value);
-void nn_hologram_getTranslation(nn_hologram *hologram, int *x, int *y, int *z);
-void nn_hologram_setTranslation(nn_hologram *hologram, int x, int y, int z);
+void nn_hologram_getTranslation(nn_hologram *hologram, double *x, double *y, double *z);
+void nn_hologram_setTranslation(nn_hologram *hologram, double x, double y, double z);
 int nn_hologram_maxDepth(nn_hologram *hologram);
 int nn_hologram_getPaletteColor(nn_hologram *hologram, int index);
 int nn_hologram_setPaletteColor(nn_hologram *hologram, int index, int value);
+
+typedef struct nn_externalComputerTable_t {
+	void *userdata;
+	void (*deinit)(void *userdata);
+
+	nn_bool_t (*start)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
+	nn_bool_t (*stop)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
+	nn_bool_t (*isRunning)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
+	void (*beep)(void *userdata, nn_computer *requester, double freq, double duration, double volume, nn_errorbuf_t err);
+	void (*crash)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
+	nn_architecture *(*getArchitecture)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
+	nn_bool_t (*isRobot)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
+} nn_externalComputerTable_t;
+
+typedef struct nn_externalComputer_t nn_externalComputer_t;
+
+// An external computer is a computer component.
+// It may refer to the current computer (counter-intuitively)
+// It may exist when the computer it is refering too has no running state (aka is powered off)
+nn_externalComputer_t *nn_newExternalComputer(nn_Context *ctx, nn_externalComputerTable_t table);
 
 #ifdef __cplusplus // c++ sucks
 }

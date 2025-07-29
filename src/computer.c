@@ -25,6 +25,8 @@ nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_archit
         nn_dealloc(alloc, c, sizeof(nn_computer));
         return NULL;
     }
+	// TODO: handle OOM
+	c->deviceInfo = nn_newDeviceInfoList(&universe->ctx, 16);
     c->timeOffset = nn_getTime(universe);
     c->supportedArchCount = 0;
     c->argc = 0;
@@ -645,4 +647,8 @@ const char *nn_resource_nextMethodInfo(nn_computer *computer, nn_size_t id, cons
 		return method.name;
 	}
 	return NULL;
+}
+
+nn_deviceInfoList_t *nn_getComputerDeviceInfoList(nn_computer *computer) {
+	return computer->deviceInfo;
 }

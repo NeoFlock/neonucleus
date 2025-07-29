@@ -236,9 +236,7 @@ local libcomputer = {
         until computer.uptime() >= deadline
     end,
     beep = computer.beep,
-    getDeviceInfo = function()
-        return {} -- yup
-    end,
+    getDeviceInfo = computer.getDeviceInfo,
     getProgramLocations = function()
         return {} -- yup
     end,

@@ -50,6 +50,7 @@ typedef struct nn_computer {
     double callBudget;
 	nn_size_t rid;
 	nn_resource_t resources[NN_MAX_CONCURRENT_RESOURCES];
+	nn_deviceInfoList_t *deviceInfo;
 } nn_computer;
 
 #endif

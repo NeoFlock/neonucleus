@@ -27,6 +27,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/resource.c",
             "src/component.c",
             "src/computer.c",
+            "src/deviceInfo.c",
             "src/universe.c",
             "src/unicode.c",
             // components

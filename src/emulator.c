@@ -811,6 +811,21 @@ int main(int argc, char **argv) {
     double interval = 1.0/tps;
 	double totalTime = 0;
 
+	nn_deviceInfoList_t *list = nn_getComputerDeviceInfoList(computer);
+
+	nn_deviceInfo_t *theRamStick = nn_addDeviceInfo(list, NULL, 8);
+	nn_registerDeviceKey(theRamStick, NN_DEVICEINFO_KEY_CLASS, NN_DEVICEINFO_CLASS_RAM);
+	nn_registerDeviceKey(theRamStick, NN_DEVICEINFO_KEY_CAPACITY, "4MiB");
+	nn_registerDeviceKey(theRamStick, NN_DEVICEINFO_KEY_DESCRIPTION, "Volatile storage device");
+	nn_registerDeviceKey(theRamStick, NN_DEVICEINFO_KEY_PRODUCT, "RAM 1:5");
+	nn_registerDeviceKey(theRamStick, NN_DEVICEINFO_KEY_VENDOR, "NeoComputers Technologies L.L.C.");
+	
+	nn_deviceInfo_t *theCPU = nn_addDeviceInfo(list, NULL, 8);
+	nn_registerDeviceKey(theCPU, NN_DEVICEINFO_KEY_CLASS, NN_DEVICEINFO_CLASS_CPU);
+	nn_registerDeviceKey(theCPU, NN_DEVICEINFO_KEY_DESCRIPTION, "Processor");
+	nn_registerDeviceKey(theCPU, NN_DEVICEINFO_KEY_PRODUCT, "Cryzen 9 6900XXL");
+	nn_registerDeviceKey(theCPU, NN_DEVICEINFO_KEY_VENDOR, "NeoComputers Technologies L.L.C.");
+
     while(true) {
         if(WindowShouldClose()) break;
         nn_setEnergyInfo(computer, 5000, 5000);

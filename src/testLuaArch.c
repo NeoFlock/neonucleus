@@ -339,6 +339,36 @@ static int testLuaArch_computer_setState(lua_State *L) {
     return 1;
 }
 
+static int testLuaArch_computer_getDeviceInfo(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+
+	nn_deviceInfoList_t *list = nn_getComputerDeviceInfoList(c);
+	nn_size_t deviceCount = nn_getDeviceCount(list);
+
+	lua_createtable(L, 0, deviceCount);
+	int infoTable = lua_gettop(L);
+
+	for(nn_size_t i = 0; i < deviceCount; i++) {
+		nn_deviceInfo_t *info = nn_getDeviceInfoAt(list, i);
+		lua_createtable(L, 0, 16);
+		int deviceTable = lua_gettop(L);
+
+		nn_size_t j = 0;
+		while(true) {
+			const char *value = NULL;
+			const char *key = nn_iterateDeviceInfoKeys(info, j, &value);
+			j++;
+			if(key == NULL) break;
+			lua_pushstring(L, value);
+			lua_setfield(L, deviceTable, key);
+		}
+
+		lua_setfield(L, infoTable, nn_getDeviceInfoAddress(info));
+	}
+
+	return 1;
+}
+
 static int testLuaArch_component_list(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
     lua_createtable(L, 0, 10);
@@ -598,6 +628,8 @@ void testLuaArch_loadEnv(lua_State *L) {
     lua_setfield(L, computer, "getState");
     lua_pushcfunction(L, testLuaArch_computer_setState);
     lua_setfield(L, computer, "setState");
+    lua_pushcfunction(L, testLuaArch_computer_getDeviceInfo);
+    lua_setfield(L, computer, "getDeviceInfo");
     lua_setglobal(L, "computer");
 
     lua_createtable(L, 0, 10);
