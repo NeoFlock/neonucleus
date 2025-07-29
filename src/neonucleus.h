@@ -441,7 +441,7 @@ typedef struct nn_deviceInfo_t nn_deviceInfo_t;
 nn_deviceInfoList_t *nn_newDeviceInfoList(nn_Context *ctx, nn_size_t preallocate);
 void nn_deleteDeviceInfoList(nn_deviceInfoList_t *deviceInfoList);
 nn_deviceInfo_t *nn_addDeviceInfo(nn_deviceInfoList_t *list, nn_address address, nn_size_t maxKeys);
-void nn_removeDeviceInfo(nn_deviceInfoList_t *list, const char *key);
+void nn_removeDeviceInfo(nn_deviceInfoList_t *list, const char *address);
 nn_bool_t nn_registerDeviceKey(nn_deviceInfo_t *deviceInfo, const char *key, const char *value);
 nn_deviceInfo_t *nn_getDeviceInfoAt(nn_deviceInfoList_t *list, nn_size_t idx);
 nn_size_t nn_getDeviceCount(nn_deviceInfoList_t *list);

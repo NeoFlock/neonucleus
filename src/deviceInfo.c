@@ -81,7 +81,18 @@ nn_deviceInfo_t *nn_addDeviceInfo(nn_deviceInfoList_t *list, nn_address address,
 	return list->info + i;
 }
 
-void nn_removeDeviceInfo(nn_deviceInfoList_t *list, const char *key);
+void nn_removeDeviceInfo(nn_deviceInfoList_t *list, const char *address) {
+	nn_size_t j = 0;
+	for(nn_size_t i = 0; i < list->len; i++) {
+		if(nn_strcmp(list->info[i].address, address) == 0) {
+			nn_deleteDeviceInfo(&list->ctx, &list->info[i]);
+		} else {
+			list->info[j] = list->info[i];
+			j++;
+		}
+	}
+	list->len = j;
+}
 
 nn_bool_t nn_registerDeviceKey(nn_deviceInfo_t *deviceInfo, const char *key, const char *value) {
 	if(deviceInfo->len == deviceInfo->capacity) return false;

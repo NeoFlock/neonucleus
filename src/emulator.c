@@ -820,6 +820,9 @@ int main(int argc, char **argv) {
 	nn_registerDeviceKey(theRamStick, NN_DEVICEINFO_KEY_PRODUCT, "RAM 1:5");
 	nn_registerDeviceKey(theRamStick, NN_DEVICEINFO_KEY_VENDOR, "NeoComputers Technologies L.L.C.");
 	
+	nn_addDeviceInfo(list, "test", 8);
+	nn_removeDeviceInfo(list, "test");
+	
 	nn_deviceInfo_t *theCPU = nn_addDeviceInfo(list, NULL, 8);
 	nn_registerDeviceKey(theCPU, NN_DEVICEINFO_KEY_CLASS, NN_DEVICEINFO_CLASS_CPU);
 	nn_registerDeviceKey(theCPU, NN_DEVICEINFO_KEY_DESCRIPTION, "Processor");
