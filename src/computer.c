@@ -66,6 +66,8 @@ nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_archit
 		c->resources[i].id = NN_NULL_RESOURCE;
 	}
 
+	c->hasBeep = false;
+
     return c;
 }
 
@@ -651,4 +653,22 @@ const char *nn_resource_nextMethodInfo(nn_computer *computer, nn_size_t id, cons
 
 nn_deviceInfoList_t *nn_getComputerDeviceInfoList(nn_computer *computer) {
 	return computer->deviceInfo;
+}
+
+void nn_computer_clearBeep(nn_computer *computer) {
+	computer->hasBeep = false;
+}
+
+void nn_computer_setBeep(nn_computer *computer, double frequency, double duration, double volume) {
+	computer->hasBeep = true;
+	computer->beepFrequency = frequency;
+	computer->beepDuration = duration;
+	computer->beepVolume = volume;
+}
+
+nn_bool_t nn_computer_getBeep(nn_computer *computer, double *frequency, double *duration, double *volume) {
+	if(frequency != NULL) *frequency = computer->beepFrequency;
+	if(duration != NULL) *duration = computer->beepDuration;
+	if(volume != NULL) *volume = computer->beepVolume;
+	return computer->hasBeep;
 }

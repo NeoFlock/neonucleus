@@ -207,6 +207,23 @@ static int testLuaArch_computer_uptime(lua_State *L) {
 
 // TODO: beep
 static int testLuaArch_computer_beep(lua_State *L) {
+    nn_computer *c = testLuaArch_getComputer(L);
+	// defaults
+	double frequency = 200;
+	double duration = 0.25;
+	double volume = 1;
+
+	if(lua_type(L, 1) == LUA_TNUMBER) {
+		frequency = lua_tonumber(L, 1);
+	}
+	if(lua_type(L, 2) == LUA_TNUMBER) {
+		duration = lua_tonumber(L, 2);
+	}
+	if(lua_type(L, 3) == LUA_TNUMBER) {
+		volume = lua_tonumber(L, 3);
+	}
+
+	nn_computer_setBeep(c, frequency, duration, volume);
     return 0;
 }
 
