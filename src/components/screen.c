@@ -2,6 +2,7 @@
 
 nn_screen *nn_newScreen(nn_Context *context, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors) {
     nn_Alloc *alloc = &context->allocator;
+	// TODO: handle OOMs
     nn_screen *screen = nn_alloc(alloc, sizeof(nn_screen));
     screen->ctx = *context;
     screen->buffer = nn_alloc(alloc, sizeof(nn_scrchr_t) * maxWidth * maxHeight);
@@ -63,6 +64,20 @@ void nn_maxResolution(nn_screen *screen, int *width, int *height) {
 void nn_setResolution(nn_screen *screen, int width, int height) {
     screen->width = width;
     screen->height = height;
+}
+
+nn_bool_t nn_unsafeReallocateScreenBuffer(nn_screen *screen, int maxWidth, int maxHeight) {
+	nn_Alloc *alloc = &screen->ctx.allocator;
+
+	nn_scrchr_t *newBuffer = nn_alloc(alloc, sizeof(nn_scrchr_t) * maxWidth * maxHeight);
+	if(newBuffer == NULL) {
+		return false;
+	}
+
+	screen->buffer = newBuffer;
+	screen->maxWidth = maxWidth;
+	screen->maxHeight = maxHeight;
+	return true;
 }
 
 void nn_getViewport(nn_screen *screen, int *width, int *height) {

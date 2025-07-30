@@ -914,6 +914,9 @@ void nn_unlockScreen(nn_screen *screen);
 void nn_getResolution(nn_screen *screen, int *width, int *height);
 void nn_maxResolution(nn_screen *screen, int *width, int *height);
 void nn_setResolution(nn_screen *screen, int width, int height);
+// changes the maximum resolution
+// DOES NOT USE THE LOCK AND THUS MAY CAUSE RACE CONDITIONS AND SEGFAULTS!!!!!
+nn_bool_t nn_unsafeReallocateScreenBuffer(nn_screen *screen, int maxWidth, int maxHeight);
 
 void nn_getViewport(nn_screen *screen, int *width, int *height);
 void nn_setViewport(nn_screen *screen, int width, int height);

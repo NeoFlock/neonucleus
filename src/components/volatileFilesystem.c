@@ -111,7 +111,7 @@ nn_size_t nn_vf_spaceUsedByNode(nn_vfnode *node) {
     if(node->isDirectory) {
         nn_size_t sum = 0;
         for(nn_size_t i = 0; i < node->len; i++) {
-            sum = nn_vf_spaceUsedByNode(node->entries[i]);
+            sum += nn_vf_spaceUsedByNode(node->entries[i]);
         }
         return sum;
     } else {

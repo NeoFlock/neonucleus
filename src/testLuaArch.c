@@ -69,7 +69,7 @@ void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize
     nn_Alloc *alloc = nn_getAllocator(nn_getUniverse(arch->computer));
     if(nsize == 0) {
         arch->memoryUsed -= osize;
-        free(ptr);
+        nn_dealloc(alloc, ptr, osize);
         return NULL;
     } else {
         size_t actualOldSize = osize;
@@ -79,7 +79,7 @@ void *testLuaArch_alloc(testLuaArch *arch, void *ptr, size_t osize, size_t nsize
         }
         arch->memoryUsed -= actualOldSize;
         arch->memoryUsed += nsize;
-        return realloc(ptr, nsize);
+        return nn_resize(alloc, ptr, actualOldSize, nsize);
     }
 }
 
