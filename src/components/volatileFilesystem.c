@@ -72,7 +72,7 @@ nn_vfnode *nn_vf_allocDirectory(nn_vfilesystem *fs, const char *name) {
     nn_Alloc *alloc = &fs->ctx.allocator;
     nn_vfnode *node = nn_alloc(alloc, sizeof(nn_vfnode));
     if(node == NULL) return NULL;
-    nn_vfnode **buffer = nn_alloc(alloc, sizeof(nn_vfnode *));
+    nn_vfnode **buffer = nn_alloc(alloc, sizeof(nn_vfnode *) * fs->opts.maxDirEntries);
     if(buffer == NULL) {
         nn_dealloc(alloc, node, sizeof(nn_vfnode));
         return NULL;
