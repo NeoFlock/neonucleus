@@ -784,6 +784,7 @@ int main(int argc, char **argv) {
         .screenCopyPerTick = 8,
         .screenFillPerTick = 16,
         .screenSetsPerTick = 32,
+		.bitbltPerTick = 8,
 
         .heatPerPixelChange = 0.00005,
         .heatPerPixelReset = 0.00001,

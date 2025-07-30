@@ -10,8 +10,24 @@ nn_universe *nn_newUniverse(nn_Context ctx) {
     return u;
 }
 
+nn_Context *nn_getContext(nn_universe *universe) {
+	return &universe->ctx;
+}
+
 nn_Alloc *nn_getAllocator(nn_universe *universe) {
     return &universe->ctx.allocator;
+}
+
+nn_Clock *nn_getClock(nn_universe *universe) {
+	return &universe->ctx.clock;
+}
+
+nn_LockManager *nn_getLockManager(nn_universe *universe) {
+	return &universe->ctx.lockManager;
+}
+
+nn_Rng *nn_getRng(nn_universe *universe) {
+	return &universe->ctx.rng;
 }
 
 void nn_unsafeDeleteUniverse(nn_universe *universe) {

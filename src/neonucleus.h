@@ -524,6 +524,10 @@ nn_guard *nn_getComputerLock(nn_computer *computer);
 int nn_getState(nn_computer *computer);
 void nn_setState(nn_computer *computer, int state);
 
+void nn_computer_clearBeep(nn_computer *computer);
+void nn_computer_setBeep(nn_computer *computer, double frequency, double duration, double volume);
+nn_bool_t nn_computer_getBeep(nn_computer *computer, double *frequency, double *duration, double *volume);
+
 void nn_setEnergyInfo(nn_computer *computer, double energy, double capacity);
 double nn_getEnergy(nn_computer *computer);
 double nn_getMaxEnergy(nn_computer *computer);

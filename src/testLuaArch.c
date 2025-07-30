@@ -212,13 +212,13 @@ static int testLuaArch_computer_beep(lua_State *L) {
 
 static int testLuaArch_computer_energy(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
-    lua_pushinteger(L, nn_getEnergy(c));
+    lua_pushnumber(L, nn_getEnergy(c));
     return 1;
 }
 
 static int testLuaArch_computer_maxEnergy(lua_State *L) {
     nn_computer *c = testLuaArch_getComputer(L);
-    lua_pushinteger(L, nn_getEnergy(c));
+    lua_pushnumber(L, nn_getEnergy(c));
     return 1;
 }
 

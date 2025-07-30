@@ -16,6 +16,7 @@ typedef struct nn_resource_t {
 
 typedef struct nn_computer {
     char state;
+	nn_bool_t hasBeep;
     nn_bool_t allocatedError;
     char *err;
     void *userdata;
@@ -51,6 +52,9 @@ typedef struct nn_computer {
 	nn_size_t rid;
 	nn_resource_t resources[NN_MAX_CONCURRENT_RESOURCES];
 	nn_deviceInfoList_t *deviceInfo;
+	double beepFrequency;
+	double beepDuration;
+	double beepVolume;
 } nn_computer;
 
 #endif
