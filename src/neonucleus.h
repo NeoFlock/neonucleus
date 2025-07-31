@@ -694,6 +694,7 @@ void nn_loadKeyboardTable(nn_universe *universe);
 void nn_loadModemTable(nn_universe *universe);
 void nn_loadTunnelTable(nn_universe *universe);
 void nn_loadDiskDriveTable(nn_universe *universe);
+void nn_loadExternalComputerTable(nn_universe *universe);
 
 nn_component *nn_mountKeyboard(nn_computer *computer, nn_address address, int slot);
 
@@ -1136,6 +1137,7 @@ typedef struct nn_externalComputerTable_t {
 	void (*beep)(void *userdata, nn_computer *requester, double freq, double duration, double volume, nn_errorbuf_t err);
 	void (*crash)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
 	nn_architecture *(*getArchitecture)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
+	void (*getDeviceInfo)(void *userdata, nn_deviceInfoList_t *list, nn_computer *requester, nn_errorbuf_t err);
 	nn_bool_t (*isRobot)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
 } nn_externalComputerTable_t;
 
@@ -1145,6 +1147,11 @@ typedef struct nn_externalComputer_t nn_externalComputer_t;
 // It may refer to the current computer (counter-intuitively)
 // It may exist when the computer it is refering too has no running state (aka is powered off)
 nn_externalComputer_t *nn_newExternalComputer(nn_Context *ctx, nn_externalComputerTable_t table);
+nn_guard *nn_externalComputer_getLock(nn_externalComputer_t *external);
+void nn_externalComputer_retain(nn_externalComputer_t *external);
+nn_bool_t nn_externalComputer_destroy(nn_externalComputer_t *external);
+
+nn_component *nn_externalComputer_addTo(nn_computer *computer, nn_address address, int slot, nn_externalComputer_t *external);
 
 #ifdef __cplusplus // c++ sucks
 }
