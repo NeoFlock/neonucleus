@@ -45,6 +45,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/components/tunnel.c",
             "src/components/loopbackTunnel.c",
             "src/components/diskDrive.c",
+            "src/components/externalComputer.c",
         },
         .flags = &.{
             if(opts.baremetal) "-DNN_BAREMETAL" else "",
