@@ -78,11 +78,9 @@ nn_bool_t nn_unsafeReallocateScreenBuffer(nn_screen *screen, int maxWidth, int m
 		if(y == screen->maxHeight) break;
 		for(nn_size_t x = 0; x < maxWidth; x++) {
 			if(x == screen->maxWidth) break;
-
-			nn_size_t srcIdx = x + y * screen->maxWidth;
 			nn_size_t destIdx = x + y * maxWidth;
 
-			newBuffer[destIdx] = screen->buffer[srcIdx];
+			newBuffer[destIdx] = nn_getPixel(screen, x, y);
 		}
 	}
 
