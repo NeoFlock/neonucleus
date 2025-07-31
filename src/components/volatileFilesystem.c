@@ -233,12 +233,12 @@ void nn_vfs_deinit(nn_vfilesystem *fs) {
     nn_dealloc(&ctx.allocator, fs, sizeof(nn_vfilesystem));
 }
 
-void nn_vfs_getLabel(nn_vfilesystem *fs, char *buf, nn_size_t *buflen) {
+void nn_vfs_getLabel(nn_vfilesystem *fs, char *buf, nn_size_t *buflen, nn_errorbuf_t err) {
     *buflen = fs->opts.labelLen;
     nn_memcpy(buf, fs->opts.label, fs->opts.labelLen);
 }
 
-void nn_vfs_setLabel(nn_vfilesystem *fs, const char *buf, nn_size_t buflen) {
+void nn_vfs_setLabel(nn_vfilesystem *fs, const char *buf, nn_size_t buflen, nn_errorbuf_t err) {
     nn_memcpy(fs->opts.label, buf, buflen);
     fs->opts.labelLen = buflen;
 }
