@@ -15,6 +15,8 @@ nn_externalComputer_t *nn_newExternalComputer(nn_Context *ctx, nn_externalComput
 		nn_dealloc(&ctx->allocator, external, sizeof(nn_externalComputer_t));
 		return NULL;
 	}
+	external->refc = 1;
+	external->table = table;
 	return external;
 }
 
