@@ -210,7 +210,7 @@ void nn_drive_writeByte(nn_drive *drive, void *_, nn_component *component, nn_co
     nn_value offsetValue = nn_getArgument(computer, 0);
     nn_value writeValue = nn_getArgument(computer, 1);
     nn_size_t disk_offset = nn_toInt(offsetValue) - 1;
-    nn_intptr_t write = nn_toInt(writeValue);
+    nn_integer_t write = nn_toInt(writeValue);
     nn_size_t sector_size = drive->table.sectorSize;
     int sector = (disk_offset / sector_size) + 1;
     nn_size_t sector_offset = disk_offset % sector_size;

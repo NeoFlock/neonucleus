@@ -103,7 +103,7 @@ static void nni_modem_setStrength(nn_modem *modem, void *_, nn_component *compon
 	nn_return_number(computer, n);
 }
 
-static nn_bool_t nni_modem_validSendPort(nn_intptr_t port) {
+static nn_bool_t nni_modem_validSendPort(nn_integer_t port) {
     // 9 quintillion ports just died
     if(port < 0) return false;
     // the only valid range
@@ -115,7 +115,7 @@ static nn_bool_t nni_modem_validSendPort(nn_intptr_t port) {
 }
 
 static void nni_modem_isOpen(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
-    nn_intptr_t port = nn_toInt(nn_getArgument(computer, 0));
+    nn_integer_t port = nn_toInt(nn_getArgument(computer, 0));
     if(!nni_modem_validSendPort(port)) {
         nn_setCError(computer, "invalid port");
         return;
@@ -132,7 +132,7 @@ static void nni_modem_isOpen(nn_modem *modem, void *_, nn_component *component, 
 }
 
 static void nni_modem_open(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
-    nn_intptr_t port = nn_toInt(nn_getArgument(computer, 0));
+    nn_integer_t port = nn_toInt(nn_getArgument(computer, 0));
     if(!nni_modem_validSendPort(port)) {
         nn_setCError(computer, "invalid port");
         return;
@@ -150,7 +150,7 @@ static void nni_modem_open(nn_modem *modem, void *_, nn_component *component, nn
 
 static void nni_modem_close(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
     nn_value portVal = nn_getArgument(computer, 0);
-    nn_intptr_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
+    nn_integer_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
     if(!nni_modem_validSendPort(port) && port != NN_PORT_CLOSEALL) {
         nn_setCError(computer, "invalid port");
         return;
@@ -191,7 +191,7 @@ static void nni_modem_send(nn_modem *modem, void *_, nn_component *component, nn
         return;
     }
     nn_value portVal = nn_getArgument(computer, 1);
-    nn_intptr_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
+    nn_integer_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
     if(!nni_modem_validSendPort(port) && port != NN_PORT_CLOSEALL) {
         nn_setCError(computer, "invalid port");
         return;
@@ -232,7 +232,7 @@ static void nni_modem_send(nn_modem *modem, void *_, nn_component *component, nn
 
 static void nni_modem_broadcast(nn_modem *modem, void *_, nn_component *component, nn_computer *computer) {
     nn_value portVal = nn_getArgument(computer, 0);
-    nn_intptr_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
+    nn_integer_t port = portVal.tag == NN_VALUE_NIL ? NN_PORT_CLOSEALL : nn_toInt(portVal);
     if(!nni_modem_validSendPort(port) && port != NN_PORT_CLOSEALL) {
         nn_setCError(computer, "invalid port");
         return;

@@ -497,7 +497,7 @@ void nn_return_nil(nn_computer *computer) {
     nn_return(computer, nn_values_nil());
 }
 
-void nn_return_integer(nn_computer *computer, nn_intptr_t integer) {
+void nn_return_integer(nn_computer *computer, nn_integer_t integer) {
     nn_return(computer, nn_values_integer(integer));
 }
 

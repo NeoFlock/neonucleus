@@ -54,6 +54,8 @@ typedef unsigned char nn_bool_t;
 
 #endif
 
+typedef long long nn_integer_t;
+
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
    //define something for Windows (32-bit and 64-bit, this part is common)
@@ -274,7 +276,7 @@ typedef struct nn_object {
 typedef struct nn_value {
     nn_size_t tag;
     union {
-        nn_intptr_t integer;
+        nn_integer_t integer;
         double number;
         nn_bool_t boolean;
         const char *cstring;
@@ -633,7 +635,7 @@ nn_size_t nn_getReturnCount(nn_computer *computer);
 // Value stuff
 
 nn_value nn_values_nil(void);
-nn_value nn_values_integer(nn_intptr_t integer);
+nn_value nn_values_integer(nn_integer_t integer);
 nn_value nn_values_number(double num);
 nn_value nn_values_boolean(nn_bool_t boolean);
 nn_value nn_values_cstring(const char *string);
@@ -643,7 +645,7 @@ nn_value nn_values_table(nn_Alloc *alloc, nn_size_t pairCount);
 nn_value nn_values_resource(nn_size_t id);
 
 void nn_return_nil(nn_computer *computer);
-void nn_return_integer(nn_computer *computer, nn_intptr_t integer);
+void nn_return_integer(nn_computer *computer, nn_integer_t integer);
 void nn_return_number(nn_computer *computer, double number);
 void nn_return_boolean(nn_computer *computer, nn_bool_t boolean);
 void nn_return_cstring(nn_computer *computer, const char *cstr);
@@ -663,13 +665,13 @@ nn_value nn_values_get(nn_value arr, nn_size_t idx);
 void nn_values_setPair(nn_value obj, nn_size_t idx, nn_value key, nn_value val);
 nn_pair nn_values_getPair(nn_value obj, nn_size_t idx);
 
-nn_intptr_t nn_toInt(nn_value val);
+nn_integer_t nn_toInt(nn_value val);
 double nn_toNumber(nn_value val);
 nn_bool_t nn_toBoolean(nn_value val);
 const char *nn_toCString(nn_value val);
 const char *nn_toString(nn_value val, nn_size_t *len);
 
-nn_intptr_t nn_toIntOr(nn_value val, nn_intptr_t defaultVal);
+nn_integer_t nn_toIntOr(nn_value val, nn_integer_t defaultVal);
 double nn_toNumberOr(nn_value val, double defaultVal);
 nn_bool_t nn_toBooleanOr(nn_value val, nn_bool_t defaultVal);
 

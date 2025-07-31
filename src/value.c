@@ -4,7 +4,7 @@ nn_value nn_values_nil(void) {
     return (nn_value) {.tag = NN_VALUE_NIL};
 }
 
-nn_value nn_values_integer(nn_intptr_t integer) {
+nn_value nn_values_integer(nn_integer_t integer) {
     return (nn_value) {.tag = NN_VALUE_INT, .integer = integer};
 }
 
@@ -171,7 +171,7 @@ nn_pair nn_values_getPair(nn_value obj, nn_size_t idx) {
     return obj.table->pairs[idx];
 }
 
-nn_intptr_t nn_toInt(nn_value val) {
+nn_integer_t nn_toInt(nn_value val) {
     if(val.tag == NN_VALUE_INT) return val.integer;
     if(val.tag == NN_VALUE_NUMBER) return val.number;
     return 0;
@@ -212,7 +212,7 @@ const char *nn_toString(nn_value val, nn_size_t *len) {
     return c;
 }
 
-nn_intptr_t nn_toIntOr(nn_value val, nn_intptr_t defaultVal) {
+nn_integer_t nn_toIntOr(nn_value val, nn_integer_t defaultVal) {
     if(val.tag == NN_VALUE_INT) return val.integer;
     if(val.tag == NN_VALUE_NUMBER) return val.number;
     return defaultVal;

@@ -28,7 +28,7 @@ typedef enum nn_vfmode {
 
 typedef struct nn_vfhandle {
     nn_vfnode *node;
-    nn_intptr_t position;
+    nn_integer_t position;
     nn_vfmode mode;
 } nn_vfhandle;
 
@@ -539,7 +539,7 @@ nn_size_t nn_vfs_seek(nn_vfilesystem *fs, nn_vfhandle *handle, const char *whenc
         nn_error_write(err, "Bad file descriptor");
         return handle->node->len;
     }
-    nn_intptr_t ptr = handle->position;
+    nn_integer_t ptr = handle->position;
     if(nn_strcmp(whence, "set") == 0) {
         ptr = off;
     }
