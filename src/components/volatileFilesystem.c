@@ -247,7 +247,7 @@ nn_size_t nn_vfs_spaceUsed(nn_vfilesystem *fs) {
     return nn_vf_spaceUsedByNode(fs->root);
 }
 
-nn_bool_t nn_vfs_isReadOnly(nn_vfilesystem *fs) {
+nn_bool_t nn_vfs_isReadOnly(nn_vfilesystem *fs, nn_errorbuf_t err) {
     return fs->opts.isReadOnly;
 }
 
