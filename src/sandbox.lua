@@ -228,7 +228,6 @@ local libcomputer = {
         local deadline = computer.uptime() + (type(timeout) == "number" and timeout or math.huge)
 
         repeat
-			print("waiting for signal", computer.uptime())
             yield() -- give executor a chance to give us stuff
             local s = table.pack(computer.popSignal())
             if s.n > 0 then
