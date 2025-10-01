@@ -15,6 +15,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .optimize = opts.optimize,
         .strip = if(opts.optimize == .Debug) false else true,
         .unwind_tables = if(opts.optimize == .Debug) null else .none,
+        .pic = true,
     });
 
     const strict = opts.optimize != .Debug;
@@ -89,20 +90,23 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
     const dirName = @tagName(version);
 
     // its a static library because COFF is a pile of shit
-    const c = b.addStaticLibrary(.{
+    const c = b.addLibrary(.{
         .name = "lua",
-        .link_libc = true,
-        .optimize = .ReleaseFast,
-        .target = target,
+        .root_module = b.addModule("luamod", .{
+            .link_libc = true,
+            .optimize = .ReleaseFast,
+            .target = target,
+        }),
+        .linkage = .static,
     });
 
     const rootPath = try std.mem.join(alloc, std.fs.path.sep_str, &.{ "foreign", dirName });
 
     // get all the .c files
-    var files = std.ArrayList([]const u8).init(alloc);
-    errdefer files.deinit();
+    var files = try std.ArrayList([]const u8).initCapacity(b.allocator, 0);
+    errdefer files.deinit(b.allocator);
 
-    var dir = try std.fs.cwd().openDir(rootPath, std.fs.Dir.OpenDirOptions{ .iterate = true });
+    var dir = try std.fs.cwd().openDir(rootPath, std.fs.Dir.OpenOptions { .iterate = true });
     defer dir.close();
 
     var iter = dir.iterate();
@@ -110,7 +114,7 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
     while (try iter.next()) |e| {
         if (std.mem.startsWith(u8, e.name, "l") and std.mem.endsWith(u8, e.name, ".c") and !std.mem.eql(u8, e.name, "lua.c")) {
             const name = try alloc.dupe(u8, e.name);
-            try files.append(name);
+            try files.append(b.allocator, name);
         }
     }
 
@@ -151,18 +155,16 @@ pub fn build(b: *std.Build) !void {
    
     const engineMod = addEngineSources(b, opts);
 
-    const engineStatic = b.addStaticLibrary(.{
+    const engineStatic = b.addLibrary(.{
         .name = "neonucleus",
         .root_module = engineMod,
-        .pic = true,
-        .code_model = .default,
+        .linkage = .static,
     });
     
-    const engineShared = b.addSharedLibrary(.{
+    const engineShared = b.addLibrary(.{
         .name = if(os == .windows) "neonucleusdll" else "neonucleus",
         .root_module = engineMod,
-        .pic = true,
-        .code_model = .default,
+        .linkage = .dynamic,
     });
 
     const engineStep = b.step("engine", "Builds the engine as a static library");
@@ -178,8 +180,10 @@ pub fn build(b: *std.Build) !void {
     if(!noEmu) {
         const emulator = b.addExecutable(.{
             .name = "neonucleus",
-            .target = target,
-            .optimize = optimize,
+            .root_module = b.addModule("emulator", .{
+                .target = target,
+                .optimize = optimize,
+            }),
         });
         emulator.linkLibC();
 

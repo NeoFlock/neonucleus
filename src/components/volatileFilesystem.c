@@ -565,15 +565,16 @@ static nn_vfilesystemImageNode nni_vfsimg_nextNode(nn_vfilesystemImage *stream) 
 	return node;
 }
 
-static nn_vfnode *nni_vfsimg_parseNode(nn_vfilesystem *fs, nn_vfilesystemImage *stream) {
+static nn_vfnode *nni_vfsimg_parseNode(nn_vfilesystem *fs, nn_vfilesystemImage *stream, nn_vfnode *parent) {
 	// TODO: make this handle OOMs
 	nn_vfilesystemImageNode node = nni_vfsimg_nextNode(stream);
 	if(node.data == NULL) {
 		// directory!!!!!
 		nn_vfnode *dir = nn_vf_allocDirectory(fs, node.name);
 		dir->len = node.len;
+		dir->parent = parent;
 		for(int i = 0; i < node.len; i++) {
-			nn_vfnode *entry = nni_vfsimg_parseNode(fs, stream);
+			nn_vfnode *entry = nni_vfsimg_parseNode(fs, stream, dir);
 			dir->entries[i] = entry;
 		}
 		return dir;
@@ -582,6 +583,7 @@ static nn_vfnode *nni_vfsimg_parseNode(nn_vfilesystem *fs, nn_vfilesystemImage *
 	nn_vfnode *file = nn_vf_allocFile(fs, node.name);
 	nn_vf_ensureFileCapacity(file, node.len);
 	file->len = node.len;
+	file->parent = parent;
 	nn_memcpy(file->data, node.data, node.len);
 	return file;
 }
@@ -606,7 +608,7 @@ nn_filesystem *nn_volatileFilesystem(nn_Context *context, nn_vfilesystemOptions 
 		// we got supplied an image, shit
 		fs->root->len = opts.rootEntriesInImage;
 		for(int i = 0; i < opts.rootEntriesInImage; i++) {
-			nn_vfnode *entry = nni_vfsimg_parseNode(fs, &stream);
+			nn_vfnode *entry = nni_vfsimg_parseNode(fs, &stream, fs->root);
 			fs->root->entries[i] = entry;
 		}
 	}
