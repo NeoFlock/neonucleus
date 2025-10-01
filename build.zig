@@ -13,8 +13,8 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .root_source_file = b.path("src/data.zig"),
         .target = opts.target,
         .optimize = opts.optimize,
-        .strip = if(opts.optimize == .Debug) false else true,
-        .unwind_tables = if(opts.optimize == .Debug) null else .none,
+        .strip = if (opts.optimize == .Debug) false else true,
+        .unwind_tables = if (opts.optimize == .Debug) null else .none,
         .pic = true,
     });
 
@@ -49,17 +49,17 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
             "src/components/externalComputer.c",
         },
         .flags = &.{
-            if(opts.baremetal) "-DNN_BAREMETAL" else "",
-            if(opts.bit32) "-DNN_BIT32" else "",
-            if(strict) "-Wall" else "",
-            if(strict) "-Werror" else "",
+            if (opts.baremetal) "-DNN_BAREMETAL" else "",
+            if (opts.bit32) "-DNN_BIT32" else "",
+            if (strict) "-Wall" else "",
+            if (strict) "-Werror" else "",
             "-std=gnu23",
             "-Wno-keyword-macro", // cuz bools
             "-fPIE",
         },
     });
 
-    if(!opts.baremetal) {
+    if (!opts.baremetal) {
         dataMod.link_libc = true; // we need a libc
         dataMod.addCSourceFiles(.{
             .files = &.{
@@ -81,6 +81,22 @@ const LuaVersion = enum {
     lua53,
     lua54,
 };
+
+fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, c: *std.Build.Step.Compile) void {
+    // TODO: find out how to send our target to this build cmd
+    const raylib = b.addSystemCommand(&.{ "zig", "build" });
+    raylib.setCwd(b.path("foreign/raylib/"));
+    raylib.stdio = .inherit;
+
+    c.step.dependOn(&raylib.step);
+    c.addIncludePath(b.path("foreign/raylib/zig-out/include/"));
+    c.addLibraryPath(b.path("foreign/raylib/zig-out/lib/"));
+    c.linkSystemLibrary("raylib");
+    if (os == .windows) {
+        c.linkSystemLibrary("WinMM");
+        c.linkSystemLibrary("GDI32");
+    }
+}
 
 // For the test architecture, we specify the target Lua version we so desire.
 // This can be checked for with Lua's _VERSION
@@ -106,7 +122,7 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
     var files = try std.ArrayList([]const u8).initCapacity(b.allocator, 0);
     errdefer files.deinit(b.allocator);
 
-    var dir = try std.fs.cwd().openDir(rootPath, std.fs.Dir.OpenOptions { .iterate = true });
+    var dir = try std.fs.cwd().openDir(rootPath, std.fs.Dir.OpenOptions{ .iterate = true });
     defer dir.close();
 
     var iter = dir.iterate();
@@ -142,7 +158,7 @@ pub fn build(b: *std.Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const opts = LibBuildOpts {
+    const opts = LibBuildOpts{
         .target = target,
         .optimize = optimize,
         .baremetal = b.option(bool, "baremetal", "Compiles without libc integration") orelse false,
@@ -152,7 +168,7 @@ pub fn build(b: *std.Build) !void {
     const noEmu = b.option(bool, "noEmu", "Disable compiling the emulator (fixes some build system quirks)") orelse false;
 
     const includeFiles = b.addInstallHeaderFile(b.path("src/neonucleus.h"), "neonucleus.h");
-   
+
     const engineMod = addEngineSources(b, opts);
 
     const engineStatic = b.addLibrary(.{
@@ -160,9 +176,9 @@ pub fn build(b: *std.Build) !void {
         .root_module = engineMod,
         .linkage = .static,
     });
-    
+
     const engineShared = b.addLibrary(.{
-        .name = if(os == .windows) "neonucleusdll" else "neonucleus",
+        .name = if (os == .windows) "neonucleusdll" else "neonucleus",
         .root_module = engineMod,
         .linkage = .dynamic,
     });
@@ -177,7 +193,7 @@ pub fn build(b: *std.Build) !void {
     sharedStep.dependOn(&includeFiles.step);
     sharedStep.dependOn(&b.addInstallArtifact(engineShared, .{}).step);
 
-    if(!noEmu) {
+    if (!noEmu) {
         const emulator = b.addExecutable(.{
             .name = "neonucleus",
             .root_module = b.addModule("emulator", .{
@@ -191,9 +207,7 @@ pub fn build(b: *std.Build) !void {
         if (sysraylib_flag) {
             emulator.linkSystemLibrary("raylib");
         } else {
-            const raylib = b.dependency("raylib", .{ .target = target, .optimize = optimize });
-            emulator.addIncludePath(raylib.path(raylib.builder.h_dir));
-            emulator.linkLibrary(raylib.artifact("raylib"));
+            compileRaylib(b, os, emulator);
         }
 
         const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua53;
@@ -203,8 +217,8 @@ pub fn build(b: *std.Build) !void {
                 "src/emulator.c",
             },
             .flags = &.{
-                if(opts.baremetal) "-DNN_BAREMETAL" else "",
-                if(opts.bit32) "-DNN_BIT32" else "",
+                if (opts.baremetal) "-DNN_BAREMETAL" else "",
+                if (opts.bit32) "-DNN_BIT32" else "",
             },
         });
         const l = try compileTheRightLua(b, target, luaVer);
