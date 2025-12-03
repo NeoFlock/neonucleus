@@ -328,7 +328,7 @@ void nn_loadModemTable(nn_universe *universe) {
     nn_defineMethod(modemTable, "isOpen", (nn_componentMethod *)nni_modem_isOpen, "isOpen(port: integer): boolean - Returns whether a port is open (allows receiving)");
     nn_defineMethod(modemTable, "open", (nn_componentMethod *)nni_modem_open, "open(port: integer): boolean - Opens a port, returns whether it was successful");
     nn_defineMethod(modemTable, "close", (nn_componentMethod *)nni_modem_close, "close([port: integer]): boolean - Closes a port, or nil for all ports");
-    nn_defineMethod(modemTable, "getPorts", (nn_componentMethod *)nni_modem_getPorts, "close([port: integer]): boolean - Closes a port, or nil for all ports");
+    nn_defineMethod(modemTable, "getPorts", (nn_componentMethod *)nni_modem_getPorts, "getPorts(): integer[] - Returns the open ports");
     nn_defineMethod(modemTable, "send", (nn_componentMethod *)nni_modem_send, "send(address: string, port: integer, ...): boolean - Sends a message to the specified address at the given port. It returns whether the message was sent, not received");
     nn_defineMethod(modemTable, "broadcast", (nn_componentMethod *)nni_modem_broadcast, "broadcast(port: integer, ...): boolean - Broadcasts a message at the given port. It returns whether the message was sent, not received");
     nn_defineMethod(modemTable, "setWakeMessage", (nn_componentMethod *)nni_modem_setWake, "setWakeMessage(msg: string[, fuzzy: boolean]): string - Sets the wake-up message. This will be compared with the first value of modem messages to turn on computers. Set it to nothing to disable this functionality.");
