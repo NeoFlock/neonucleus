@@ -1,5 +1,6 @@
 # Code quality stuff
 
+- Literally rewrite the whole thing.
 - Use the same namespacing style everywhere, that being
 `nn_<class>_<method>` for functions related to "classes",
 `nn_<function>` for static functions,
