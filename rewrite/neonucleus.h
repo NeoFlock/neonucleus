@@ -17,7 +17,7 @@ extern "C" {
 // Internal limits or constants
 
 // the maximum amount of items the callstack can have.
-#define NN_MAX_STACK 4096
+#define NN_MAX_STACK 256
 // the maximum size a path is allowed to have
 #define NN_MAX_PATH 256
 // the maximum amount of bytes which can be read from a file.
@@ -83,7 +83,7 @@ typedef enum nn_LockAction {
 // between the worker threads by sending them as requests to a central thread (indirect methods).
 // In NeoNucleus, we simply use a lock. This technically makes all methods direct, however
 // we consider methods to be indirect if they require locks.
-typedef void nn_LockProc(void *state, void *proc, nn_LockAction action);
+typedef void nn_LockProc(void *state, void *lock, nn_LockAction action);
 
 // The *context* NeoNucleus is operating in.
 // This determines:
@@ -106,7 +106,11 @@ typedef struct nn_Context {
 } nn_Context;
 
 // if NN_BAREMETAL is defined when NeoNucleus is compiled,
-// this function will fill in 
+// this function will fill in a bogus context that does nothing.
+// Otherwise, it fills in a context which uses the C standard library.
+// This function is only meant to be called once, to get the initial context.
+// It does seed the RNG when using the C standard library, so do not
+// call it in loops.
 void nn_initContext(nn_Context *ctx);
 
 typedef enum nn_Exit {
@@ -200,6 +204,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 void nn_destroyComputer(nn_Computer *computer);
 // get the userdata pointer
 void *nn_getComputerUserdata(nn_Computer *computer);
+const char *nn_getComputerAddress(nn_Computer *computer);
 
 // Sets the computer's architecture.
 // The architecture determines everything from how the computer runs, to how it turns off.
