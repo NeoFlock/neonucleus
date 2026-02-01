@@ -13,6 +13,13 @@ typedef enum nn_BuiltinComponent {
 	NN_BUILTIN_COUNT,
 } nn_BuiltinComponent;
 
+typedef struct nn_ComponentType {
+	nn_Universe *universe;
+	char *name;
+	// NULL-terminated
+	nn_ComponentMethod *methods;
+} nn_ComponentType;
+
 typedef struct nn_Universe {
 	nn_Context ctx;
 	nn_ComponentType *types[NN_BUILTIN_COUNT];
@@ -20,6 +27,9 @@ typedef struct nn_Universe {
 
 typedef struct nn_Component {
 	char *address;
+	nn_ComponentType *ctype;
+	size_t slot;
+	void *userdata;
 } nn_Component;
 
 // the values
@@ -74,8 +84,10 @@ typedef struct nn_Computer {
 	size_t totalMemory;
 	double creationTimestamp;
 	size_t stackSize;
+	size_t archCount;
 	nn_Value callstack[NN_MAX_STACK];
 	char errorBuffer[NN_MAX_ERROR_SIZE];
+	nn_Architecture archs[NN_MAX_ARCHITECTURES];
 } nn_Computer;
 
 #endif

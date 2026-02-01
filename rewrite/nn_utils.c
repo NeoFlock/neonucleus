@@ -31,6 +31,37 @@ void nn_free(nn_Context *ctx, void *memory, size_t size) {
 	ctx->alloc(ctx->state, memory, size, 0);
 }
 
+size_t nn_strlen(const char *s) {
+	size_t l = 0;
+	while(*(s++) != '\0') l++;
+	return l;
+}
+
+char *nn_strdup(nn_Context *ctx, const char *s) {
+	size_t l = nn_strlen(s);
+	char *buf = nn_alloc(ctx, sizeof(char) * (l+1));
+	if(buf == NULL) return NULL;
+	nn_memcpy(buf, s, sizeof(char) * l);
+	buf[l] = '\0';
+	return buf;
+}
+
+void nn_strfree(nn_Context *ctx, char *s) {
+	size_t l = nn_strlen(s);
+	nn_free(ctx, s, sizeof(char) * (l+1));
+}
+
+void nn_memcpy(void *dest, const void *src, size_t len) {
+	char *out = (char *)dest;
+	const char *in = (const char *)src;
+	for(size_t i = 0; i < len; i++) out[i] = in[i];
+}
+
+void nn_memset(void *dest, int x, size_t len) {
+	char *out = (char *)dest;
+	for(size_t i = 0; i < len; i++) out[i] = (char)x;
+}
+
 nn_Lock *nn_createLock(nn_Context *ctx) {
 	void *mem = nn_alloc(ctx, ctx->lockSize);
 	if(mem == NULL) return NULL;

@@ -211,13 +211,13 @@ const char *nn_getComputerAddress(nn_Computer *computer);
 // Everything is limited by the architecture.
 void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Gets the current architecture.
-nn_Architecture *nn_getArchitecture(nn_Computer *computer);
+const nn_Architecture *nn_getArchitecture(nn_Computer *computer);
 // Sets the computer's desired architecture.
 // The desired architecture indicates, when the computer state is CHARCH, what the new architecture should be.
 // This is set even if it is not in the supported architecture list, *you must check if it is in that list first.*
 void nn_setDesiredArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Gets the desired architecture. This is the architecture the computer should use after changing architectures.
-nn_Architecture *nn_getDesiredArchitecture(nn_Computer *computer);
+const nn_Architecture *nn_getDesiredArchitecture(nn_Computer *computer);
 // Adds a new supported architecture, which indicates to the code running on this computer that it is possible to switch to that architecture.
 void nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Returns the array of supported architectures, as well as the length.
@@ -293,6 +293,8 @@ typedef enum nn_ComponentAction {
 	NN_COMP_DEINIT,
 	// perform a method call
 	NN_COMP_CALL,
+	// check if a method is enabled
+	NN_COMP_ENABLED,
 } nn_ComponentAction;
 
 typedef struct nn_ComponentRequest {
@@ -303,11 +305,19 @@ typedef struct nn_ComponentRequest {
 	// the local state of the component. NN_COMP_INIT should initialize this pointer.
 	void *state;
 	nn_Computer *computer;
+	// address of the component
+	const char *compAddress;
+	// the action requested
 	nn_ComponentAction action;
 	// for NN_COMP_CALL, it is the method called.
+	// for NN_COMP_ENABLED, it is the method being checked.
 	const char *methodCalled;
-	// for NN_COMP_CALL, it is the amount of return values.
-	size_t returnCount;
+	union {
+		// for NN_COMP_CALL, it is the amount of return values.
+		size_t returnCount;
+		// for NN_COMP_ENABLED, it is whether the method is enabled.
+		bool methodEnabled;
+	};
 } nn_ComponentRequest;
 
 typedef nn_Exit nn_ComponentHandler(nn_ComponentRequest *req);
@@ -322,6 +332,10 @@ void nn_destroyComponentType(nn_ComponentType *ctype);
 nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const char *address, size_t slot, void *userdata);
 // Checks if a component of that address exists.
 bool nn_hasComponent(nn_Computer *computer, const char *address);
+// Checks if the component has that method.
+// This not only checks if the method exists in the component type,
+// but also checks if the method is enabled for the component instance.
+bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method);
 // removes a component. Outside of the initialization state (aka after the first tick), it also emits the signal for component removed.
 nn_Exit nn_removeComponent(nn_Computer *computer, const char *address);
 // Gets the name of a type of a component.

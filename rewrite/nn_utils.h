@@ -7,6 +7,13 @@ void *nn_alloc(nn_Context *ctx, size_t size);
 void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize);
 void nn_free(nn_Context *ctx, void *memory, size_t size);
 
+size_t nn_strlen(const char *s);
+char *nn_strdup(nn_Context *ctx, const char *s);
+void nn_strfree(nn_Context *ctx, char *s);
+
+void nn_memcpy(void *dest, const void *src, size_t len);
+void nn_memset(void *dest, int x, size_t len);
+
 typedef struct nn_Lock nn_Lock;
 
 nn_Lock *nn_createLock(nn_Context *ctx);
