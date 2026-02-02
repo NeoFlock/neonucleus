@@ -137,6 +137,8 @@ typedef enum nn_Exit {
 	NN_ENOSTACK,
 	// bad invocation, error message stored in computer state
 	NN_EBADCALL,
+	// bad state, the function was called at the wrong time
+	NN_EBADSTATE,
 } nn_Exit;
 
 // This stores necessary data between computers
@@ -220,24 +222,25 @@ const char *nn_getComputerAddress(nn_Computer *computer);
 // Sets the computer's architecture.
 // The architecture determines everything from how the computer runs, to how it turns off.
 // Everything is limited by the architecture.
-// The architecture is not copied, it must be valid for as long as the computer is.
+// The architecture is copied, it can be freed after this is called.
 void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Gets the current architecture.
-const nn_Architecture *nn_getArchitecture(nn_Computer *computer);
+nn_Architecture nn_getArchitecture(nn_Computer *computer);
 // Sets the computer's desired architecture.
 // The desired architecture indicates, when the computer state is CHARCH, what the new architecture should be.
 // This is set even if it is not in the supported architecture list, *you must check if it is in that list first.*
-// The architecture is not copied, it must be valid for as long as the computer is.
+// The architecture is copied, it can be freed after this is called.
 void nn_setDesiredArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Gets the desired architecture. This is the architecture the computer should use after changing architectures.
-const nn_Architecture *nn_getDesiredArchitecture(nn_Computer *computer);
+nn_Architecture nn_getDesiredArchitecture(nn_Computer *computer);
 // Adds a new supported architecture, which indicates to the code running on this computer that it is possible to switch to that architecture.
 // The architecture is copied, it can be freed after this is called.
-void nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch);
+nn_Exit nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Returns the array of supported architectures, as well as the length.
 const nn_Architecture *nn_getSupportedArchitecture(nn_Computer *computer, size_t *len);
 // Helper function for searching for an architecture using a computer which supports it and the architecture name.
-const nn_Architecture *nn_findSupportedArchitecture(nn_Computer *computer, const char *name);
+// If the architecture is not found, it returns one with a NULL name.
+nn_Architecture nn_findSupportedArchitecture(nn_Computer *computer, const char *name);
 
 // sets the energy capacity of the computer.
 void nn_setTotalEnergy(nn_Computer *computer, double maxEnergy);
@@ -270,8 +273,8 @@ void nn_setComputerState(nn_Computer *computer, nn_ComputerState state);
 // gets the current computer state
 nn_ComputerState nn_getComputerState(nn_Computer *computer);
 
-// runs a tick of the computer. Make sure to check the state returned!
-nn_ComputerState nn_tick(nn_Computer *computer);
+// runs a tick of the computer. Make sure to check the state as well!
+nn_Exit nn_tick(nn_Computer *computer);
 
 typedef struct nn_DeviceInfoEntry {
 	const char *name;

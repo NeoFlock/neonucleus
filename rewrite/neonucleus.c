@@ -219,6 +219,17 @@ void nn_memset(void *dest, int x, size_t len) {
 	for(size_t i = 0; i < len; i++) out[i] = (char)x;
 }
 
+int nn_strcmp(const char *a, const char *b) {
+	size_t i = 0;
+	while(1) {
+		char c = a[i];
+		char d = b[i];
+		if(c == '\0' && d == '\0') return 0;
+		if(c != d) return (int)(unsigned char)c - (int)(unsigned char)d;
+		i++;
+	}
+}
+
 nn_Lock *nn_createLock(nn_Context *ctx) {
 	nn_LockRequest req;
 	req.lock = NULL;
@@ -445,8 +456,9 @@ typedef struct nn_Computer {
 	nn_Universe *universe;
 	void *userdata;
 	char *address;
-	const nn_Architecture *arch;
-	const nn_Architecture *desiredArch;
+	void *archState;
+	nn_Architecture arch;
+	nn_Architecture desiredArch;
 	size_t componentCap;
 	size_t componentLen;
 	nn_Component *components;
@@ -541,8 +553,9 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 		return NULL;
 	}
 
-	c->arch = NULL;
-	c->desiredArch = NULL;
+	c->arch.name = NULL;
+	c->desiredArch.name = NULL;
+	c->archState = NULL;
 
 	c->componentCap = maxComponents;
 	c->componentLen = 0;
@@ -576,6 +589,15 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 void nn_destroyComputer(nn_Computer *computer) {
 	nn_Context *ctx = &computer->universe->ctx;
 
+	if(computer->arch.name != NULL) {
+		nn_ArchitectureRequest req;
+		req.computer = computer;
+		req.globalState = computer->arch.state;
+		req.localState = computer->archState;
+		req.action = NN_ARCH_DEINIT;
+		computer->arch.handler(&req);
+	}
+
 	nn_free(ctx, computer->components, sizeof(nn_Component) * computer->componentCap);
 	nn_free(ctx, computer->deviceInfo, sizeof(nn_DeviceInfo) * computer->deviceInfoCap);
 	nn_strfree(ctx, computer->address);
@@ -588,4 +610,172 @@ void *nn_getComputerUserdata(nn_Computer *computer) {
 
 const char *nn_getComputerAddress(nn_Computer *computer) {
 	return computer->address;
+}
+
+void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
+	computer->arch = *arch;
+}
+
+nn_Architecture nn_getArchitecture(nn_Computer *computer) {
+	return computer->arch;
+}
+
+void nn_setDesiredArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
+	computer->desiredArch = *arch;
+}
+
+nn_Architecture nn_getDesiredArchitecture(nn_Computer *computer) {
+	return computer->desiredArch;
+}
+
+nn_Exit nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
+	if(computer->archCount == NN_MAX_ARCHITECTURES) return NN_ELIMIT;
+	computer->archs[computer->archCount++] = *arch;
+	return NN_OK;
+}
+
+const nn_Architecture *nn_getSupportedArchitecture(nn_Computer *computer, size_t *len) {
+	*len = computer->archCount;
+	return computer->archs;
+}
+
+nn_Architecture nn_findSupportedArchitecture(nn_Computer *computer, const char *name) {
+	for(size_t i = 0; i < computer->archCount; i++) {
+		if(nn_strcmp(computer->archs[i].name, name) == 0) return computer->archs[i];
+	}
+
+	return (nn_Architecture) {
+		.name = NULL,
+		.state = NULL,
+		.handler = NULL,
+	};	
+}
+
+void nn_setTotalEnergy(nn_Computer *computer, double maxEnergy) {
+	computer->totalEnergy = maxEnergy;
+}
+
+double nn_getTotalEnergy(nn_Computer *computer) {
+	return computer->totalEnergy;
+}
+
+void nn_setEnergy(nn_Computer *computer, double energy) {
+	computer->energy = energy;
+}
+
+double nn_getEnergy(nn_Computer *computer) {
+	return computer->energy;
+}
+
+bool nn_removeEnergy(nn_Computer *computer, double energy) {
+	computer->energy -= energy;
+	if(computer->energy < 0) computer->energy = 0;
+	return computer->energy <= 0;
+}
+
+size_t nn_getTotalMemory(nn_Computer *computer) {
+	return computer->totalMemory;
+}
+
+size_t nn_getFreeMemory(nn_Computer *computer) {
+	if(computer->state == NN_BOOTUP) return 0;
+	nn_ArchitectureRequest req;
+	req.computer = computer;
+	req.action = NN_ARCH_FREEMEM;
+	req.globalState = computer->arch.state;
+	req.localState = computer->archState;
+	
+	computer->arch.handler(&req);
+	return req.freeMemory;
+}
+
+double nn_getUptime(nn_Computer *computer) {
+	return nn_currentTime(&computer->universe->ctx) - computer->creationTimestamp;
+}
+
+
+void nn_setError(nn_Computer *computer, const char *s) {
+	nn_setLError(computer, s, nn_strlen(s));
+}
+
+void nn_setLError(nn_Computer *computer, const char *s, size_t len) {
+	if(len >= NN_MAX_ERROR_SIZE) len = NN_MAX_ERROR_SIZE - 1;
+	nn_memcpy(computer->errorBuffer, s, sizeof(char) * len);
+	computer->errorBuffer[len] = '\0';
+}
+
+const char *nn_getError(nn_Computer *computer) {
+	return computer->errorBuffer;
+}
+
+void nn_clearError(nn_Computer *computer) {
+	// make it empty
+	computer->errorBuffer[0] = '\0';
+}
+
+void nn_setComputerState(nn_Computer *computer, nn_ComputerState state) {
+	computer->state = state;
+}
+
+nn_ComputerState nn_getComputerState(nn_Computer *computer) {
+	return computer->state;
+}
+
+static void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit) {
+	switch(exit) {
+	case NN_OK:
+		return; // no error
+	case NN_EBADCALL:
+		return; // stored by component
+	case NN_ENOMEM:
+		nn_setError(computer, "out of memory");
+		return;
+	case NN_ELIMIT:
+		nn_setError(computer, "buffer overflow");
+		return;
+	case NN_ENOSTACK:
+		nn_setError(computer, "stack overflow");
+		return;
+	case NN_EBELOWSTACK:
+		nn_setError(computer, "stack underflow");
+		return;
+	case NN_EBADSTATE:
+		nn_setError(computer, "bad state");
+		return;
+	}
+}
+
+nn_Exit nn_tick(nn_Computer *computer) {
+	nn_Exit err;
+	if(computer->state == NN_BOOTUP) {
+		// init state
+		nn_ArchitectureRequest req;
+		req.computer = computer;
+		req.globalState = computer->arch.state;
+		req.localState = NULL;
+		req.action = NN_ARCH_INIT;
+		err = computer->arch.handler(&req);
+		if(err) {
+			computer->state = NN_CRASHED;
+			nn_setErrorFromExit(computer, err);
+			return err;
+		}
+		computer->archState = req.localState;
+	} else if(computer->state != NN_RUNNING) {
+		nn_setErrorFromExit(computer, NN_EBADSTATE);
+		return NN_EBADSTATE;
+	}
+	computer->state = NN_RUNNING;
+	nn_ArchitectureRequest req;
+	req.computer = computer;
+	req.globalState = computer->arch.state;
+	req.localState = computer->archState;
+	req.action = NN_ARCH_TICK;
+	err = computer->arch.handler(&req);
+	if(err) {
+		computer->state = NN_CRASHED;
+		nn_setErrorFromExit(computer, err);
+		return err;
+	}
+	return NN_OK;
 }
