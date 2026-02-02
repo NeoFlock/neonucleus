@@ -16,6 +16,13 @@ extern "C" {
 
 // Internal limits or constants
 
+#define NN_KiB (1024)
+#define NN_MiB (1024 * NN_KiB)
+#define NN_GiB (1024 * NN_MiB)
+#define NN_TiB (1024 * NN_TiB)
+
+// the alignment an allocation should have
+#define NN_ALLOC_ALIGN 16
 // the maximum amount of items the callstack can have.
 #define NN_MAX_STACK 256
 // the maximum size a path is allowed to have
@@ -68,22 +75,28 @@ typedef double nn_TimeProc(void *state);
 typedef size_t nn_RngProc(void *state);
 
 typedef enum nn_LockAction {
-	// init any necessary state
-	NN_LOCK_INIT,
-	// cleanup any necessary state
-	NN_LOCK_DEINIT,
+	// create the mutex 
+	NN_LOCK_CREATE,
+	// destroy the mutex
+	NN_LOCK_DESTROY,
 	// lock the mutex
 	NN_LOCK_LOCK,
 	// unlock the mutex
 	NN_LOCK_UNLOCK,
 } nn_LockAction;
 
+typedef struct nn_LockRequest {
+	// mutate it for NN_LOCK_INIT
+	void *lock;
+	nn_LockAction action;
+} nn_LockRequest;
+
 // intended for a plain mutex.
 // This is used for synchronization. OpenComputers achieves synchronization
 // between the worker threads by sending them as requests to a central thread (indirect methods).
 // In NeoNucleus, we simply use a lock. This technically makes all methods direct, however
 // we consider methods to be indirect if they require locks.
-typedef void nn_LockProc(void *state, void *lock, nn_LockAction action);
+typedef void nn_LockProc(void *state, nn_LockRequest *req);
 
 // The *context* NeoNucleus is operating in.
 // This determines:
@@ -100,8 +113,6 @@ typedef struct nn_Context {
 	// so rngMaximum+1 MUST NOT OVERFLOW.
 	size_t rngMaximum;
 	nn_RngProc *rng;
-	// the size of 1 lock. This is used to dynamically allocate enough space for the locks.
-	size_t lockSize;
 	nn_LockProc *lock;
 } nn_Context;
 
@@ -209,16 +220,19 @@ const char *nn_getComputerAddress(nn_Computer *computer);
 // Sets the computer's architecture.
 // The architecture determines everything from how the computer runs, to how it turns off.
 // Everything is limited by the architecture.
+// The architecture is not copied, it must be valid for as long as the computer is.
 void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Gets the current architecture.
 const nn_Architecture *nn_getArchitecture(nn_Computer *computer);
 // Sets the computer's desired architecture.
 // The desired architecture indicates, when the computer state is CHARCH, what the new architecture should be.
 // This is set even if it is not in the supported architecture list, *you must check if it is in that list first.*
+// The architecture is not copied, it must be valid for as long as the computer is.
 void nn_setDesiredArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Gets the desired architecture. This is the architecture the computer should use after changing architectures.
 const nn_Architecture *nn_getDesiredArchitecture(nn_Computer *computer);
 // Adds a new supported architecture, which indicates to the code running on this computer that it is possible to switch to that architecture.
+// The architecture is copied, it can be freed after this is called.
 void nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Returns the array of supported architectures, as well as the length.
 const nn_Architecture *nn_getSupportedArchitecture(nn_Computer *computer, size_t *len);
