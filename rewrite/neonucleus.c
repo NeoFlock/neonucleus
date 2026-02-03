@@ -10,6 +10,11 @@
 // we need the header.
 #include "neonucleus.h"
 
+// we need atomics for thread-safe reference counting that will be used
+// for managing the lifetimes of various resources
+// TODO: provide a way to use non-atomic values, and evaluate if the context should contain a method for atomics.
+#include <stdatomic.h>
+
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
    //define something for Windows (32-bit and 64-bit, this part is common)
