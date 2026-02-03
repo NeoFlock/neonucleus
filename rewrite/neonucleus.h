@@ -341,12 +341,14 @@ typedef nn_Exit nn_ComponentHandler(nn_ComponentRequest *req);
 
 // Creates a new component type. It is safe to free name and methods afterwards.
 nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name, void *userdata, const nn_ComponentMethod methods[], nn_ComponentHandler *handler);
+// NOTE: do not destroy this before destroying any components using it, or any computers with components using it.
+// The component type is still used one last time for the destructor of the components.
 void nn_destroyComponentType(nn_ComponentType *ctype);
 
 // adds a component. Outside of the initialization state (aka after the first tick), it also emits the signal for component added.
 // You MUST NOT destroy the component type while a component using that type still exists.
 // You can free the address after the call just fine.
-nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const char *address, size_t slot, void *userdata);
+nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const char *address, int slot, void *userdata);
 // Checks if a component of that address exists.
 bool nn_hasComponent(nn_Computer *computer, const char *address);
 // Checks if the component has that method.
@@ -358,7 +360,7 @@ nn_Exit nn_removeComponent(nn_Computer *computer, const char *address);
 // Gets the name of a type of a component.
 const char *nn_getComponentType(nn_Computer *computer, const char *address);
 // Gets the slot of a component.
-size_t nn_getComponentSlot(nn_Computer *computer, const char *address);
+int nn_getComponentSlot(nn_Computer *computer, const char *address);
 // Returns the array of component methods. This can be used for doc strings or just listing methods.
 const nn_ComponentMethod *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len);
 
@@ -372,6 +374,9 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method);
 // This does support other languages, however it may make some APIs clunky due to the usage of tables and 1-based indexing.
 // Internally, reference counting is used to manage the memory automatically. The API is designed such that strong reference cycles
 // cannot occur.
+
+// returns if there is enough space for [amount] values
+bool nn_checkstack(nn_Computer *computer, size_t amount);
 
 // pushes a null on the call stack
 nn_Exit nn_pushnull(nn_Computer *computer);
@@ -432,7 +437,7 @@ bool nn_isuserdata(nn_Computer *computer, size_t idx);
 // [idx] starts at 0.
 bool nn_istable(nn_Computer *computer, size_t idx);
 
-// NOTE: behavior of the nn_to*() functions when the types mismatch is undefined.
+// NOTE: behavior of the nn_to*() functions and nn_dumptable() when the values have the wrong types or at out of bounds indexes is undefined.
 
 // Returns the boolean value at [idx].
 bool nn_toboolean(nn_Computer *computer, size_t idx);

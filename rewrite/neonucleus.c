@@ -13,27 +13,9 @@
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
    //define something for Windows (32-bit and 64-bit, this part is common)
-   #ifdef _WIN64
-        #define NN_WINDOWS
-   #else
-        #error "Windows 32-bit is not supported"
-   #endif
+	#define NN_WINDOWS
 #elif __APPLE__
-    #include <TargetConditionals.h>
-    #if TARGET_IPHONE_SIMULATOR
-        #error "iPhone Emulators are not supported"
-    #elif TARGET_OS_MACCATALYST
-        // I guess?
-        #define NN_MACOS
-    #elif TARGET_OS_IPHONE
-        #error "iPhone are not supported"
-    #elif TARGET_OS_MAC
-        #define NN_MACOS
-    #else
-        #error "Unknown Apple platform"
-    #endif
-#elif __ANDROID__
-    #error "Android is not supported"
+    #define NN_MACOS
 #elif __linux__
     #define NN_LINUX
 #endif
@@ -168,7 +150,7 @@ void *nn_aralloc(nn_Arena *arena, size_t size) {
 		}
 	}
 
-	while(arena->nextCap < size) arena->nextCap *= 2;
+	while(arena->nextCap <= size) arena->nextCap *= 2;
 
 	nn_ArenaBlock *newBlock = nn_arallocblock(&arena->ctx, arena->nextCap);
 	if(newBlock == NULL) {
@@ -397,8 +379,10 @@ typedef enum nn_BuiltinComponent {
 
 typedef struct nn_ComponentType {
 	nn_Universe *universe;
+	void *userdata;
 	nn_Arena arena;
 	const char *name;
+	nn_ComponentHandler *handler;
 	// NULL-terminated
 	nn_ComponentMethod *methods;
 	size_t methodCount;
@@ -412,8 +396,9 @@ typedef struct nn_Universe {
 typedef struct nn_Component {
 	char *address;
 	nn_ComponentType *ctype;
-	size_t slot;
+	int slot;
 	void *userdata;
+	void *state;
 } nn_Component;
 
 // the values
@@ -496,6 +481,8 @@ nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name
 	nn_ComponentType *ctype = nn_alloc(ctx, sizeof(nn_ComponentType));
 	if(ctype == NULL) return NULL;
 	ctype->universe = universe;
+	ctype->userdata = userdata;
+	ctype->handler = handler;
 
 	nn_Arena *arena = &ctype->arena;
 	nn_arinit(arena, ctx);
@@ -586,16 +573,26 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	return c;
 }
 
+static void nn_dropValue(nn_Value val);
+static void nn_dropComponent(nn_Computer *computer, nn_Component c);
+
 void nn_destroyComputer(nn_Computer *computer) {
 	nn_Context *ctx = &computer->universe->ctx;
 
-	if(computer->arch.name != NULL) {
+	if(computer->arch.name != NULL && computer->archState != NULL) {
 		nn_ArchitectureRequest req;
 		req.computer = computer;
 		req.globalState = computer->arch.state;
 		req.localState = computer->archState;
 		req.action = NN_ARCH_DEINIT;
 		computer->arch.handler(&req);
+	}
+
+	for(size_t i = 0; i < computer->stackSize; i++) {
+		nn_dropValue(computer->callstack[i]);
+	}
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_dropComponent(computer, computer->components[i]);
 	}
 
 	nn_free(ctx, computer->components, sizeof(nn_Component) * computer->componentCap);
@@ -779,3 +776,374 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	}
 	return NN_OK;
 }
+
+nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const char *address, int slot, void *userdata) {
+	if(computer->componentLen == computer->componentCap) return NN_ELIMIT;
+
+	nn_Component c;
+	c.address = nn_strdup(&computer->universe->ctx, address);
+	if(c.address == NULL) return NN_ENOMEM;
+	c.ctype = ctype;
+	c.slot = slot;
+	c.userdata = userdata;
+	c.state = NULL;
+
+	nn_ComponentRequest req;
+	req.typeUserdata = ctype->userdata;
+	req.compUserdata = userdata;
+	req.state = NULL;
+	req.computer = computer;
+	req.compAddress = address;
+	req.action = NN_COMP_INIT;
+	req.methodCalled = NULL;
+
+	nn_Exit err = ctype->handler(&req);
+	if(err != NN_OK) {
+		nn_strfree(&computer->universe->ctx, c.address);
+		return err;
+	}
+	// get the state back!
+	c.state = req.state;
+
+	computer->components[computer->componentLen++] = c;
+
+	// TODO: send the signal
+	return NN_OK;
+}
+
+bool nn_hasComponent(nn_Computer *computer, const char *address) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component *c = &computer->components[i];
+		if(nn_strcmp(c->address, address) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component *c = &computer->components[i];
+		if(nn_strcmp(c->address, address) != 0) continue;
+
+		bool found = false;
+		for(size_t j = 0; j < c->ctype->methodCount; j++) {
+			if(nn_strcmp(c->ctype->methods[j].name, method) != 0) continue;
+			found = true;
+			break;
+		}
+		if(!found) return false;
+		
+		nn_ComponentRequest req;
+		req.typeUserdata = c->ctype->userdata;
+		req.compUserdata = c->userdata;
+		req.state = c->state;
+		req.computer = computer;
+		req.compAddress = address;
+		req.action = NN_COMP_ENABLED;
+		req.methodCalled = method;
+		// default response in case it is not implemented
+		req.methodEnabled = true;
+		// should never error
+		c->ctype->handler(&req);
+
+		return req.methodEnabled;
+	}
+	return false;
+}
+
+static void nn_dropComponent(nn_Computer *computer, nn_Component c) {
+	nn_ComponentRequest req;
+	req.typeUserdata = c.ctype->userdata;
+	req.compUserdata = c.userdata;
+	req.state = c.state;
+	req.computer = computer;
+	req.compAddress = c.address;
+	req.action = NN_COMP_DEINIT;
+	req.methodCalled = NULL;
+
+	c.ctype->handler(&req);
+	
+	nn_strfree(&computer->universe->ctx, c.address);
+}
+
+nn_Exit nn_removeComponent(nn_Computer *computer, const char *address) {
+	size_t j = 0;
+	nn_Component c;
+	c.address = NULL;
+
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		if(nn_strcmp(computer->components[i].address, address) == 0) {
+			c = computer->components[i];
+		} else {
+			computer->components[j++] = computer->components[i];
+		}
+	}
+	computer->componentLen = j;
+
+	// already removed!
+	if(c.address == NULL) return NN_EBADSTATE;
+	nn_dropComponent(computer, c);
+
+	// TODO: send the signal
+	return NN_OK;
+}
+
+const char *nn_getComponentType(nn_Computer *computer, const char *address) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component *c = &computer->components[i];
+		if(nn_strcmp(c->address, address) == 0) {
+			return c->ctype->name;
+		}
+	}
+	return NULL;
+}
+
+int nn_getComponentSlot(nn_Computer *computer, const char *address) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component *c = &computer->components[i];
+		if(nn_strcmp(c->address, address) == 0) {
+			return c->slot;
+		}
+	}
+	return 0;
+}
+
+const nn_ComponentMethod *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component *c = &computer->components[i];
+		if(nn_strcmp(c->address, address) == 0) {
+			if(len != NULL) *len = c->ctype->methodCount;
+			return c->ctype->methods;
+		}
+	}
+	if(len != NULL) *len = 0;
+	return NULL;
+}
+
+static void nn_retainValue(nn_Value val) {
+	switch(val.type) {
+	case NN_VAL_NULL:
+	case NN_VAL_BOOL:
+	case NN_VAL_NUM:
+	case NN_VAL_USERDATA:
+		return;
+	case NN_VAL_STR:
+		val.string->refc++;
+		return;
+	case NN_VAL_TABLE:
+		val.table->refc++;
+		return;
+	}
+}
+
+static void nn_dropValue(nn_Value val) {
+	nn_Context ctx;
+	size_t size;
+	switch(val.type) {
+	case NN_VAL_NULL:
+	case NN_VAL_BOOL:
+	case NN_VAL_NUM:
+	case NN_VAL_USERDATA:
+		return;
+	case NN_VAL_STR:
+		val.string->refc--;
+		if(val.string->refc != 0) return;
+		ctx = val.string->ctx;
+		size = val.string->len + 1;
+		nn_free(&ctx, val.string, sizeof(nn_String) + sizeof(char) * size);
+		return;
+	case NN_VAL_TABLE:
+		val.table->refc--;
+		if(val.table->refc != 0) return;
+		ctx = val.table->ctx;
+		size = val.table->len;
+		nn_free(&ctx, val.table, sizeof(nn_Table) + sizeof(nn_Value) * size * 2);
+		return;
+	}
+}
+
+nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method);
+
+bool nn_checkstack(nn_Computer *computer, size_t amount) {
+	return computer->stackSize + amount <= NN_MAX_STACK;
+}
+
+static nn_Exit nn_pushvalue(nn_Computer *computer, nn_Value val) {
+	if(!nn_checkstack(computer, 1)) {
+		nn_dropValue(val);
+		return NN_ENOSTACK;
+	}
+	computer->callstack[computer->stackSize++] = val;
+	return NN_OK;
+}
+
+nn_Exit nn_pushnull(nn_Computer *computer) {
+	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_NULL});
+}
+
+nn_Exit nn_pushbool(nn_Computer *computer, bool truthy) {
+	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_BOOL, .boolean = truthy});
+}
+
+nn_Exit nn_pushnumber(nn_Computer *computer, double num) {
+	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_NUM, .number = num});
+}
+
+nn_Exit nn_pushstring(nn_Computer *computer, const char *str) {
+	return nn_pushlstring(computer, str, nn_strlen(str));
+}
+
+nn_Exit nn_pushlstring(nn_Computer *computer, const char *str, size_t len) {
+	nn_Context ctx = computer->universe->ctx;
+	nn_String *s = nn_alloc(&ctx, sizeof(nn_String) + sizeof(char) * (len + 1));
+	if(s == NULL) return NN_ENOMEM;
+	s->ctx = ctx;
+	s->refc = 1;
+	s->len = len;
+	nn_memcpy(s->data, str, sizeof(char) * len);
+	s->data[len] = '\0';
+	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_STR, .string = s});
+}
+
+nn_Exit nn_pushuserdata(nn_Computer *computer, size_t userdataIdx) {
+	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_USERDATA, .userdataIdx = userdataIdx});
+}
+
+nn_Exit nn_pusharraytable(nn_Computer *computer, size_t len) {
+	if(computer->stackSize < len) return NN_EBELOWSTACK;
+	nn_Context ctx = computer->universe->ctx;
+	nn_Table *t = nn_alloc(&ctx, sizeof(nn_Table) + sizeof(nn_Value) * len * 2);
+	if(t == NULL) return NN_ENOMEM;
+	t->ctx = ctx;
+	t->refc = 1;
+	t->len = len;
+	for(size_t i = 0; i < len; i++) {
+		t->vals[i*2].type = NN_VAL_NUM;
+		t->vals[i*2].number = (double)i;
+		t->vals[i*2+1] = computer->callstack[computer->stackSize - len + i];
+	}
+	computer->stackSize -= len;
+	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_TABLE, .table = t});
+}
+
+nn_Exit nn_pushtable(nn_Computer *computer, size_t len) {
+	size_t size = len * 2;
+	if(computer->stackSize < size) return NN_EBELOWSTACK;
+	nn_Context ctx = computer->universe->ctx;
+	nn_Table *t = nn_alloc(&ctx, sizeof(nn_Table) + sizeof(nn_Value) * size);
+	if(t == NULL) return NN_ENOMEM;
+	t->ctx = ctx;
+	t->refc = 1;
+	t->len = len;
+	for(size_t i = 0; i < len*2; i++) {
+		t->vals[i] = computer->callstack[computer->stackSize - size + i];
+	}
+	computer->stackSize -= size;
+	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_TABLE, .table = t});
+}
+
+nn_Exit nn_pop(nn_Computer *computer) {
+	return nn_popn(computer, 1);
+}
+
+nn_Exit nn_popn(nn_Computer *computer, size_t n) {
+	if(computer->stackSize < n) return NN_EBELOWSTACK;
+	for(size_t i = computer->stackSize - n; i < computer->stackSize; i++) {
+		nn_dropValue(computer->callstack[i]);
+	}
+	computer->stackSize -= n;
+	return NN_OK;
+}
+
+nn_Exit nn_dupe(nn_Computer *computer) {
+	return nn_dupen(computer, 1);
+}
+nn_Exit nn_dupen(nn_Computer *computer, size_t n) {
+	if(computer->stackSize < n) return NN_EBELOWSTACK;
+	if(!nn_checkstack(computer, n)) return NN_ENOSTACK;
+	
+	for(size_t i = 0; i < n; i++) {
+		nn_Value v = computer->callstack[computer->stackSize - n + i];
+		nn_retainValue(v);
+		computer->callstack[computer->stackSize + i] = v;
+	}
+	computer->stackSize += n;
+	return NN_OK;
+}
+
+size_t nn_getstacksize(nn_Computer *computer) {
+	return computer->stackSize;
+}
+
+void nn_clearstack(nn_Computer *computer) {
+	nn_popn(computer, nn_getstacksize(computer));
+}
+
+bool nn_isnull(nn_Computer *computer, size_t idx) {
+	if(idx < computer->stackSize) return false;
+	return computer->callstack[idx].type == NN_VAL_NULL;
+}
+
+bool nn_isboolean(nn_Computer *computer, size_t idx) {
+	if(idx < computer->stackSize) return false;
+	return computer->callstack[idx].type == NN_VAL_BOOL;
+}
+
+bool nn_isnumber(nn_Computer *computer, size_t idx) {
+	if(idx < computer->stackSize) return false;
+	return computer->callstack[idx].type == NN_VAL_NUM;
+}
+
+bool nn_isstring(nn_Computer *computer, size_t idx) {
+	if(idx < computer->stackSize) return false;
+	return computer->callstack[idx].type == NN_VAL_STR;
+}
+
+bool nn_isuserdata(nn_Computer *computer, size_t idx) {
+	if(idx < computer->stackSize) return false;
+	return computer->callstack[idx].type == NN_VAL_USERDATA;
+}
+
+bool nn_istable(nn_Computer *computer, size_t idx) {
+	if(idx < computer->stackSize) return false;
+	return computer->callstack[idx].type == NN_VAL_TABLE;
+}
+
+bool nn_toboolean(nn_Computer *computer, size_t idx) {
+	return computer->callstack[idx].boolean;
+}
+
+double nn_tonumber(nn_Computer *computer, size_t idx) {
+	return computer->callstack[idx].number;
+}
+
+const char *nn_tostring(nn_Computer *computer, size_t idx) {
+	return nn_tolstring(computer, idx, NULL);
+}
+
+const char *nn_tolstring(nn_Computer *computer, size_t idx, size_t *len) {
+	nn_String *s = computer->callstack[idx].string;
+	if(len != NULL) *len = s->len;
+	return s->data;
+}
+
+size_t nn_touserdata(nn_Computer *computer, size_t idx) {
+	return computer->callstack[idx].userdataIdx;
+}
+
+nn_Exit nn_dumptable(nn_Computer *computer, size_t idx, size_t *len) {
+	nn_Table *t = computer->callstack[idx].table;
+	if(!nn_checkstack(computer, t->len * 2)) return NN_ENOSTACK;
+
+	if(len != NULL) *len = t->len;
+	for(size_t i = 0; i < t->len * 2; i++) {
+		computer->callstack[computer->stackSize + i] = t->vals[i];
+	}
+	computer->stackSize += t->len * 2;
+	
+	return NN_OK;
+}
+
+// todo: everything
+nn_Exit nn_initComponentsLibrary(nn_Universe *universe);
