@@ -60,7 +60,7 @@ typedef struct nn_Lock nn_Lock;
 #endif
 
 #ifdef NN_WINDOWS
-#include <Windows.h>
+#include <windows.h>
 #endif
 
 #endif
@@ -348,7 +348,19 @@ static void nn_defaultLock(void *state, nn_LockRequest *req) {
 		return;
 	}
 #elif defined(NN_THREAD_WINDOWS)
-#error "Windows locks are not supported yet"
+	switch(req->action) {
+	case NN_LOCK_CREATE:;
+		req->lock = CreateMutex(NULL, false, NULL);
+	case NN_LOCK_DESTROY:;
+		CloseHandle(req->lock);
+		return;
+	case NN_LOCK_LOCK:;
+		WaitForSingleObject(req->lock, INFINITE);
+		return;
+	case NN_LOCK_UNLOCK:;
+		ReleaseMutex(req->lock);
+		return;
+	}
 #endif
 
 #endif
@@ -1249,6 +1261,41 @@ int nn_countValueCost(nn_Computer *computer, size_t values) {
 	return total;
 }
 
+size_t nn_countSignalCostValue(nn_Value value) {
+	size_t total = 2;
+	switch(value.type) {
+	case NN_VAL_NULL:
+	case NN_VAL_BOOL:
+		total += 4;
+		break;
+	case NN_VAL_NUM:
+	case NN_VAL_USERDATA:
+		total += 8;
+		break;
+	case NN_VAL_STR:
+		// 2+1
+		if(value.string->len == 0) total++;
+		else total += value.string->len;
+		break;
+	case NN_VAL_TABLE:
+		total += 2;
+		for(size_t i = 0; i < value.table->len * 2; i++) {
+			total += nn_countSignalCostValue(value.table->vals[i]);
+		}
+		break;
+	}
+	return total;
+}
+
+size_t nn_countSignalCost(nn_Computer *computer, size_t values) {
+	size_t total = 0;
+	for(size_t i = 0; i < values; i++) {
+		nn_Value val = computer->callstack[computer->stackSize - values + i];
+		total += nn_countSignalCostValue(val);
+	}
+	return total;
+}
+
 size_t nn_countSignals(nn_Computer *computer) {
 	return computer->signalCount;
 }
@@ -1258,7 +1305,7 @@ nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount) {
 	if(computer->signalCount == NN_MAX_SIGNALS) return NN_ELIMIT;
 	if(computer->stackSize < valueCount) return NN_EBELOWSTACK;
 	
-	int cost = nn_countValueCost(computer, valueCount);
+	int cost = nn_countSignalCost(computer, valueCount);
 	if(cost == -1) return NN_EBADSTATE;
 	if(cost > NN_MAX_SIGNALSIZE) return NN_ELIMIT;
 

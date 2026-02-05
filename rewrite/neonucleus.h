@@ -459,7 +459,21 @@ nn_Exit nn_dumptable(nn_Computer *computer, size_t idx, size_t *len);
 // computes the cost of the top [values] values using the same algorithm as
 // the modem.
 // It will return -1 if the values are invalid.
+// The algorithm is as mentioned in https://ocdoc.cil.li/component:modem
+// and is as follows:
+// - Every value adds a 2 byte overhead
+// - Numbers add another 8 bytes, true/false/null another 4 bytes, strings as
+// many bytes as they contain, except empty strings count as 1 byte.
 int nn_countValueCost(nn_Computer *computer, size_t values);
+
+// computes the signal cost.
+// This is a slightly modified version of value cost, except it allows
+// tables and userdata.
+// All values are always valid.
+// For userdata and tables:
+// - Userdata adds another 8 bytes overhead like numbers do.
+// - Tables add yet another 2 byte overhead for their terminator, and the sum of all of the size of the keys and values they contain as per this algorithm.
+size_t nn_countSignalCost(nn_Computer *computer, size_t values);
 
 // Returns the amount of signals stored
 size_t nn_countSignals(nn_Computer *computer);
