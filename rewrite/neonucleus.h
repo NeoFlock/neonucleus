@@ -414,6 +414,9 @@ nn_Exit nn_dupen(nn_Computer *computer, size_t n);
 // For component calls, calling this at the start effectively gives you the argument count.
 size_t nn_getstacksize(nn_Computer *computer);
 // Removes all values from the stack.
+// It is recommended to do this when initiating a component call or
+// after returning from errors, as the call stack may have
+// random junk on it.
 void nn_clearstack(nn_Computer *computer);
 
 // type check! The API may misbehave if types do not match, so always type-check!
@@ -453,11 +456,17 @@ size_t nn_touserdata(nn_Computer *computer, size_t idx);
 // It pushes them as K1,V1,K2,V2,K3,V3,etc., just like went in to pushtable. And yes, the keys are not de-duplicated.
 nn_Exit nn_dumptable(nn_Computer *computer, size_t idx, size_t *len);
 
+// computes the cost of the top [values] values using the same algorithm as
+// the modem.
+// It will return -1 if the values are invalid.
+int nn_countValueCost(nn_Computer *computer, size_t values);
+
 // Returns the amount of signals stored
 size_t nn_countSignals(nn_Computer *computer);
 // Pops [valueCount] values from the call stack and pushes them as a signal.
 nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount);
 // Removes the first signal and pushes the values onto the call stack, while setting valueCount to the amount of values in the signal.
+// If there is no signal, it returns EBADSTATE
 nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 
 // The high-level API of the built-in components.

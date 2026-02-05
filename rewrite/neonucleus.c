@@ -441,6 +441,11 @@ typedef struct nn_Table {
 	nn_Value vals[];
 } nn_Table;
 
+typedef struct nn_Signal {
+	size_t len;
+	nn_Value *values;
+} nn_Signal;
+
 typedef struct nn_Computer {
 	nn_ComputerState state;
 	nn_Universe *universe;
@@ -461,9 +466,11 @@ typedef struct nn_Computer {
 	double creationTimestamp;
 	size_t stackSize;
 	size_t archCount;
+	size_t signalCount;
 	nn_Value callstack[NN_MAX_STACK];
 	char errorBuffer[NN_MAX_ERROR_SIZE];
 	nn_Architecture archs[NN_MAX_ARCHITECTURES];
+	nn_Signal signals[NN_MAX_SIGNALS];
 } nn_Computer;
 
 nn_Universe *nn_createUniverse(nn_Context *ctx) {
@@ -494,6 +501,7 @@ nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name
 
 	const char *namecpy = nn_arstrdup(arena, name);
 	if(namecpy == NULL) goto fail;
+	ctype->name = namecpy;
 
 	size_t methodCount = 0;
 	while(methods[methodCount].name != NULL) methodCount++;
@@ -573,6 +581,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->creationTimestamp = nn_currentTime(ctx);
 	c->stackSize = 0;
 	c->archCount = 0;
+	c->signalCount = 0;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
 	return c;
@@ -598,6 +607,11 @@ void nn_destroyComputer(nn_Computer *computer) {
 	}
 	for(size_t i = 0; i < computer->componentLen; i++) {
 		nn_dropComponent(computer, computer->components[i]);
+	}
+	for(size_t i = 0; i < computer->signalCount; i++) {
+		nn_Signal s = computer->signals[i];
+		for(size_t j = 0; j < s.len; j++) nn_dropValue(s.values[j]);
+		nn_free(ctx, s.values, sizeof(nn_Value) * s.len);
 	}
 
 	nn_free(ctx, computer->components, sizeof(nn_Component) * computer->componentCap);
@@ -812,7 +826,16 @@ nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const ch
 
 	computer->components[computer->componentLen++] = c;
 
-	// TODO: send the signal
+	if(computer->state != NN_BOOTUP) {
+		err = nn_pushstring(computer, "component_added");
+		if(err) return err;
+		err = nn_pushstring(computer, address);
+		if(err) return err;
+		err = nn_pushstring(computer, ctype->name);
+		if(err) return err;
+		err = nn_pushSignal(computer, 3);
+		if(err) return err;
+	}
 	return NN_OK;
 }
 
@@ -890,7 +913,17 @@ nn_Exit nn_removeComponent(nn_Computer *computer, const char *address) {
 	if(c.address == NULL) return NN_EBADSTATE;
 	nn_dropComponent(computer, c);
 
-	// TODO: send the signal
+	if(computer->state != NN_BOOTUP) {
+		nn_Exit err = nn_pushstring(computer, "component_removed");
+		if(err) return err;
+		err = nn_pushstring(computer, address);
+		if(err) return err;
+		// not a UAF because c is on-stack
+		err = nn_pushstring(computer, c.ctype->name);
+		if(err) return err;
+		err = nn_pushSignal(computer, 3);
+		if(err) return err;
+	}
 	return NN_OK;
 }
 
@@ -968,7 +1001,48 @@ static void nn_dropValue(nn_Value val) {
 	}
 }
 
-nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method);
+nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) {
+	if(!nn_hasComponent(computer, address)) {
+		nn_setError(computer, "no such component");
+		return NN_EBADCALL;
+	}
+	if(!nn_hasMethod(computer, address, method)) {
+		nn_setError(computer, "no such method");
+		return NN_EBADCALL;
+	}
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component c = computer->components[i];
+		if(nn_strcmp(c.address, address) != 0) continue;
+		
+		nn_ComponentRequest req;
+		req.typeUserdata = c.ctype->userdata;
+		req.compUserdata = c.userdata;
+		req.state = c.state;
+		req.computer = computer;
+		req.compAddress = address;
+		req.action = NN_COMP_CALL;
+		req.methodCalled = method;
+		// default is to return nothing
+		req.returnCount = 0;
+
+		nn_Exit err = c.ctype->handler(&req);
+		if(err) {
+			if(err != NN_EBADCALL) nn_setErrorFromExit(computer, err);
+			return err;
+		}
+
+		size_t endOfTrim = computer->stackSize - req.returnCount;
+		for(size_t i = 0; i < endOfTrim; i++) {
+			nn_dropValue(computer->callstack[i]);
+		}
+		for(size_t i = 0; i < req.returnCount; i++) {
+			computer->callstack[i] = computer->callstack[endOfTrim + i];
+		}
+		computer->stackSize = req.returnCount;
+		return NN_OK;
+	}
+	return NN_EBADSTATE;
+}
 
 bool nn_checkstack(nn_Computer *computer, size_t amount) {
 	return computer->stackSize + amount <= NN_MAX_STACK;
@@ -1147,6 +1221,74 @@ nn_Exit nn_dumptable(nn_Computer *computer, size_t idx, size_t *len) {
 	}
 	computer->stackSize += t->len * 2;
 	
+	return NN_OK;
+}
+
+int nn_countValueCost(nn_Computer *computer, size_t values) {
+	int total = 0;
+	for(size_t i = 0; i < values; i++) {
+		nn_Value val = computer->callstack[computer->stackSize - values + i];
+		total += 2;
+		switch(val.type) {
+		case NN_VAL_NULL:
+		case NN_VAL_BOOL:
+			total += 4;
+			continue;
+		case NN_VAL_NUM:
+			total += 8;
+			continue;
+		case NN_VAL_STR:
+			total += val.string->len;
+			if(val.string->len == 0) total++;
+			continue;
+		case NN_VAL_TABLE:
+		case NN_VAL_USERDATA:
+			return -1;
+		}
+	}
+	return total;
+}
+
+size_t nn_countSignals(nn_Computer *computer) {
+	return computer->signalCount;
+}
+
+nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount) {
+	if(computer->signalCount == NN_MAX_SIGNALS) return NN_ELIMIT;
+	
+	int cost = nn_countValueCost(computer, valueCount);
+	if(cost == -1) return NN_EBADSTATE;
+	if(cost > NN_MAX_SIGNALSIZE) return NN_ELIMIT;
+
+	nn_Context ctx = computer->universe->ctx;
+	nn_Signal s;
+	s.len = valueCount;
+	s.values = nn_alloc(&ctx, sizeof(nn_Value) * valueCount);
+	if(s.values == NULL) return NN_ENOMEM;
+	for(size_t i = 0; i < valueCount; i++) {
+		s.values[i] = computer->callstack[computer->stackSize - valueCount + i];
+	}
+	computer->stackSize -= valueCount;
+	computer->signals[computer->signalCount++] = s;
+	return NN_OK;
+}
+
+nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount) {
+	if(computer->signalCount == 0) return NN_EBADSTATE;
+
+	nn_Context ctx = computer->universe->ctx;
+	nn_Signal s = computer->signals[0];
+	if(!nn_checkstack(computer, s.len)) return NN_ENOSTACK;
+
+	if(valueCount != NULL) *valueCount = s.len;
+	for(size_t i = 0; i < s.len; i++) {
+		nn_pushvalue(computer, s.values[i]);
+	}
+	for(size_t i = 1; i < computer->signalCount; i++) {
+		computer->signals[i-1] = computer->signals[i];
+	}
+	computer->signalCount--;
+	nn_free(&ctx, s.values, sizeof(nn_Value) * s.len);
 	return NN_OK;
 }
 
