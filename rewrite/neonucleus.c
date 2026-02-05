@@ -826,7 +826,7 @@ nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const ch
 
 	computer->components[computer->componentLen++] = c;
 
-	if(computer->state != NN_BOOTUP) {
+	if(computer->state == NN_RUNNING) {
 		err = nn_pushstring(computer, "component_added");
 		if(err) return err;
 		err = nn_pushstring(computer, address);
@@ -913,7 +913,7 @@ nn_Exit nn_removeComponent(nn_Computer *computer, const char *address) {
 	if(c.address == NULL) return NN_EBADSTATE;
 	nn_dropComponent(computer, c);
 
-	if(computer->state != NN_BOOTUP) {
+	if(computer->state == NN_RUNNING) {
 		nn_Exit err = nn_pushstring(computer, "component_removed");
 		if(err) return err;
 		err = nn_pushstring(computer, address);
@@ -1254,7 +1254,9 @@ size_t nn_countSignals(nn_Computer *computer) {
 }
 
 nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount) {
+	if(computer->state != NN_RUNNING) return nn_popn(computer, valueCount);
 	if(computer->signalCount == NN_MAX_SIGNALS) return NN_ELIMIT;
+	if(computer->stackSize < valueCount) return NN_EBELOWSTACK;
 	
 	int cost = nn_countValueCost(computer, valueCount);
 	if(cost == -1) return NN_EBADSTATE;
