@@ -3,17 +3,43 @@
 // this should be very easy to include in any modern build system, as it is a single C file.
 // When compiled, you can define:
 // - NN_BAREMETAL, to remove any runtime dependency on libc and use minimal headers
+// - NN_NO_LOCKS, to not use mutexes AT ALL.
 // - NN_NO_C11_LOCKS, to not use C11 mutexes, instead using pthread mutexes for POSIX systems or Windows locks.
+// - NN_ATOMIC_NONE, to not use atomics.
 // Most of the time, you only depend on libc.
 // However, if pthread locks are used, you will need to link in -lpthread.
 
 // we need the header.
 #include "neonucleus.h"
 
+#ifdef NN_ATOMIC_NONE
+typedef size_t nn_refc_t;
+
+void nn_incRef(nn_refc_t *refc) {
+	(*refc)++;
+}
+
+bool nn_decRef(nn_refc_t *refc) {
+	(*refc)--;
+	return (*refc) == 0;
+}
+#else
 // we need atomics for thread-safe reference counting that will be used
 // for managing the lifetimes of various resources
 // TODO: provide a way to use non-atomic values, and evaluate if the context should contain a method for atomics.
 #include <stdatomic.h>
+
+typedef atomic_size_t nn_refc_t;
+
+void nn_incRef(nn_refc_t *refc) {
+	atomic_fetch_add(refc, 1);
+}
+
+bool nn_decRef(nn_refc_t *refc) {
+	nn_refc_t old = atomic_fetch_sub(refc, 1);
+	return old == 1;
+}
+#endif
 
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -301,7 +327,20 @@ static size_t nn_defaultRng(void *_) {
 static void nn_defaultLock(void *state, nn_LockRequest *req) {
 	(void)state;
 #ifndef NN_BAREMETAL
-#if defined(NN_THREAD_C11)
+#if defined(NN_NO_LOCKS)
+	switch(req->action) {
+	case NN_LOCK_CREATE:;
+		req->lock = nn_defaultLock;
+		return;
+	case NN_LOCK_DESTROY:;
+		return;
+	case NN_LOCK_LOCK:;
+		return;
+	case NN_LOCK_UNLOCK:;
+		return;
+	}
+	return;
+#elif defined(NN_THREAD_C11)
 	switch(req->action) {
 	case NN_LOCK_CREATE:;
 		mtx_t *mem = malloc(sizeof(mtx_t));
@@ -384,16 +423,6 @@ void nn_initContext(nn_Context *ctx) {
 	ctx->lock = nn_defaultLock;
 }
 
-typedef enum nn_BuiltinComponent {
-	NN_BUILTIN_GPU = 0,
-	NN_BUILTIN_SCREEN,
-	NN_BUILTIN_KEYBOARD,
-	NN_BUILTIN_FILESYSTEM,
-
-	// to determine array size
-	NN_BUILTIN_COUNT,
-} nn_BuiltinComponent;
-
 typedef struct nn_ComponentType {
 	nn_Universe *universe;
 	void *userdata;
@@ -405,9 +434,10 @@ typedef struct nn_ComponentType {
 	size_t methodCount;
 } nn_ComponentType;
 
+// currently just a wrapper around a context
+// but will be way more in the future
 typedef struct nn_Universe {
 	nn_Context ctx;
-	nn_ComponentType *types[NN_BUILTIN_COUNT];
 } nn_Universe;
 
 typedef struct nn_Component {
@@ -466,6 +496,8 @@ typedef struct nn_Computer {
 	void *archState;
 	nn_Architecture arch;
 	nn_Architecture desiredArch;
+	size_t callBudget;
+	size_t totalCallBudget;
 	size_t componentCap;
 	size_t componentLen;
 	nn_Component *components;
@@ -489,13 +521,11 @@ nn_Universe *nn_createUniverse(nn_Context *ctx) {
 	nn_Universe *u = nn_alloc(ctx, sizeof(nn_Universe));
 	if(u == NULL) return NULL;
 	u->ctx = *ctx;
-	for(size_t i = 0; i < NN_BUILTIN_COUNT; i++) u->types[i] = NULL;
 	return u;
 }
 
 void nn_destroyUniverse(nn_Universe *universe) {
 	nn_Context ctx = universe->ctx;
-	for(size_t i = 0; i < NN_BUILTIN_COUNT; i++) nn_destroyComponentType(universe->types[i]);
 	nn_free(&ctx, universe, sizeof(nn_Universe));
 }
 
@@ -545,6 +575,16 @@ void nn_destroyComponentType(nn_ComponentType *ctype) {
 	if(ctype == NULL) return;
 	nn_Context *ctx = &ctype->universe->ctx;
 
+	nn_ComponentRequest req;
+	req.typeUserdata = ctype->userdata;
+	req.compUserdata = NULL;
+	req.state = NULL;
+	req.computer = NULL;
+	req.compAddress = NULL;
+	req.action = NN_COMP_FREETYPE;
+	req.methodCalled = NULL;
+	ctype->handler(&req);
+
 	nn_ardestroy(&ctype->arena);
 	nn_free(ctx, ctype, sizeof(nn_ComponentType));
 }
@@ -568,6 +608,9 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->arch.name = NULL;
 	c->desiredArch.name = NULL;
 	c->archState = NULL;
+
+	c->totalCallBudget = 1000;
+	c->callBudget = c->totalCallBudget;
 
 	c->componentCap = maxComponents;
 	c->componentLen = 0;
@@ -698,7 +741,11 @@ double nn_getEnergy(nn_Computer *computer) {
 bool nn_removeEnergy(nn_Computer *computer, double energy) {
 	computer->energy -= energy;
 	if(computer->energy < 0) computer->energy = 0;
-	return computer->energy <= 0;
+	if(computer->energy <= 0) {
+		computer->state = NN_BLACKOUT;
+		return true;
+	}
+	return false;
 }
 
 size_t nn_getTotalMemory(nn_Computer *computer) {
@@ -793,6 +840,7 @@ nn_Exit nn_tick(nn_Computer *computer) {
 		nn_setErrorFromExit(computer, NN_EBADSTATE);
 		return NN_EBADSTATE;
 	}
+	nn_resetCallBudget(computer);
 	computer->state = NN_RUNNING;
 	nn_ArchitectureRequest req;
 	req.computer = computer;
@@ -971,6 +1019,11 @@ const nn_ComponentMethod *nn_getComponentMethods(nn_Computer *computer, const ch
 	return NULL;
 }
 
+const char *nn_getComponentAddress(nn_Computer *computer, size_t idx) {
+	if(idx >= computer->componentLen) return NULL;
+	return computer->components[idx].address;
+}
+
 static void nn_retainValue(nn_Value val) {
 	switch(val.type) {
 	case NN_VAL_NULL:
@@ -1025,6 +1078,9 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 	for(size_t i = 0; i < computer->componentLen; i++) {
 		nn_Component c = computer->components[i];
 		if(nn_strcmp(c.address, address) != 0) continue;
+
+		// minimum cost of a component call
+		nn_callCost(computer, 1);
 		
 		nn_ComponentRequest req;
 		req.typeUserdata = c.ctype->userdata;
@@ -1054,6 +1110,31 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 		return NN_OK;
 	}
 	return NN_EBADSTATE;
+}
+
+void nn_setCallBudget(nn_Computer *computer, size_t budget) {
+	computer->totalCallBudget = budget;
+}
+
+size_t nn_getCallBudget(nn_Computer *computer) {
+	return computer->totalCallBudget;
+}
+
+void nn_callCost(nn_Computer *computer, size_t callIntensity) {
+	if(computer->callBudget < callIntensity) computer->callBudget = 0;
+	else computer->callBudget -= callIntensity;
+}
+
+size_t nn_callBudgetRemaining(nn_Computer *computer) {
+	return computer->callBudget;
+}
+
+void nn_resetCallBudget(nn_Computer *computer) {
+	computer->callBudget = computer->totalCallBudget;
+}
+
+bool nn_componentsOverused(nn_Computer *computer) {
+	return computer->callBudget == 0;
 }
 
 bool nn_checkstack(nn_Computer *computer, size_t amount) {
@@ -1342,4 +1423,133 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount) {
 }
 
 // todo: everything
-nn_Exit nn_initComponentsLibrary(nn_Universe *universe);
+
+typedef struct nn_EEPROM_state {
+	nn_Universe *universe;
+	nn_EEPROM eeprom;
+	void *userdata;
+} nn_EEPROM_state;
+
+nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
+	nn_EEPROM_state *state = req->typeUserdata;
+	void *instance = req->compUserdata;
+	nn_Computer *computer = req->computer;
+	nn_Context ctx = state->universe->ctx;
+
+	nn_EEPROMRequest ereq;
+	ereq.userdata = state->userdata;
+	ereq.instance = instance;
+	ereq.computer = computer;
+
+	const char *method = req->methodCalled;
+
+	switch(req->action) {
+	case NN_COMP_FREETYPE:
+		nn_free(&ctx, state, sizeof(*state));
+		break;
+	case NN_COMP_INIT:
+		return NN_OK;
+	case NN_COMP_DEINIT:
+		ereq.action = NN_EEPROM_DROP;
+		return state->eeprom.handler(&ereq);
+	case NN_COMP_ENABLED:
+		req->methodEnabled = true;
+		return NN_OK;
+	case NN_COMP_CALL:
+		if(nn_strcmp(method, "getSize") == 0) {
+			return nn_pushnumber(computer, state->eeprom.size);
+		}
+		if(nn_strcmp(method, "getDataSize") == 0) {
+			return nn_pushnumber(computer, state->eeprom.dataSize);
+		}
+		if(nn_strcmp(method, "getLabel") == 0) {
+			char buf[NN_MAX_LABEL];
+			ereq.action = NN_EEPROM_GETLABEL;
+			ereq.buf = buf;
+			ereq.buflen = NN_MAX_LABEL;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushlstring(computer, buf, ereq.buflen);
+		}
+		if(nn_strcmp(method, "setLabel") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			size_t len;
+			const char *s = nn_tolstring(computer, 0, &len);
+			if(len > NN_MAX_LABEL) len = NN_MAX_LABEL;
+			char buf[NN_MAX_LABEL];
+			nn_memcpy(buf, s, sizeof(char) * len);
+			ereq.action = NN_EEPROM_SETLABEL;
+			ereq.buf = buf;
+			ereq.buflen = len;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushlstring(computer, buf, ereq.buflen);
+		}
+		if(nn_strcmp(method, "get") == 0) {
+			// yup, on-stack.
+			// Perhaps in the future we'll make it heap-allocated.
+			char buf[state->eeprom.size];
+			ereq.action = NN_EEPROM_GET;
+			ereq.buf = buf;
+			ereq.buflen = state->eeprom.size;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushlstring(computer, buf, ereq.buflen);
+		}
+		if(nn_strcmp(method, "getData") == 0) {
+			// yup, on-stack.
+			// Perhaps in the future we'll make it heap-allocated.
+			char buf[state->eeprom.dataSize];
+			ereq.action = NN_EEPROM_GETDATA;
+			ereq.buf = buf;
+			ereq.buflen = state->eeprom.dataSize;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushlstring(computer, buf, ereq.buflen);
+		}
+		return NN_OK;
+	}
+	return NN_OK;
+}
+
+nn_ComponentType *nn_createEEPROM(nn_Universe *universe, nn_EEPROM *eeprom, void *userdata) {
+	nn_Context ctx = universe->ctx;
+	nn_EEPROM_state *state = nn_alloc(&ctx, sizeof(*state));
+	if(state == NULL) return NULL;
+	state->universe = universe;
+	state->eeprom = *eeprom;
+	state->userdata = userdata;
+	const nn_ComponentMethod methods[] = {
+		{"getSize", "getSize(): number - Get the storage capacity of the EEPROM.", true},
+		{"getDataSize", "getDataSize(): number - Get the storage capacity of the EEPROM data.", true},
+		{"getLabel", "getLabel(): string - Get the EEPROM label", false},
+		{"setLabel", "setLabel(label: string): string - Set the EEPROM label and return what was actually set, which may be truncated.", false},
+		{"get", "get(): string - Get the current EEPROM contents.", false},
+		{"getData", "getData(): string - Get the current EEPROM data contents.", false},
+		{"set", "set(data: string) - Set the current EEPROM contents.", false},
+		{"setData", "setData(data: string) - Set the current EEPROM data contents.", false},
+		{"getArchitecture", "getArchitecture(): string - Get the current EEPROM architecture intended.", false},
+		{"setArchitecture", "setArchitecture(data: string) - Set the current EEPROM architecture intended.", false},
+		{"isReadOnly", "isReadOnly(): boolean - Returns whether the EEPROM is read-only.", false},
+		{"makeReadonly", "makeReadonly() - Makes the EEPROM read-only, this cannot be undone.", false},
+		{"getChecksum", "getChecksum(): string - Returns a simple checksum of the EEPROM's contents and data.", false},
+		{NULL, NULL, false},
+	};
+	nn_ComponentType *t = nn_createComponentType(universe, "eeprom", state, methods, nn_eeprom_handler);
+	if(t == NULL) {
+		nn_free(&ctx, state, sizeof(*state));
+		return NULL;
+	}
+	return t;
+}

@@ -23,6 +23,8 @@ static nn_Exit sandbox_handler(nn_ComponentRequest *req) {
 	case NN_COMP_ENABLED:
 		req->methodEnabled = true; // all methods always enabled
 		return NN_OK;
+	case NN_COMP_FREETYPE:
+		return NN_OK;
 	}
 	return NN_OK;
 }

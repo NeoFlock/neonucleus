@@ -30,6 +30,8 @@ extern "C" {
 // the maximum amount of bytes which can be read from a file.
 // You are given a buffer you are meant to fill at least partially, this is simply the limit of that buffer's size.
 #define NN_MAX_READ 65536
+// the maximum size of a label
+#define NN_MAX_LABEL 256
 // maximum size of a wakeup message
 #define NN_MAX_WAKEUPMSG 2048
 // the maximum amount of file descriptors that can be open simultaneously
@@ -312,6 +314,8 @@ typedef enum nn_ComponentAction {
 	NN_COMP_CALL,
 	// check if a method is enabled
 	NN_COMP_ENABLED,
+	// delete the type userdata
+	NN_COMP_FREETYPE,
 } nn_ComponentAction;
 
 typedef struct nn_ComponentRequest {
@@ -363,11 +367,36 @@ const char *nn_getComponentType(nn_Computer *computer, const char *address);
 int nn_getComponentSlot(nn_Computer *computer, const char *address);
 // Returns the array of component methods. This can be used for doc strings or just listing methods.
 const nn_ComponentMethod *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len);
+// get the address at a certain index.
+// It'll return NULL for out of bounds indexes.
+// This can be used to iterate over all components.
+const char *nn_getComponentAddress(nn_Computer *computer, size_t idx);
 
 // this uses the call stack.
 // Component calls must not call other components, it just doesn't work.
 // The lack of an argument count is because the entire call stack is assumed to be the arguments.
 nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method);
+
+// Sets the call budget.
+// The default is 1,000.
+void nn_setCallBudget(nn_Computer *computer, size_t budget);
+
+// gets the total call budget
+size_t nn_getCallBudget(nn_Computer *computer);
+
+// subtracts from the call budget.
+// This cannot underflow, it's clamped to 0.
+void nn_callCost(nn_Computer *computer, size_t callIntensity);
+
+// returns the remaining call budget
+size_t nn_callBudgetRemaining(nn_Computer *computer);
+
+// automatically called by nn_tick()
+void nn_resetCallBudget(nn_Computer *computer);
+
+// returns whether there is no more call budget left.
+// At this point, the architecture should exit from a yield.
+bool nn_componentsOverused(nn_Computer *computer);
 
 // call stack operations.
 // The type system and API are inspired by Lua, as Lua remains the most popular architecture for OpenComputers.
@@ -486,12 +515,66 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 // The high-level API of the built-in components.
 // These components still make no assumptions about the OS, and still require handlers to connect them to the outside work.
 
-// Initializes the component library for a universe. This just defines the component tables and stores them in the universe.
-// Using the built-in components without calling this will cause insane levels of undefined behavior and may even cause time travel
-// and singularities forming inside your computer.
-nn_Exit nn_initComponentsLibrary(nn_Universe *universe);
-
 // TODO: screen, gpu, filesystem, eeprom and the rest of the universe
+
+typedef enum nn_EEPROMAction {
+	// informed that it has been dropped
+	NN_EEPROM_DROP,
+	NN_EEPROM_GET,
+	NN_EEPROM_SET,
+	NN_EEPROM_GETDATA,
+	NN_EEPROM_SETDATA,
+	NN_EEPROM_GETLABEL,
+	NN_EEPROM_SETLABEL,
+	NN_EEPROM_GETARCH,
+	NN_EEPROM_SETARCH,
+	NN_EEPROM_ISREADONLY,
+	NN_EEPROM_MAKEREADONLY,
+} nn_EEPROMAction;
+
+typedef struct nn_EEPROMRequest {
+	// associated userdata
+	void *userdata;
+	// associated component userdata
+	void *instance;
+	// the computer making the request
+	nn_Computer *computer;
+	nn_EEPROMAction action;
+	// all the get* options should set this to the length,
+	// and its initial value is the capacity of [buf].
+	// For ISREADONLY, this should be set to 0 if false and 1 if true.
+	unsigned int buflen;
+	// this may be the buffer length
+	char *buf;
+} nn_EEPROMRequest;
+
+typedef struct nn_EEPROM {
+	// the maximum capacity of the EEPROM
+	size_t size;
+	// the maximum capacity of the EEPROM's associated data
+	size_t dataSize;
+	// the call cost of reading an EEPROM
+	size_t readCallCost;
+	// the energy cost of reading an EEPROM
+	double readEnergyCost;
+	// the call cost of reading an EEPROM's associated data
+	size_t readDataCallCost;
+	// the energy cost of reading an EEPROM's associated data
+	double readDataEnergyCost;
+	// the call cost of writing to an EEPROM
+	size_t writeCallCost;
+	// the energy cost of writing to an EEPROM
+	double writeEnergyCost;
+	// the call cost of writing to an EEPROM's associated data
+	size_t writeDataCallCost;
+	// the energy cost of writing to an EEPROM's associated data
+	double writeDataEnergyCost;
+	nn_Exit (*handler)(nn_EEPROMRequest *request);
+} nn_EEPROM;
+
+// the userdata passed to the component is the userdata
+// in the handler
+nn_ComponentType *nn_createEEPROM(nn_Universe *universe, nn_EEPROM *eeprom, void *userdata);
 
 #ifdef __cplusplus
 }
