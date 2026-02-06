@@ -232,6 +232,111 @@ void nn_memset(void *dest, int x, size_t len) {
 	for(size_t i = 0; i < len; i++) out[i] = (char)x;
 }
 
+// taken from https://wiki.osdev.org/CRC32
+// OSDev wiki is really useful sometimes
+// TODO: maybe allow one that uses compiler intrinsics
+// because CPUs are really good at CRC32 nowadays
+
+unsigned int nn_crc32_poly8_lookup[256] =
+{
+ 0, 0x77073096, 0xEE0E612C, 0x990951BA,
+ 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
+ 0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988,
+ 0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91,
+ 0x1DB71064, 0x6AB020F2, 0xF3B97148, 0x84BE41DE,
+ 0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7,
+ 0x136C9856, 0x646BA8C0, 0xFD62F97A, 0x8A65C9EC,
+ 0x14015C4F, 0x63066CD9, 0xFA0F3D63, 0x8D080DF5,
+ 0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172,
+ 0x3C03E4D1, 0x4B04D447, 0xD20D85FD, 0xA50AB56B,
+ 0x35B5A8FA, 0x42B2986C, 0xDBBBC9D6, 0xACBCF940,
+ 0x32D86CE3, 0x45DF5C75, 0xDCD60DCF, 0xABD13D59,
+ 0x26D930AC, 0x51DE003A, 0xC8D75180, 0xBFD06116,
+ 0x21B4F4B5, 0x56B3C423, 0xCFBA9599, 0xB8BDA50F,
+ 0x2802B89E, 0x5F058808, 0xC60CD9B2, 0xB10BE924,
+ 0x2F6F7C87, 0x58684C11, 0xC1611DAB, 0xB6662D3D,
+ 0x76DC4190, 0x01DB7106, 0x98D220BC, 0xEFD5102A,
+ 0x71B18589, 0x06B6B51F, 0x9FBFE4A5, 0xE8B8D433,
+ 0x7807C9A2, 0x0F00F934, 0x9609A88E, 0xE10E9818,
+ 0x7F6A0DBB, 0x086D3D2D, 0x91646C97, 0xE6635C01,
+ 0x6B6B51F4, 0x1C6C6162, 0x856530D8, 0xF262004E,
+ 0x6C0695ED, 0x1B01A57B, 0x8208F4C1, 0xF50FC457,
+ 0x65B0D9C6, 0x12B7E950, 0x8BBEB8EA, 0xFCB9887C,
+ 0x62DD1DDF, 0x15DA2D49, 0x8CD37CF3, 0xFBD44C65,
+ 0x4DB26158, 0x3AB551CE, 0xA3BC0074, 0xD4BB30E2,
+ 0x4ADFA541, 0x3DD895D7, 0xA4D1C46D, 0xD3D6F4FB,
+ 0x4369E96A, 0x346ED9FC, 0xAD678846, 0xDA60B8D0,
+ 0x44042D73, 0x33031DE5, 0xAA0A4C5F, 0xDD0D7CC9,
+ 0x5005713C, 0x270241AA, 0xBE0B1010, 0xC90C2086,
+ 0x5768B525, 0x206F85B3, 0xB966D409, 0xCE61E49F,
+ 0x5EDEF90E, 0x29D9C998, 0xB0D09822, 0xC7D7A8B4,
+ 0x59B33D17, 0x2EB40D81, 0xB7BD5C3B, 0xC0BA6CAD,
+ 0xEDB88320, 0x9ABFB3B6, 0x03B6E20C, 0x74B1D29A,
+ 0xEAD54739, 0x9DD277AF, 0x04DB2615, 0x73DC1683,
+ 0xE3630B12, 0x94643B84, 0x0D6D6A3E, 0x7A6A5AA8,
+ 0xE40ECF0B, 0x9309FF9D, 0x0A00AE27, 0x7D079EB1,
+ 0xF00F9344, 0x8708A3D2, 0x1E01F268, 0x6906C2FE,
+ 0xF762575D, 0x806567CB, 0x196C3671, 0x6E6B06E7,
+ 0xFED41B76, 0x89D32BE0, 0x10DA7A5A, 0x67DD4ACC,
+ 0xF9B9DF6F, 0x8EBEEFF9, 0x17B7BE43, 0x60B08ED5,
+ 0xD6D6A3E8, 0xA1D1937E, 0x38D8C2C4, 0x4FDFF252,
+ 0xD1BB67F1, 0xA6BC5767, 0x3FB506DD, 0x48B2364B,
+ 0xD80D2BDA, 0xAF0A1B4C, 0x36034AF6, 0x41047A60,
+ 0xDF60EFC3, 0xA867DF55, 0x316E8EEF, 0x4669BE79,
+ 0xCB61B38C, 0xBC66831A, 0x256FD2A0, 0x5268E236,
+ 0xCC0C7795, 0xBB0B4703, 0x220216B9, 0x5505262F,
+ 0xC5BA3BBE, 0xB2BD0B28, 0x2BB45A92, 0x5CB36A04,
+ 0xC2D7FFA7, 0xB5D0CF31, 0x2CD99E8B, 0x5BDEAE1D,
+ 0x9B64C2B0, 0xEC63F226, 0x756AA39C, 0x026D930A,
+ 0x9C0906A9, 0xEB0E363F, 0x72076785, 0x05005713,
+ 0x95BF4A82, 0xE2B87A14, 0x7BB12BAE, 0x0CB61B38,
+ 0x92D28E9B, 0xE5D5BE0D, 0x7CDCEFB7, 0x0BDBDF21,
+ 0x86D3D2D4, 0xF1D4E242, 0x68DDB3F8, 0x1FDA836E,
+ 0x81BE16CD, 0xF6B9265B, 0x6FB077E1, 0x18B74777,
+ 0x88085AE6, 0xFF0F6A70, 0x66063BCA, 0x11010B5C,
+ 0x8F659EFF, 0xF862AE69, 0x616BFFD3, 0x166CCF45,
+ 0xA00AE278, 0xD70DD2EE, 0x4E048354, 0x3903B3C2,
+ 0xA7672661, 0xD06016F7, 0x4969474D, 0x3E6E77DB,
+ 0xAED16A4A, 0xD9D65ADC, 0x40DF0B66, 0x37D83BF0,
+ 0xA9BCAE53, 0xDEBB9EC5, 0x47B2CF7F, 0x30B5FFE9,
+ 0xBDBDF21C, 0xCABAC28A, 0x53B39330, 0x24B4A3A6,
+ 0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF,
+ 0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94,
+ 0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
+};
+
+unsigned int nn_computeCRC32(const char *data, size_t datalen) {
+	unsigned int crc = 0xFFFFFFFF;
+	while(datalen-- > 0) {
+		crc = nn_crc32_poly8_lookup[(crc ^ *(data++)) & 0xFF] ^ (crc >> 8);
+	}
+	return (crc ^ 0xFFFFFFFF);
+}
+
+void nn_crc32ChecksumBytes(unsigned int checksum, char out[8]) {
+	char bytes[4];
+	bytes[0] = (checksum >>  0) & 0xFF;
+	bytes[1] = (checksum >>  8) & 0xFF;
+	bytes[2] = (checksum >> 16) & 0xFF;
+	bytes[3] = (checksum >> 24) & 0xFF;
+	char alpha[16] = "0123456789abcdef";
+
+	for(size_t i = 0; i < 4; i++) {
+		char byte = bytes[i];
+		out[i*2] = alpha[(byte>>4) & 0xF];
+		out[i*2+1] = alpha[(byte>>0) & 0xF];
+	}
+}
+
+int nn_memcmp(const char *a, const char *b, size_t len) {
+	for(size_t i = 0; i < len; i++) {
+		char c = a[i];
+		char d = b[i];
+		if(c != d) return (int)(unsigned char)c - (int)(unsigned char)d;
+	}
+	return 0;
+}
+
 int nn_strcmp(const char *a, const char *b) {
 	size_t i = 0;
 	while(1) {
@@ -430,7 +535,7 @@ typedef struct nn_ComponentType {
 	const char *name;
 	nn_ComponentHandler *handler;
 	// NULL-terminated
-	nn_ComponentMethod *methods;
+	nn_Method *methods;
 	size_t methodCount;
 } nn_ComponentType;
 
@@ -457,6 +562,17 @@ typedef enum nn_ValueType {
 	NN_VAL_USERDATA,
 	NN_VAL_TABLE,
 } nn_ValueType;
+
+// we don't use the enum member as a name because then all the
+// switch cases would have a useless branch for it.
+const char *nn_typenames[6] = {
+	[NN_VAL_NULL] = "null",
+	[NN_VAL_BOOL] = "bool",
+	[NN_VAL_NUM] = "number",
+	[NN_VAL_STR] = "string",
+	[NN_VAL_USERDATA] = "userdata",
+	[NN_VAL_TABLE] = "table",
+};
 
 typedef struct nn_String {
 	nn_Context ctx;
@@ -493,6 +609,7 @@ typedef struct nn_Computer {
 	nn_Universe *universe;
 	void *userdata;
 	char *address;
+	char *tmpaddress;
 	void *archState;
 	nn_Architecture arch;
 	nn_Architecture desiredArch;
@@ -511,10 +628,12 @@ typedef struct nn_Computer {
 	size_t stackSize;
 	size_t archCount;
 	size_t signalCount;
+	size_t userCount;
 	nn_Value callstack[NN_MAX_STACK];
 	char errorBuffer[NN_MAX_ERROR_SIZE];
 	nn_Architecture archs[NN_MAX_ARCHITECTURES];
 	nn_Signal signals[NN_MAX_SIGNALS];
+	char *users[NN_MAX_USERS];
 } nn_Computer;
 
 nn_Universe *nn_createUniverse(nn_Context *ctx) {
@@ -529,7 +648,7 @@ void nn_destroyUniverse(nn_Universe *universe) {
 	nn_free(&ctx, universe, sizeof(nn_Universe));
 }
 
-nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name, void *userdata, const nn_ComponentMethod methods[], nn_ComponentHandler *handler) {
+nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler) {
 	nn_Context *ctx = &universe->ctx;
 	
 	nn_ComponentType *ctype = nn_alloc(ctx, sizeof(nn_ComponentType));
@@ -548,14 +667,14 @@ nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name
 	size_t methodCount = 0;
 	while(methods[methodCount].name != NULL) methodCount++;
 
-	nn_ComponentMethod *methodscpy = nn_aralloc(arena, methodCount * sizeof(nn_ComponentMethod));
+	nn_Method *methodscpy = nn_aralloc(arena, methodCount * sizeof(nn_Method));
 	if(methodscpy == NULL) goto fail;
 	ctype->methods = methodscpy;
 	ctype->methodCount = methodCount;
 
 	for(size_t i = 0; i < methodCount; i++) {
-		nn_ComponentMethod cpy;
-		cpy.direct = methods[i].direct;
+		nn_Method cpy;
+		cpy.flags = methods[i].flags;
 		cpy.name = nn_arstrdup(arena, methods[i].name);
 		if(cpy.name == NULL) goto fail;
 		cpy.docString = nn_arstrdup(arena, methods[i].docString);
@@ -605,6 +724,8 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 		return NULL;
 	}
 
+	c->tmpaddress = NULL;
+
 	c->arch.name = NULL;
 	c->desiredArch.name = NULL;
 	c->archState = NULL;
@@ -637,6 +758,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->stackSize = 0;
 	c->archCount = 0;
 	c->signalCount = 0;
+	c->userCount = 0;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
 	return c;
@@ -668,9 +790,13 @@ void nn_destroyComputer(nn_Computer *computer) {
 		for(size_t j = 0; j < s.len; j++) nn_dropValue(s.values[j]);
 		nn_free(ctx, s.values, sizeof(nn_Value) * s.len);
 	}
+	for(size_t i = 0; i < computer->userCount; i++) {
+		nn_strfree(ctx, computer->users[i]);
+	}
 
 	nn_free(ctx, computer->components, sizeof(nn_Component) * computer->componentCap);
 	nn_free(ctx, computer->deviceInfo, sizeof(nn_DeviceInfo) * computer->deviceInfoCap);
+	if(computer->tmpaddress != NULL) nn_strfree(ctx, computer->tmpaddress);
 	nn_strfree(ctx, computer->address);
 	nn_free(ctx, computer, sizeof(nn_Computer));
 }
@@ -681,6 +807,63 @@ void *nn_getComputerUserdata(nn_Computer *computer) {
 
 const char *nn_getComputerAddress(nn_Computer *computer) {
 	return computer->address;
+}
+
+nn_Exit nn_setTmpAddress(nn_Computer *computer, const char *address) {
+	nn_Context ctx = computer->universe->ctx;
+	if(address == NULL) {
+		if(computer->tmpaddress != NULL) {
+			nn_strfree(&ctx, computer->tmpaddress);
+		}
+		computer->tmpaddress = NULL;
+		return NN_OK;
+	}
+	char *newTmp = nn_strdup(&ctx, address);
+	if(newTmp == NULL) return NN_ENOMEM;
+	if(computer->tmpaddress != NULL) {
+		nn_strfree(&ctx, computer->tmpaddress);
+	}
+	computer->tmpaddress = newTmp;
+	return NN_OK;
+}
+
+const char *nn_getTmpAddress(nn_Computer *computer) {
+	return computer->tmpaddress;
+}
+
+nn_Exit nn_addUser(nn_Computer *computer, const char *user) {
+	if(computer->userCount == NN_MAX_USERS) return NN_ELIMIT;
+	size_t len = nn_strlen(user);
+	if(len >= NN_MAX_USERNAME) return NN_ELIMIT;
+
+	char *usercpy = nn_strdup(&computer->universe->ctx, user);
+	if(usercpy == NULL) return NN_ENOMEM;
+	computer->users[computer->userCount++] = usercpy;
+	return NN_OK;
+}
+
+bool nn_removeUser(nn_Computer *computer, const char *user) {
+	bool removed = false;
+	size_t j = 0;
+	nn_Context ctx = computer->universe->ctx;
+
+	for(size_t i = 0; i < computer->userCount; i++) {
+		char *u = computer->users[i];
+		if(nn_strcmp(u, user) == 0) {
+			nn_strfree(&ctx, u);
+			removed = true;
+		} else {
+			computer->users[j] = computer->users[i];
+			j++;
+		}
+	}
+	computer->userCount = j;
+	return removed;
+}
+
+const char *nn_getUser(nn_Computer *computer, size_t idx) {
+	if(idx >= computer->userCount) return NULL;
+	return computer->users[idx];
 }
 
 void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
@@ -705,7 +888,7 @@ nn_Exit nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture
 	return NN_OK;
 }
 
-const nn_Architecture *nn_getSupportedArchitecture(nn_Computer *computer, size_t *len) {
+const nn_Architecture *nn_getSupportedArchitectures(nn_Computer *computer, size_t *len) {
 	*len = computer->archCount;
 	return computer->archs;
 }
@@ -796,7 +979,7 @@ nn_ComputerState nn_getComputerState(nn_Computer *computer) {
 	return computer->state;
 }
 
-static void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit) {
+void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit) {
 	switch(exit) {
 	case NN_OK:
 		return; // no error
@@ -1007,7 +1190,7 @@ int nn_getComponentSlot(nn_Computer *computer, const char *address) {
 	return 0;
 }
 
-const nn_ComponentMethod *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len) {
+const nn_Method *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len) {
 	for(size_t i = 0; i < computer->componentLen; i++) {
 		nn_Component *c = &computer->components[i];
 		if(nn_strcmp(c->address, address) == 0) {
@@ -1022,6 +1205,25 @@ const nn_ComponentMethod *nn_getComponentMethods(nn_Computer *computer, const ch
 const char *nn_getComponentAddress(nn_Computer *computer, size_t idx) {
 	if(idx >= computer->componentLen) return NULL;
 	return computer->components[idx].address;
+}
+
+const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method) {
+	if(!nn_hasComponent(computer, address)) {
+		return NULL;
+	}
+	if(!nn_hasMethod(computer, address, method)) {
+		return NULL;
+	}
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component c = computer->components[i];
+		if(nn_strcmp(c.address, address) != 0) continue;
+
+		for(size_t j = 0; j < c.ctype->methodCount; j++) {
+			if(nn_strcmp(c.ctype->methods[j].name, method) == 0) return c.ctype->methods[j].docString;
+		}
+		return NULL;
+	}
+	return NULL;
 }
 
 static void nn_retainValue(nn_Value val) {
@@ -1096,6 +1298,8 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 		nn_Exit err = c.ctype->handler(&req);
 		if(err) {
 			if(err != NN_EBADCALL) nn_setErrorFromExit(computer, err);
+			// clear junk
+			nn_clearstack(computer);
 			return err;
 		}
 
@@ -1253,33 +1457,38 @@ void nn_clearstack(nn_Computer *computer) {
 }
 
 bool nn_isnull(nn_Computer *computer, size_t idx) {
-	if(idx < computer->stackSize) return false;
+	if(idx >= computer->stackSize) return false;
 	return computer->callstack[idx].type == NN_VAL_NULL;
 }
 
 bool nn_isboolean(nn_Computer *computer, size_t idx) {
-	if(idx < computer->stackSize) return false;
+	if(idx >= computer->stackSize) return false;
 	return computer->callstack[idx].type == NN_VAL_BOOL;
 }
 
 bool nn_isnumber(nn_Computer *computer, size_t idx) {
-	if(idx < computer->stackSize) return false;
+	if(idx >= computer->stackSize) return false;
 	return computer->callstack[idx].type == NN_VAL_NUM;
 }
 
 bool nn_isstring(nn_Computer *computer, size_t idx) {
-	if(idx < computer->stackSize) return false;
+	if(idx >= computer->stackSize) return false;
 	return computer->callstack[idx].type == NN_VAL_STR;
 }
 
 bool nn_isuserdata(nn_Computer *computer, size_t idx) {
-	if(idx < computer->stackSize) return false;
+	if(idx >= computer->stackSize) return false;
 	return computer->callstack[idx].type == NN_VAL_USERDATA;
 }
 
 bool nn_istable(nn_Computer *computer, size_t idx) {
-	if(idx < computer->stackSize) return false;
+	if(idx >= computer->stackSize) return false;
 	return computer->callstack[idx].type == NN_VAL_TABLE;
+}
+
+const char *nn_typenameof(nn_Computer *computer, size_t idx) {
+	if(idx >= computer->stackSize) return "none";
+	return nn_typenames[computer->callstack[idx].type];
 }
 
 bool nn_toboolean(nn_Computer *computer, size_t idx) {
@@ -1430,9 +1639,23 @@ typedef struct nn_EEPROM_state {
 	void *userdata;
 } nn_EEPROM_state;
 
+typedef struct nn_VEEPROM_state {
+	nn_Universe *universe;
+	char *code;
+	size_t codelen;
+	char *data;
+	size_t datalen;
+	size_t archlen;
+	size_t labellen;
+	bool isReadonly;
+	char arch[NN_MAX_ARCHNAME];
+	char label[NN_MAX_LABEL];
+} nn_VEEPROM_state;
+
 nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 	nn_EEPROM_state *state = req->typeUserdata;
 	void *instance = req->compUserdata;
+	// NULL for FREETYPE
 	nn_Computer *computer = req->computer;
 	nn_Context ctx = state->universe->ctx;
 
@@ -1440,6 +1663,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 	ereq.userdata = state->userdata;
 	ereq.instance = instance;
 	ereq.computer = computer;
+	ereq.eepromConf = &state->eeprom;
 
 	const char *method = req->methodCalled;
 
@@ -1461,6 +1685,67 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		}
 		if(nn_strcmp(method, "getDataSize") == 0) {
 			return nn_pushnumber(computer, state->eeprom.dataSize);
+		}
+		if(nn_strcmp(method, "isReadOnly") == 0) {
+			ereq.action = NN_EEPROM_ISREADONLY;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushbool(computer, ereq.buflen != 0);
+		}
+		if(nn_strcmp(method, "getChecksum") == 0) {
+			// yup, on-stack.
+			// Perhaps in the future we'll make it heap-allocated.
+			char buf[state->eeprom.size];
+			ereq.action = NN_EEPROM_GET;
+			ereq.buf = buf;
+			ereq.buflen = state->eeprom.size;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			unsigned int chksum = nn_computeCRC32(buf, ereq.buflen);
+			char encoded[8];
+			nn_crc32ChecksumBytes(chksum, encoded);
+			req->returnCount = 1;
+			return nn_pushlstring(computer, encoded, 8);
+		}
+		if(nn_strcmp(method, "makeReadonly") == 0) {
+			// 1st argument is a string, which is the checksum we're meant to have
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			size_t len;
+			const char *desired = nn_tolstring(computer, 0, &len);
+			if(len != 8) {
+				nn_setError(computer, "invalid checksum");
+				return NN_EBADCALL;
+			}
+			// yup, on-stack.
+			// Perhaps in the future we'll make it heap-allocated.
+			char buf[state->eeprom.size];
+			ereq.action = NN_EEPROM_GET;
+			ereq.buf = buf;
+			ereq.buflen = state->eeprom.size;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			unsigned int chksum = nn_computeCRC32(buf, ereq.buflen);
+			char encoded[8];
+			nn_crc32ChecksumBytes(chksum, encoded);
+			if(nn_memcmp(encoded, desired, sizeof(char) * 8)) {
+				nn_setError(computer, "incorrect checksum");
+				return NN_EBADCALL;
+			}
+		
+			ereq.action = NN_EEPROM_MAKEREADONLY;
+			e = state->eeprom.handler(&ereq);
+			if(e) return e;
+
+			req->returnCount = 1;
+			return nn_pushbool(computer, true);
 		}
 		if(nn_strcmp(method, "getLabel") == 0) {
 			char buf[NN_MAX_LABEL];
@@ -1518,33 +1803,106 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
+		if(nn_strcmp(method, "getArchitecture") == 0) {
+			char buf[NN_MAX_ARCHNAME];
+			ereq.action = NN_EEPROM_GETARCH;
+			ereq.buf = buf;
+			ereq.buflen = NN_MAX_ARCHNAME;
+			nn_Exit e = state->eeprom.handler(&ereq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushlstring(computer, buf, ereq.buflen);
+		}
+		if(nn_strcmp(method, "set") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			size_t len;
+			const char *s = nn_tolstring(computer, 0, &len);
+			if(len > state->eeprom.size) {
+				nn_setError(computer, "not enough space");
+				return NN_EBADCALL;
+			}
+			ereq.action = NN_EEPROM_SET;
+			// DO NOT MODIFY IT!!!!
+			ereq.buf = (char*)s;
+			ereq.buflen = len;
+			return state->eeprom.handler(&ereq);
+		}
+		if(nn_strcmp(method, "setData") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			size_t len;
+			const char *s = nn_tolstring(computer, 0, &len);
+			if(len > state->eeprom.dataSize) {
+				nn_setError(computer, "not enough space");
+				return NN_EBADCALL;
+			}
+			ereq.action = NN_EEPROM_SETDATA;
+			// DO NOT MODIFY IT!!!!
+			ereq.buf = (char*)s;
+			ereq.buflen = len;
+			return state->eeprom.handler(&ereq);
+		}
+		if(nn_strcmp(method, "setArchitecture") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			size_t len;
+			const char *s = nn_tolstring(computer, 0, &len);
+			if(len > NN_MAX_ARCHNAME) {
+				nn_setError(computer, "not enough space");
+				return NN_EBADCALL;
+			}
+			ereq.action = NN_EEPROM_SETARCH;
+			// DO NOT MODIFY IT!!!!
+			ereq.buf = (char*)s;
+			ereq.buflen = len;
+			return state->eeprom.handler(&ereq);
+		}
 		return NN_OK;
 	}
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createEEPROM(nn_Universe *universe, nn_EEPROM *eeprom, void *userdata) {
+nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, void *userdata) {
 	nn_Context ctx = universe->ctx;
 	nn_EEPROM_state *state = nn_alloc(&ctx, sizeof(*state));
 	if(state == NULL) return NULL;
 	state->universe = universe;
 	state->eeprom = *eeprom;
 	state->userdata = userdata;
-	const nn_ComponentMethod methods[] = {
-		{"getSize", "getSize(): number - Get the storage capacity of the EEPROM.", true},
-		{"getDataSize", "getDataSize(): number - Get the storage capacity of the EEPROM data.", true},
-		{"getLabel", "getLabel(): string - Get the EEPROM label", false},
-		{"setLabel", "setLabel(label: string): string - Set the EEPROM label and return what was actually set, which may be truncated.", false},
-		{"get", "get(): string - Get the current EEPROM contents.", false},
-		{"getData", "getData(): string - Get the current EEPROM data contents.", false},
-		{"set", "set(data: string) - Set the current EEPROM contents.", false},
-		{"setData", "setData(data: string) - Set the current EEPROM data contents.", false},
-		{"getArchitecture", "getArchitecture(): string - Get the current EEPROM architecture intended.", false},
-		{"setArchitecture", "setArchitecture(data: string) - Set the current EEPROM architecture intended.", false},
-		{"isReadOnly", "isReadOnly(): boolean - Returns whether the EEPROM is read-only.", false},
-		{"makeReadonly", "makeReadonly() - Makes the EEPROM read-only, this cannot be undone.", false},
-		{"getChecksum", "getChecksum(): string - Returns a simple checksum of the EEPROM's contents and data.", false},
-		{NULL, NULL, false},
+	const nn_Method methods[] = {
+		{"getSize", "function(): number - Get the storage capacity of the EEPROM.", NN_DIRECT},
+		{"getDataSize", "function(): number - Get the storage capacity of the EEPROM data.", NN_DIRECT},
+		{"getLabel", "function(): string - Get the EEPROM label", NN_INDIRECT},
+		{"setLabel", "function(label: string): string - Set the EEPROM label and return what was actually set, which may be truncated.", NN_INDIRECT},
+		{"get", "function(): string - Get the current EEPROM contents.", NN_INDIRECT},
+		{"getData", "function(): string - Get the current EEPROM data contents.", NN_INDIRECT},
+		{"set", "function(data: string) - Set the current EEPROM contents.", NN_INDIRECT},
+		{"setData", "function(data: string) - Set the current EEPROM data contents.", NN_INDIRECT},
+		{"getArchitecture", "function(): string - Get the current EEPROM architecture intended.", NN_INDIRECT},
+		{"setArchitecture", "function(data: string) - Set the current EEPROM architecture intended.", NN_INDIRECT},
+		{"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_INDIRECT},
+		{"makeReadonly", "function(checksum: string) - Makes the EEPROM read-only, this cannot be undone.", NN_INDIRECT},
+		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_INDIRECT},
+		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentType *t = nn_createComponentType(universe, "eeprom", state, methods, nn_eeprom_handler);
 	if(t == NULL) {
@@ -1552,4 +1910,101 @@ nn_ComponentType *nn_createEEPROM(nn_Universe *universe, nn_EEPROM *eeprom, void
 		return NULL;
 	}
 	return t;
+}
+
+static nn_Exit nn_veeprom_handler(nn_EEPROMRequest *req) {
+	const nn_EEPROM *conf = req->eepromConf;
+	nn_VEEPROM_state *state = req->userdata;
+	nn_Context ctx = state->universe->ctx;
+	switch(req->action) {
+	case NN_EEPROM_DROP:
+		nn_free(&ctx, state->code, sizeof(char) * conf->size);
+		nn_free(&ctx, state->data, sizeof(char) * conf->dataSize);
+		nn_free(&ctx, state, sizeof(*state));
+		return NN_OK;
+	case NN_EEPROM_ISREADONLY:
+		req->buflen = state->isReadonly ? 1 : 0;
+		return NN_OK;
+	case NN_EEPROM_MAKEREADONLY:
+		state->isReadonly = true;
+		return NN_OK;
+	case NN_EEPROM_GET:
+		req->buflen = state->codelen;
+		nn_memcpy(req->buf, state->code, sizeof(char) * state->codelen);
+		return NN_OK;
+	case NN_EEPROM_GETDATA:
+		req->buflen = state->datalen;
+		nn_memcpy(req->buf, state->data, sizeof(char) * state->datalen);
+		return NN_OK;
+	case NN_EEPROM_GETARCH:
+		req->buflen = state->archlen;
+		nn_memcpy(req->buf, state->arch, sizeof(char) * state->archlen);
+		return NN_OK;
+	case NN_EEPROM_GETLABEL:
+		req->buflen = state->labellen;
+		nn_memcpy(req->buf, state->label, sizeof(char) * state->labellen);
+		return NN_OK;
+	case NN_EEPROM_SET:
+		state->codelen = req->buflen;
+		nn_memcpy(state->code, req->buf, sizeof(char) * state->codelen);
+		return NN_OK;
+	case NN_EEPROM_SETDATA:
+		state->datalen = req->buflen;
+		nn_memcpy(state->data, req->buf, sizeof(char) * state->datalen);
+		return NN_OK;
+	case NN_EEPROM_SETARCH:
+		state->archlen = req->buflen;
+		nn_memcpy(state->arch, req->buf, sizeof(char) * state->archlen);
+		return NN_OK;
+	case NN_EEPROM_SETLABEL:
+		state->labellen = req->buflen;
+		nn_memcpy(state->label, req->buf, sizeof(char) * state->labellen);
+		return NN_OK;
+	}
+	return NN_OK;
+}
+
+nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem) {
+	nn_Context ctx = universe->ctx;
+	char *code = NULL;
+	char *data = NULL;
+	size_t archlen = 0;
+	nn_VEEPROM_state *state = nn_alloc(&ctx, sizeof(*state));
+	if(state == NULL) goto fail;
+	state->universe = universe;
+	state->isReadonly = vmem->isReadonly;
+	
+	code = nn_alloc(&ctx, sizeof(char) * eeprom->size);
+	if(code == NULL) goto fail;
+
+	data = nn_alloc(&ctx, sizeof(char) * eeprom->dataSize);
+	if(data == NULL) goto fail;
+
+	state->code = code;
+	state->data = data;
+
+	state->codelen = vmem->codelen;
+	state->datalen = vmem->datalen;
+	state->labellen = vmem->labellen;
+	nn_memcpy(state->code, vmem->code, sizeof(char) * state->codelen);
+	nn_memcpy(state->data, vmem->data, sizeof(char) * state->datalen);
+	nn_memcpy(state->label, vmem->label, sizeof(char) * state->labellen);
+
+	if(vmem->arch != NULL) {
+		archlen = nn_strlen(vmem->arch);
+	}
+	state->archlen = archlen;
+	nn_memcpy(state->arch, vmem->arch, sizeof(char) * archlen);
+
+	nn_EEPROM neeprom = *eeprom;
+	neeprom.handler = nn_veeprom_handler;
+	nn_ComponentType *ty = nn_createEEPROM(universe, &neeprom, state);
+	if(ty == NULL) goto fail;
+	return ty;
+fail:;
+	 // remember, freeing NULL is fine!
+	 nn_free(&ctx, code, sizeof(char) * eeprom->size);
+	 nn_free(&ctx, data, sizeof(char) * eeprom->dataSize);
+	 nn_free(&ctx, state, sizeof(*state));
+	 return NULL;
 }

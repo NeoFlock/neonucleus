@@ -48,10 +48,16 @@ extern "C" {
 #define NN_CLOSEPORTS 0
 // maximum amount of architectures one machine can support.
 #define NN_MAX_ARCHITECTURES 32
+// maximum size of the architecture name EEPROMs can store
+#define NN_MAX_ARCHNAME 64
 // maximum amount of keyboards a screen can have
 #define NN_MAX_KEYBOARDS 64
 // the port used by tunnel cards. This port is invalid for modems.
 #define NN_TUNNEL_PORT 0
+// maximum amount of users a computer can have
+#define NN_MAX_USERS 64
+// maximum length of a username
+#define NN_MAX_USERNAME 128
 
 // the maximum size of a UTF-8 character
 #define NN_MAXIMUM_UNICODE_BUFFER 4
@@ -93,18 +99,23 @@ typedef struct nn_LockRequest {
 	nn_LockAction action;
 } nn_LockRequest;
 
-// intended for a plain mutex.
+// Intended for a plain mutex.
 // This is used for synchronization. OpenComputers achieves synchronization
 // between the worker threads by sending them as requests to a central thread (indirect methods).
-// In NeoNucleus, we simply use a lock. This technically makes all methods direct, however
-// we consider methods to be indirect if they require locks.
+// In NeoNucleus, the function pointer is invoked on the calling thead. This technically makes all methods direct,
+// however we consider methods to be indirect if they require synchronization of mutable state.
+// Do note that locks are only used in "full" component implementations, such as the volatile storage devices.
+// The interfaces do not do any automatic synchronization via locks, all synchronization is assumed
+// to be handled in the implementer of the interface, because only you know how to best synchronize
+// it with the outside world.
 typedef void nn_LockProc(void *state, nn_LockRequest *req);
 
 // The *context* NeoNucleus is operating in.
 // This determines:
 // - How memory is allocated
-// - How random numbers are generated
+// - How random numbers are generated and what the range is
 // - What the current time is
+// - How locks work
 typedef struct nn_Context {
 	void *state;
 	nn_AllocProc *alloc;
@@ -221,6 +232,29 @@ void nn_destroyComputer(nn_Computer *computer);
 void *nn_getComputerUserdata(nn_Computer *computer);
 const char *nn_getComputerAddress(nn_Computer *computer);
 
+// address is copied.
+// It can be NULL if you wish to have no tmp address.
+// It can fail due to out-of-memory errors.
+nn_Exit nn_setTmpAddress(nn_Computer *computer, const char *address);
+// can return NULL if none was set
+const char *nn_getTmpAddress(nn_Computer *computer);
+
+// Registers a user to the computer.
+nn_Exit nn_addUser(nn_Computer *computer, const char *user);
+// Unregisters a user from the computer.
+// If they were never there, nothing is removed and all is fine.
+// It returns if the user was originally there.
+bool nn_removeUser(nn_Computer *computer, const char *user);
+// NULL for out-of-bound users
+// Can be used to iterate all users.
+const char *nn_getUser(nn_Computer *computer, size_t idx);
+// Helper function.
+// Always returns true if 0 users are registered.
+// If users are registered, it will only return true if the specified
+// user is registered.
+// This can be used for checking signals.
+bool nn_hasUser(nn_Computer *computer, const char *user);
+
 // Sets the computer's architecture.
 // The architecture determines everything from how the computer runs, to how it turns off.
 // Everything is limited by the architecture.
@@ -239,7 +273,7 @@ nn_Architecture nn_getDesiredArchitecture(nn_Computer *computer);
 // The architecture is copied, it can be freed after this is called.
 nn_Exit nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Returns the array of supported architectures, as well as the length.
-const nn_Architecture *nn_getSupportedArchitecture(nn_Computer *computer, size_t *len);
+const nn_Architecture *nn_getSupportedArchitectures(nn_Computer *computer, size_t *len);
 // Helper function for searching for an architecture using a computer which supports it and the architecture name.
 // If the architecture is not found, it returns one with a NULL name.
 nn_Architecture nn_findSupportedArchitecture(nn_Computer *computer, const char *name);
@@ -262,6 +296,9 @@ double nn_getUptime(nn_Computer *computer);
 
 // copies the string into the local error buffer. The error is NULL terminated, but also capped by NN_MAX_ERROR_SIZE
 void nn_setError(nn_Computer *computer, const char *s);
+// set a default error message from an exit.
+// Does nothing for EBADCALL.
+void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit);
 // copies the string into the local error buffer. The error is capped by NN_MAX_ERROR_SIZE-1. The -1 is there because the NULL terminator is still inserted at the end.
 // Do note that nn_getError() still returns a NULL-terminated string, thus NULL terminators in this error will lead to a shortened error.
 void nn_setLError(nn_Computer *computer, const char *s, size_t len);
@@ -297,11 +334,24 @@ void nn_removeDeviceInfo(nn_Computer *computer, const char *address);
 // gets the device info array.
 const nn_DeviceInfo *nn_getDeviceInfo(nn_Computer *computer, size_t *len);
 
-typedef struct nn_ComponentMethod {
+typedef enum nn_MethodFlags {
+	NN_INDIRECT = 0,
+	NN_DIRECT = (1<<0),
+	// this indicates this method wraps a *field*
+	// getter means calling it with no arguments will return the current value,
+	NN_GETTER = (1<<1),
+	// this indicates this method wraps a *field*
+	// setter means calling it with 1 argument will try to set the value.
+	NN_SETTER = (1<<2),
+} nn_MethodFlags;
+
+#define NN_FIELD_MASK (NN_GETTER | NN_SETTER)
+
+typedef struct nn_Method {
 	const char *name;
 	const char *docString;
-	bool direct;
-} nn_ComponentMethod;
+	nn_MethodFlags flags;
+} nn_Method;
 
 typedef struct nn_ComponentType nn_ComponentType;
 
@@ -344,7 +394,7 @@ typedef struct nn_ComponentRequest {
 typedef nn_Exit nn_ComponentHandler(nn_ComponentRequest *req);
 
 // Creates a new component type. It is safe to free name and methods afterwards.
-nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name, void *userdata, const nn_ComponentMethod methods[], nn_ComponentHandler *handler);
+nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler);
 // NOTE: do not destroy this before destroying any components using it, or any computers with components using it.
 // The component type is still used one last time for the destructor of the components.
 void nn_destroyComponentType(nn_ComponentType *ctype);
@@ -366,11 +416,13 @@ const char *nn_getComponentType(nn_Computer *computer, const char *address);
 // Gets the slot of a component.
 int nn_getComponentSlot(nn_Computer *computer, const char *address);
 // Returns the array of component methods. This can be used for doc strings or just listing methods.
-const nn_ComponentMethod *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len);
+const nn_Method *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len);
 // get the address at a certain index.
 // It'll return NULL for out of bounds indexes.
 // This can be used to iterate over all components.
 const char *nn_getComponentAddress(nn_Computer *computer, size_t idx);
+// Returns the doc-string associated with a method.
+const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method);
 
 // this uses the call stack.
 // Component calls must not call other components, it just doesn't work.
@@ -468,6 +520,9 @@ bool nn_isuserdata(nn_Computer *computer, size_t idx);
 // Returns whether the value at [idx] is a table.
 // [idx] starts at 0.
 bool nn_istable(nn_Computer *computer, size_t idx);
+// Returns the name of the type of the value at that index.
+// For out of bounds indexes, "none" is returned.
+const char *nn_typenameof(nn_Computer *computer, size_t idx);
 
 // NOTE: behavior of the nn_to*() functions and nn_dumptable() when the values have the wrong types or at out of bounds indexes is undefined.
 
@@ -539,6 +594,7 @@ typedef struct nn_EEPROMRequest {
 	void *instance;
 	// the computer making the request
 	nn_Computer *computer;
+	const struct nn_EEPROM *eepromConf;
 	nn_EEPROMAction action;
 	// all the get* options should set this to the length,
 	// and its initial value is the capacity of [buf].
@@ -572,9 +628,21 @@ typedef struct nn_EEPROM {
 	nn_Exit (*handler)(nn_EEPROMRequest *request);
 } nn_EEPROM;
 
+typedef struct nn_VEEPROM {
+	const char *code;
+	size_t codelen;
+	const char *data;
+	size_t datalen;
+	const char *label;
+	size_t labellen;
+	const char *arch;
+	bool isReadonly;
+} nn_VEEPROM;
+
 // the userdata passed to the component is the userdata
 // in the handler
-nn_ComponentType *nn_createEEPROM(nn_Universe *universe, nn_EEPROM *eeprom, void *userdata);
+nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, void *userdata);
+nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem);
 
 #ifdef __cplusplus
 }
