@@ -573,7 +573,7 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 // TODO: screen, gpu, filesystem, eeprom and the rest of the universe
 
 typedef enum nn_EEPROMAction {
-	// informed that it has been dropped
+	// the eeprom instance has been dropped
 	NN_EEPROM_DROP,
 	NN_EEPROM_GET,
 	NN_EEPROM_SET,
@@ -643,6 +643,137 @@ typedef struct nn_VEEPROM {
 // in the handler
 nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, void *userdata);
 nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem);
+
+// Note on paths:
+// - Paths given always have their length stored, but also have a NULL terminator.
+// - Paths are validated. They check for illegal characters as per OC's definition.
+// - Logical paradoxes such as rename("a", "a/b") are automatically checked and handled.
+// - \ are automatically replaced with /
+// - .. and leading / is handled automatically. This also improves sandboxing, as ../a.txt would become just a.txt
+// - For rename, it automatically checks if the destination exists and if so, errors out.
+typedef enum nn_FilesystemAction {
+	// the filesystem instance has been dropped.
+	// Make sure to close all file descriptors which are still open.
+	NN_FS_DROP,
+	// open a file. strarg1 stores the path, and strarg2 stores the mode.
+	// strarg1len and strarg2len are their respective lengths.
+	// The output should be in fd.
+	NN_FS_OPEN,
+	// read a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	// strarg1len is the capacity of strarg1.
+	// Write the result of reading into strarg1.
+	// Update strarg1len to reflect the amount of data read.
+	// Set strarg1 to NULL to indicate EOF.
+	NN_FS_READ,
+	// write to a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	// strarg1len is the amount of data to write.
+	// strarg1 is the contents of the buffer to write.
+	NN_FS_WRITE,
+	// seek a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	// The offset is stored in off.
+	// The seek mode is stored in whence.
+	// It should set off to the new position.
+	NN_FS_SEEK,
+	// close a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	NN_FS_CLOSE,
+	// open a directory file descriptor.
+	// The result should be in fd.
+	NN_FS_OPENDIR,
+	// read a directory file descriptor, stored in fd.
+	// The entry should be stored in strarg2, and strarg2len is the capacity of the buffer.
+	// If the buffer is too short, truncate the result.
+	// Set strarg2len to the length of the entry.
+	// Do note that directories should have / appended at the end of their entries.
+	// Directory file descriptors are not exposed to Lua,
+	// thus they can only come from NN_FS_OPENDIR.
+	// This means you may not need to validate these file descriptors.
+	NN_FS_READDIR,
+	// close a directory file descriptor, stored in fd.
+	// Directory file descriptors are not exposed to Lua,
+	// thus they can only come from NN_FS_OPENDIR.
+	// This means you may not need to validate these file descriptors.
+	NN_FS_CLOSEDIR,
+	// Create a directory at a given path stored in strarg1.
+	// strarg1len is the length of the path.
+	// It is meant to also create parent directories recursively
+	// as needed.
+	NN_FS_MKDIR,
+	// Return the lastmodified timestamp.
+	// This number is stored in milliseconds, but aligned to seconds.
+	// DO NOT RETURN A NUMBER NOT DIVISIBLE BY 1000, OpenOS WILL BREAK
+	// DUE TO BAD CODE.
+	// The timestamp should be stored in size, it may not make
+	// sense but it is a field and it is there.
+	NN_FS_LASTMODIFIED,
+	// Checks if a path, stored in strarg1, is a directory.
+	// If it is, size should be set to 1.
+	// If it is not, size should be set to 0.
+	NN_FS_ISDIRECTORY,
+	// Checks if the filesystem is read-only.
+	// If it is, size should be set to 1.
+	// If it is not, size should be set to 0.
+	NN_FS_ISREADONLY,
+	// Makes a file-system read-only.
+	NN_FS_MAKEREADONLY,
+	// Checks if a path, stored in strarg1, exists on the filesystem.
+	// If it is, size should be set to 1.
+	// If it is not, size should be set to 0.
+	NN_FS_EXISTS,
+	// Returns the label.
+	// The label should be written into strarg1, with strarg1len as the capacity.
+	// Set strarg1len to the label length.
+	NN_FS_GETLABEL,
+	// Sets the label.
+	// The label is stored in strarg1, with strarg1len as the length.
+	NN_FS_SETLABEL,
+	// Gets the space used, it should be stored in size.
+	NN_FS_SPACEUSED,
+	// Gets 2 paths, strarg1 and strarg2, with their lengths.
+	// It should try to rename strarg1 to strarg2, as in,
+	// it should move strarg1 to be at strarg2, potentially
+	// using recursive directory copies.
+	NN_FS_RENAME,
+	// Removes the path stored in strarg1.
+	NN_FS_REMOVE,
+	// Returns the size of the entry at strarg1.
+	// The size of a directory is typically 0.
+	// The size of a file is typically the amount of bytes in its contents.
+	// Using other measures of size will rarely break code,
+	// but may confuse users.
+	NN_FS_SIZE,
+} nn_FilesystemAction;
+
+typedef enum nn_FilesystemWhence {
+	// relative to start
+	NN_SEEK_SET,
+	// relative to the current position
+	NN_SEEK_CUR,
+	// relative to the EOF position.
+	NN_SEEK_END,
+} nn_FilesystemWhence;
+
+typedef struct nn_FilesystemRequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	nn_FilesystemAction action;
+	int fd;
+	nn_FilesystemWhence whence;
+	int off;
+	char *strarg1;
+	size_t strarg1len;
+	char *strarg2;
+	size_t strarg2len;
+	size_t size;
+} nn_FilesystemRequest;
 
 #ifdef __cplusplus
 }
