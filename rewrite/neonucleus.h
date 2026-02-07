@@ -66,6 +66,56 @@ extern "C" {
 // it is truncated.
 #define NN_MAX_ERROR_SIZE 1024
 
+// unicode (UTF-8) support library
+
+typedef unsigned int nn_codepoint;
+
+// validates that a NULL-terminated string is valid UTF-8
+bool nn_unicode_validate(const char *s);
+// validates only the *first* codepoint in the NULL-terminated string.
+// This returns the length in bytes of the codepoint, with 0 meaning
+// invalid.
+size_t nn_unicode_validateFirstChar(const char *s);
+
+// returns the amount of unicode codepoints in the UTF-8 string.
+// Undefined behavior for invalid UTF-8, make sure to validate it if needed.
+size_t nn_unicode_len(const char *s);
+// returns the amount of unicode codepoints in the UTF-8 string.
+// If s is invalid UTF-8, all invalid bytes are considered a 1-byte codepoint.
+size_t nn_unicode_lenPermissive(const char *s);
+
+// Writes the codepoints of s into codepoints.
+// Undefined behavior for invalid UTF-8, make sure to validate it if needed.
+// The codepoints buffer must be big enough to store the string, use nn_unicode_len()
+// to get the required buffer length.
+void nn_unicode_codepoints(const char *s, nn_codepoint *codepoints);
+// Writes the codepoints of s into codepoints.
+// If s is invalid UTF-8, all invalid bytes are considered a 1-byte codepoint.
+// The codepoints buffer must be big enough to store the string, use nn_unicode_lenPermissive()
+// to get the required buffer length.
+void nn_unicode_codepointsPermissive(const char *s, nn_codepoint *codepoints);
+
+// Returns the codepoint at a given byte offset in the string.
+// If it is out of bounds, the behavior is undefined.
+// If s is invalid UTF-8 at that offset, the behavior is undefined.
+nn_codepoint nn_unicode_codepointAt(const char *s, size_t byteOffset);
+// Returns the size, in bytes, required by UTF-8 for a codepoint.
+size_t nn_unicode_codepointSize(nn_codepoint codepoint);
+// Writes the UTF-8 bytes for a given codepoint into buffer.
+// It does NOT write a NULL terminator, but it does return the length.
+size_t nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], nn_codepoint codepoint);
+// the width, on a screen, for a codepoint.
+// This matters for emojies.
+size_t nn_unicode_charWidth(nn_codepoint codepoint);
+// The width, on a screen, for an entire string.
+// The behavior is undefined for 
+size_t nn_unicode_wlen(const char *s);
+
+// Returns the uppercase version of the codepoint
+nn_codepoint nn_unicode_upper(nn_codepoint codepoint);
+// Returns the lowercase version of the codepoint
+nn_codepoint nn_unicode_lower(nn_codepoint codepoint);
+
 // The type of a the function used as the allocator.
 // The expected behavior is as follows:
 // alloc(state, NULL, 0, newSize) -> malloc(newSize)
