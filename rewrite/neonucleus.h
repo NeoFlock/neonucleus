@@ -50,8 +50,12 @@ extern "C" {
 #define NN_MAX_ARCHITECTURES 32
 // maximum size of the architecture name EEPROMs can store
 #define NN_MAX_ARCHNAME 64
-// maximum amount of keyboards a screen can have
-#define NN_MAX_KEYBOARDS 64
+// maximum size of an address.
+// This only matters in places where an address is returned through a component, as it is the amount of space to allocate for the response.
+// Past this there would be a truncation which would invalidate the address.
+// However, 256 is unrealistically long, as UUIDv4 only needs 36.
+// Please, do not go above this.
+#define NN_MAX_ADDRESS 256
 // the port used by tunnel cards. This port is invalid for modems.
 #define NN_TUNNEL_PORT 0
 // maximum amount of users a computer can have
@@ -824,6 +828,217 @@ typedef struct nn_FilesystemRequest {
 	size_t strarg2len;
 	size_t size;
 } nn_FilesystemRequest;
+
+typedef enum nn_ScreenAction {
+	// instance dropped
+	NN_SCR_DROP,
+
+	// from screen component
+	NN_SCR_ISON,
+	NN_SCR_TURNON,
+	NN_SCR_TURNOFF,
+	NN_SCR_GETKEYBOARD,
+	NN_SCR_SETPRECISE,
+	NN_SCR_ISPRECISE,
+	NN_SCR_SETTOUCHINVERTED,
+	NN_SCR_ISTOUCHINVERTED,
+	NN_SCR_GETASPECTRATIO,
+} nn_ScreenAction;
+
+typedef struct nn_ScreenRequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	nn_ScreenAction action;
+	int w;
+	int h;
+} nn_ScreenRequest;
+
+// Remember:
+// - Colors are in 0xRRGGBB format.
+// - Screen coordinates and palettes are 1-indexed.
+typedef enum nn_GPUAction {
+	// Conventional GPU functions
+
+	// requests to bind to a GPU connected to the computer.
+	// The address, as well as its length, are stored in text, with the length in width.
+	// The interface does check that the computer does have the screen.
+	NN_GPU_BIND,
+	// Ask for the screen the GPU is currently bound to.
+	// If it is not bound to any, text should be set to NULL.
+	// If it is, you must write to text the address of the screen.
+	// width stores the capacity of text, so if needed, truncate it to that many bytes.
+	// The length of this address should be stored in width.
+	NN_GPU_GETSCREEN,
+	// Gets the current background.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	NN_GPU_GETBACKGROUND,
+	// Sets the current background.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	NN_GPU_SETBACKGROUND,
+	// Gets the current foreground.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	NN_GPU_GETFOREGROUND,
+	// Sets the current foreground.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	NN_GPU_SETFOREGROUND,
+	// Gets the palette color.
+	// x is the index.
+	// y should be set to the color.
+	NN_GPU_GETPALETTECOLOR,
+	// Gets the palette color.
+	// x is the index.
+	// y is the color.
+	NN_GPU_SETPALETTECOLOR,
+	// Gets the maximum depth supported by the GPU and screen.
+	// Valid depth values in OC are 1, 4 and 8, however NN also recognizes 2, 3, 16 and 24.
+	// The result should be stored in x.
+	NN_GPU_MAXDEPTH,
+	// Gets the current depth the screen is displaying at.
+	// The result should be stored in x.
+	NN_GPU_GETDEPTH,
+	// Sets the current depth the screen is displaying at.
+	// The new depth is in x.
+	// This should not change the stored color values of neither the palette nor the characters,
+	// but simply change what their color is translated to graphically.
+	// The old depth should be stored in x.
+	NN_GPU_SETDEPTH,
+	// Gets the maximum resolution supported by the GPU and screen.
+	// Result should be in width and height.
+	NN_GPU_MAXRESOLUTION,
+	// Gets the resolution of the screen.
+	// Result should be in width and height.
+	NN_GPU_GETRESOLUTION,
+	// Sets the resolution of the screen.
+	// The new resolution should be stored in width and height.
+	// If successful, a screen_resized event is implicitly queued.
+	NN_GPU_SETRESOLUTION,
+	// Gets the current screen viewport.
+	// The result should be in width and height.
+	NN_GPU_GETVIEWPORT,
+	// Sets the screen viewport.
+	// The new viewport dimensions are stored in width and height.
+	NN_GPU_SETVIEWPORT,
+	// Gets a character.
+	NN_GPU_GET,
+	// Sets a horizontal line of text at a given x, y.
+	// The position is stored in x, y, and is the position of the first character.
+	// The text goes left-to-right on the horizontal line. Anything off-screen is discared.
+	// There is no wrapping.
+	// The text is stored in text, with the size of the text, in bytes, being stored in width.
+	NN_GPU_SET,
+	// like NN_GPU_SET, but the text is set vertically.
+	// This means instead of going from left-to-right on the screen on a horizontal line,
+	// it is up-to-down on a vertical line.
+	NN_GPU_SETVERTICAL,
+	// Copies a portion of the screen to another location.
+	// The rectangle being copied is width x height, and has the top-left corner at x, y.
+	// The destination rectangle is also width x height, but has the top-left corner at x + tx, y + ty.
+	// The copy happens as if it is using an intermediary buffer, thus even if the source and destination
+	// intersect, the order in which characters are copied must not change the result.
+	NN_GPU_COPY,
+	// Fills a rectangle
+	// The rectangle's top-left corner is at x, y, and its dimensions are width x height.
+	// The character it should be filled with has its unicode codepoint stored in codepoint.
+	NN_GPU_FILL,
+
+	// VRAM buffers (always blazing fast)
+	
+	// Should return the current active buffer.
+	// 0 for the screen, or if there is no screen.
+	// The result should be stored in x.
+	NN_GPU_GETACTIVEBUFFER,
+	// Switches the active buffer to a new one, stored in x.
+	NN_GPU_SETACTIVEBUFFER,
+	// Gets a buffer by index in an imaginary list containing all of them.
+	// The index is in x, the buffer is output in y.
+	// If y is 0, the sequence is assumed to end.
+	NN_GPU_BUFFERS,
+	// Allocates a buffer.
+	// The buffer sizes are in width and height, with 0 x 0 meaning max resolution (default).
+	// This consumes exactly width * height VRAM.
+	// The new buffer should be put in x.
+	// If there was not enough VRAM for this, x can be set to 0.
+	NN_GPU_ALLOCBUFFER,
+	// Frees a buffer.
+	// The buffer is stored in x.
+	// This releases the same VRAM that the buffer consumed when allocated.
+	NN_GPU_FREEBUFFER,
+	// Frees all buffers. The free VRAM should be equal to the total VRAM after this.
+	NN_GPU_FREEBUFFERS,
+	// Gets memory info about the GPU.
+	// x should be set to the amount of free VRAM available.
+	NN_GPU_FREEMEM,
+	// Gets the size of a buffer, stored in x.
+	// The size should be stored in width and height.
+	NN_GPU_GETBUFFERSIZE,
+	// Copy a region between buffers or between the screen and buffers.
+	// The destination buffer is stored in dest. If 0, it refers to the screen.
+	// The source buffer is stored in src. If 0, it refers to the screen.
+	// x, y, width and height define the source rectangle, in the same way as in fill, to copy from the source buffer.
+	// tx, ty refer to the top-left corner for the destination rectangle, in the destination buffer. It has the same width
+	// and height as the source rectangle.
+	// Screen-to-screen copies are illegal and checked, no need to worry about handling them.
+	NN_GPU_BITBLT,
+} nn_GPUAction;
+
+typedef struct nn_GPURequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	nn_GPUAction action;
+	int x;
+	int y;
+	int width;
+	int height;
+	union {
+		struct {
+			int tx;
+			int ty;
+		};
+		nn_codepoint codepoint;
+		char *text;
+	};
+	int dest;
+	int src;
+} nn_GPURequest;
+
+// Colors and palettes.
+// Do note that the 
+
+// The NeoNucleus 2-bit palette
+extern int nn_palette2[4];
+
+// The NeoNucleus 3-bit palette
+extern int nn_palette3[8];
+
+// The OC 4-bit palette.
+extern int nn_ocpalette4[16];
+
+// The Minecraft 4-bit palette, using dye colors.
+extern int nn_mcpalette4[16];
+
+// The OC 8-bit palette.
+extern int nn_ocpalette8[256];
+
+// Expensive.
+// Maps a color to the closest match in a palette.
+int nn_mapColor(int color, int *palette, size_t len);
+// Expensive.
+// Maps a color within a given depth.
+// ocCompatible only matters for 4-bit, and determines whether to use the OC palette or the MC palette.
+// Invalid depths behave identically to 24-bit, in which case the color is left unchanged.
+int nn_mapDepth(int color, int depth, bool ocCompatible);
+
+// the name of a depth, if valid.
+// If invalid, NULL is returned, thus this can be used to check
+// if a depth is valid as well.
+// Valid depths are 1, 2, 3, 4, 8, 16 and 24.
+const char *nn_depthName(int depth);
 
 #ifdef __cplusplus
 }
