@@ -1031,6 +1031,8 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	req.localState = computer->archState;
 	req.action = NN_ARCH_TICK;
 	err = computer->arch.handler(&req);
+	// dont crash on EBUSY because it just means go again
+	if(err == NN_EBUSY) return err;
 	if(err) {
 		computer->state = NN_CRASHED;
 		nn_setErrorFromExit(computer, err);
@@ -1338,6 +1340,7 @@ void nn_resetCallBudget(nn_Computer *computer) {
 }
 
 bool nn_componentsOverused(nn_Computer *computer) {
+	if(computer->totalCallBudget == 0) return false;
 	return computer->callBudget == 0;
 }
 

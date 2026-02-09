@@ -89,7 +89,7 @@ int main() {
 	
 	while(true) {
 		nn_Exit e = nn_tick(c);
-		if(e != NN_OK) {
+		if(e != NN_OK && e != NN_EBUSY) {
 			nn_setErrorFromExit(c, e);
 			printf("error: %s\n", nn_getError(c));
 			goto cleanup;

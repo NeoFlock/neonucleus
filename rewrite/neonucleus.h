@@ -206,6 +206,8 @@ typedef enum nn_Exit {
 	NN_EBADCALL,
 	// bad state, the function was called at the wrong time
 	NN_EBADSTATE,
+	// resource busy. If the result of nn_call, you should call it again later.
+	NN_EBUSY,
 } nn_Exit;
 
 // This stores necessary data between computers
@@ -481,6 +483,7 @@ const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const
 // this uses the call stack.
 // Component calls must not call other components, it just doesn't work.
 // The lack of an argument count is because the entire call stack is assumed to be the arguments.
+// In the case of NN_EBUSY, you should call it again with the same arguments later.
 nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method);
 
 // Sets the call budget.
@@ -501,7 +504,7 @@ size_t nn_callBudgetRemaining(nn_Computer *computer);
 void nn_resetCallBudget(nn_Computer *computer);
 
 // returns whether there is no more call budget left.
-// At this point, the architecture should exit from a yield.
+// At this point, the architecture should exit with a yield.
 bool nn_componentsOverused(nn_Computer *computer);
 
 // call stack operations.
