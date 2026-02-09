@@ -545,6 +545,9 @@ nn_Exit nn_dupe(nn_Computer *computer);
 // pushes the top N values onto the stack, effectively duplicating the top N values.
 nn_Exit nn_dupen(nn_Computer *computer, size_t n);
 
+// pushes the value at idx.
+nn_Exit nn_dupeat(nn_Computer *computer, size_t idx);
+
 // get the current amount of values on the call stack.
 // For component calls, calling this at the start effectively gives you the argument count.
 size_t nn_getstacksize(nn_Computer *computer);
@@ -857,7 +860,12 @@ typedef struct nn_ScreenRequest {
 // Remember:
 // - Colors are in 0xRRGGBB format.
 // - Screen coordinates and palettes are 1-indexed.
+// - If NN_GPU_SETRESOLUTION returns NN_OK, a screen_resized signal is queued automatically.
+// - VRAM is always fast
 typedef enum nn_GPUAction {
+	// instance dropped
+	NN_GPU_DROP,
+
 	// Conventional GPU functions
 
 	// requests to bind to a GPU connected to the computer.
@@ -1039,6 +1047,57 @@ int nn_mapDepth(int color, int depth, bool ocCompatible);
 // if a depth is valid as well.
 // Valid depths are 1, 2, 3, 4, 8, 16 and 24.
 const char *nn_depthName(int depth);
+
+// Signal helpers
+
+// common mouse buttons, not an exhaustive list
+#define NN_BUTTON_LEFT 0
+#define NN_BUTTON_RIGHT 1
+#define NN_BUTTON_MIDDLE 2
+
+// pushes a screen_resized signal
+nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight);
+// pushes a touch signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushTouch(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a drag signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushDrag(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a drop signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a scroll signal
+// A positive direction usually means up, a negative one usually means down.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushScroll(nn_Computer *computer, const char *screenAddress, double x, double y, double direction, const char *player);
+// pushes a walk signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushWalk(nn_Computer *computer, const char *screenAddress, double x, double y, const char *player);
+
+// pushes a key_down event
+// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
+// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
+// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushKeyDown(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
+// pushes a key_up event
+// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
+// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
+// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushKeyUp(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
+// pushes a clipboard event
+// clipboard should be a NULL-terminated string.
+// NN does no truncation of the contents, but it is best to limit it.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, const char *player);
+// pushes a clipboard event
+// len is the length of the clipboard.
+// NN does no truncation of the contents, but it is best to limit it.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, size_t len, const char *player);
+
+// TODO: the remaining vanilla ones in https://ocdoc.cil.li/component:signals
 
 #ifdef __cplusplus
 }

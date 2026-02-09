@@ -1448,6 +1448,13 @@ nn_Exit nn_dupen(nn_Computer *computer, size_t n) {
 	return NN_OK;
 }
 
+nn_Exit nn_dupeat(nn_Computer *computer, size_t idx) {
+	if(computer->stackSize <= idx) return NN_EBELOWSTACK;
+	nn_Value v = computer->callstack[idx];
+	nn_retainValue(v);
+	return nn_pushvalue(computer, v);
+}
+
 size_t nn_getstacksize(nn_Computer *computer) {
 	return computer->stackSize;
 }
