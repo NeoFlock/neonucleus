@@ -53,29 +53,26 @@ static luaArch *luaArch_from(lua_State *L) {
 }
 
 // pushes an NN value from a Lua stack index
-static void luaArch_luaToNN(luaArch *arch, int luaIdx) {
+static nn_Exit luaArch_luaToNN(luaArch *arch, int luaIdx) {
 	lua_State *L = arch->L;
 	nn_Computer *C = arch->computer;
 
 	if(lua_isnoneornil(L, luaIdx)) {
-		nn_pushnull(C);
-		return;
+		return nn_pushnull(C);
 	}
 	if(lua_isnumber(L, luaIdx)) {
-		nn_pushnumber(C, lua_tonumber(L, luaIdx));
-		return;
+		return nn_pushnumber(C, lua_tonumber(L, luaIdx));
 	}
 	if(lua_isstring(L, luaIdx)) {
 		size_t len;
 		const char *s = lua_tolstring(L, luaIdx, &len);
-		nn_pushlstring(C, s, len);
-		return;
+		return nn_pushlstring(C, s, len);
 	}
 	if(lua_isboolean(L, luaIdx)) {
-		nn_pushbool(C, lua_toboolean(L, luaIdx));
-		return;
+		return nn_pushbool(C, lua_toboolean(L, luaIdx));
 	}
 	luaL_error(L, "bad Lua value: %s", luaL_typename(L, luaIdx));
+	return NN_EBADSTATE;
 }
 
 // pushes a Lua value from an NN stack index
@@ -231,6 +228,45 @@ static int luaArch_computer_isOverused(lua_State *L) {
 	nn_Computer *c = luaArch_from(L)->computer;
 	lua_pushboolean(L, nn_componentsOverused(c));
 	return 1;
+}
+
+static int luaArch_computer_pushSignal(lua_State *L) {
+	luaArch *arch = luaArch_from(L);
+	nn_Computer *c = arch->computer;
+	size_t signalCount = lua_gettop(L);
+	nn_Exit err;
+	for(int i = 1; i <= signalCount; i++) {
+		err = luaArch_luaToNN(arch, i);
+		if(err) { 
+			nn_setErrorFromExit(c, err);
+			luaL_error(L, "%s", nn_getError(c));
+		}
+	}
+	err = nn_pushSignal(c, signalCount);
+	if(err) {
+		nn_setErrorFromExit(c, err);
+		luaL_error(L, "%s", nn_getError(c));
+	}
+	return 0;
+}
+
+static int luaArch_computer_popSignal(lua_State *L) {
+	luaArch *arch = luaArch_from(L);
+	nn_Computer *c = arch->computer;
+	// no signals queued
+	if(nn_countSignals(c) == 0) return 0;
+	nn_clearstack(c);
+	size_t signalCount;
+	nn_Exit err = nn_popSignal(c, &signalCount);
+	if(err) goto fail;
+	for(size_t i = 0; i < signalCount; i++) {
+		luaArch_nnToLua(arch, i);
+	}
+	return signalCount;
+fail:
+	nn_setErrorFromExit(c, err);
+	luaL_error(L, "%s", nn_getError(c));
+	return 0;
 }
 
 static int luaArch_component_list(lua_State *L) {
@@ -406,6 +442,10 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_setfield(L, computer, "shutdown");
 	lua_pushcfunction(L, luaArch_computer_isOverused);
 	lua_setfield(L, computer, "isOverused");
+	lua_pushcfunction(L, luaArch_computer_pushSignal);
+	lua_setfield(L, computer, "pushSignal");
+	lua_pushcfunction(L, luaArch_computer_popSignal);
+	lua_setfield(L, computer, "popSignal");
 	lua_setglobal(L, "computer");
 	lua_createtable(L, 0, 10);
 	int component = lua_gettop(L);
@@ -460,6 +500,7 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 		lua_settop(arch->L, 1);
 		int ret = 0;
 		int res = lua_resume(arch->L, NULL, 0, &ret);
+		//printf("res: %d\n", res);
 		if(res == LUA_OK) {
 			// halted, fuck
 			lua_pop(arch->L, ret);

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 nn_Architecture getLuaArch();
 
@@ -19,6 +20,7 @@ nn_Architecture getLuaArch();
 	#define NE_PATHSEP '/'
 	#include <dirent.h>
 	#include <unistd.h>
+	#include <sys/stat.h>
 
 	typedef DIR ne_dir;
 
@@ -39,6 +41,25 @@ nn_Architecture getLuaArch();
 
 	bool ne_exists(const char *path) {
 		return access(path, F_OK) == 0;
+	}
+	
+	size_t ne_sizeAt(const char *path) {
+		struct stat buf;
+		if(stat(path, &buf) != 0) return 0;
+		if(S_ISDIR(buf.st_mode)) return 0;
+		return buf.st_size;
+	}
+	
+	bool ne_isDirectory(const char *path) {
+		struct stat buf;
+		if(stat(path, &buf) != 0) return false;
+		return S_ISDIR(buf.st_mode);
+	}
+	
+	size_t ne_lastModified(const char *path) {
+		struct stat buf;
+		if(stat(path, &buf) != 0) return 0;
+		return buf.st_mtime;
 	}
 #endif
 
@@ -212,8 +233,35 @@ nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 		ne_fsState_truepath(state, truepath, req->strarg1);
 		req->size = ne_exists(truepath) ? 1 : 0;
 		return NN_OK;
+	case NN_FS_SIZE:
+		ne_fsState_truepath(state, truepath, req->strarg1);
+		if(!ne_exists(truepath)) {
+			nn_setError(C, "no such file or directory");
+			return NN_EBADCALL;
+		}
+		req->size = ne_sizeAt(truepath);
+		return NN_OK;
+	case NN_FS_LASTMODIFIED:
+		ne_fsState_truepath(state, truepath, req->strarg1);
+		if(!ne_exists(truepath)) {
+			nn_setError(C, "no such file or directory");
+			return NN_EBADCALL;
+		}
+		req->size = ne_lastModified(truepath);
+		return NN_OK;
+	case NN_FS_ISDIRECTORY:
+		ne_fsState_truepath(state, truepath, req->strarg1);
+		if(!ne_exists(truepath)) {
+			nn_setError(C, "no such file or directory");
+			return NN_EBADCALL;
+		}
+		req->size = ne_isDirectory(truepath) ? 1 : 0;
+		return NN_OK;
+	default:
+		break;
 	}
-	return NN_OK;
+	nn_setError(C, "not implemented");
+	return NN_EBADCALL;
 }
 
 ne_FsState *ne_newFS(const char *path, bool readonly) {

@@ -3,6 +3,7 @@
 -- Do not use in a serious context, you will be hacked.
 -- There is no sandboxing here.
 
+
 local sysyieldobj = {}
 
 local function sysyield()
@@ -13,10 +14,7 @@ local resume = coroutine.resume
 
 function coroutine.resume(co, ...)
 	local t = {resume(co, ...)}
-	-- NOTE: user can trigger false sysyields
-	-- by simply yielding an object who's
-	-- __eql always returns true.
-	if t[1] and t[2] == sysyieldobj then
+	if t[1] and rawequal(t[2], sysyieldobj) then
 		coroutine.yield(sysyieldobj)
 	else
 		return table.unpack(t)
@@ -141,6 +139,20 @@ function computer.setArchitecture(arch)
 	local ok, err = setArch(arch)
 	sysyield()
 	return ok, err
+end
+
+function computer.pullSignal(timeout)
+	timeout = timeout or math.huge
+	local deadline = computer.uptime() + timeout
+	while true do
+		if computer.uptime() >= deadline then return end
+		local t = {computer.popSignal()}
+		if #t == 0 then
+			sysyield()
+		else
+			return table.unpack(t)
+		end
+	end
 end
 
 function checkArg(arg, val, ...)

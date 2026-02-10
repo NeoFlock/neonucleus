@@ -499,6 +499,7 @@ const nn_Method *nn_getComponentMethods(nn_Computer *computer, const char *addre
 const char *nn_getComponentAddress(nn_Computer *computer, size_t idx);
 // Returns the doc-string associated with a method.
 const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method);
+void *nn_getComponentUserdata(nn_Computer *computer, const char *address);
 
 // this uses the call stack.
 // Component calls must not call other components, it just doesn't work.
@@ -1110,6 +1111,139 @@ const char *nn_depthName(int depth);
 #define NN_BUTTON_LEFT 0
 #define NN_BUTTON_RIGHT 1
 #define NN_BUTTON_MIDDLE 2
+
+// OC keycodes
+// taken from https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/resources/assets/opencomputers/loot/openos/lib/core/full_keyboard.lua
+#define NN_KEY_UNKNOWN 0
+#define NN_KEY_1 0x02
+#define NN_KEY_2 0x03
+#define NN_KEY_3 0x04
+#define NN_KEY_4 0x05
+#define NN_KEY_5 0x06
+#define NN_KEY_6 0x07
+#define NN_KEY_7 0x08
+#define NN_KEY_8 0x09
+#define NN_KEY_9 0x0A
+#define NN_KEY_0 0x0B
+#define NN_KEY_A 0x1E
+#define NN_KEY_B 0x30
+#define NN_KEY_C 0x2E
+#define NN_KEY_D 0x20
+#define NN_KEY_E 0x12
+#define NN_KEY_F 0x21
+#define NN_KEY_G 0x22
+#define NN_KEY_H 0x23
+#define NN_KEY_I 0x17
+#define NN_KEY_J 0x24
+#define NN_KEY_K 0x25
+#define NN_KEY_L 0x26
+#define NN_KEY_M 0x32
+#define NN_KEY_N 0x31
+#define NN_KEY_O 0x18
+#define NN_KEY_P 0x19
+#define NN_KEY_Q 0x10
+#define NN_KEY_R 0x13
+#define NN_KEY_S 0x1F
+#define NN_KEY_T 0x14
+#define NN_KEY_U 0x16
+#define NN_KEY_V 0x2F
+#define NN_KEY_W 0x11
+#define NN_KEY_X 0x2D
+#define NN_KEY_Y 0x15
+#define NN_KEY_Z 0x2C
+
+#define NN_KEY_APOSTROPHE 0x28
+#define NN_KEY_AT 0x91
+#define NN_KEY_BACK 0x0E
+#define NN_KEY_BACKSLASH 0x2B
+// caps-lock
+#define NN_KEY_CAPITAL 0x3A
+#define NN_KEY_COLON 0x92
+#define NN_KEY_COMMA 0x33
+#define NN_KEY_ENTER 0x1C
+#define NN_KEY_EQUALS 0x0D
+// accent grave
+#define NN_KEY_GRAVE 0x29
+#define NN_KEY_LBRACKET 0x1A
+#define NN_KEY_LCONTROL 0x1D
+// left alt
+#define NN_KEY_LMENU 0x38
+#define NN_KEY_LSHIFT 0x2A
+#define NN_KEY_MINUS 0x0C
+#define NN_KEY_NUMLOCK 0x45
+#define NN_KEY_PAUSE 0xC5
+#define NN_KEY_PERIOD 0x34
+#define NN_KEY_RBRACKET 0x1B
+#define NN_KEY_RCONTROL 0x9D
+// right alt
+#define NN_KEY_RMENU 0xB8
+#define NN_KEY_RSHIFT 0x36
+// scroll lock
+#define NN_KEY_SCROLL 0x46
+#define NN_KEY_SEMICOLON 0x27
+#define NN_KEY_SLASH 0x35
+#define NN_KEY_SPACE 0x39
+#define NN_KEY_STOP 0x95
+#define NN_KEY_TAB 0x0F
+#define NN_KEY_UNDERLINE 0x93
+
+#define NN_KEY_UP 0xC8
+#define NN_KEY_DOWN 0xD0
+#define NN_KEY_LEFT 0xCB
+#define NN_KEY_RIGHT 0xCD
+#define NN_KEY_HOME 0xC7
+#define NN_KEY_END 0xCF
+#define NN_KEY_PAGEUP 0xC9
+#define NN_KEY_PAGEDOWN 0xD1
+#define NN_KEY_INSERT 0xD2
+#define NN_KEY_DELETE 0xD3
+
+#define NN_KEY_F1 0x3B
+#define NN_KEY_F2 0x3C
+#define NN_KEY_F3 0x3D
+#define NN_KEY_F4 0x3E
+#define NN_KEY_F5 0x3F
+#define NN_KEY_F6 0x40
+#define NN_KEY_F7 0x41
+#define NN_KEY_F8 0x42
+#define NN_KEY_F9 0x43
+#define NN_KEY_F10 0x44
+#define NN_KEY_F11 0x57
+#define NN_KEY_F12 0x58
+#define NN_KEY_F13 0x64
+#define NN_KEY_F14 0x65
+#define NN_KEY_F15 0x66
+#define NN_KEY_F16 0x67
+#define NN_KEY_F17 0x68
+#define NN_KEY_F18 0x69
+#define NN_KEY_F19 0x71
+
+#define NN_KEYS_KANA 0x70
+#define NN_KEYS_KANJI 0x94
+#define NN_KEYS_CONVERT 0x79
+#define NN_KEYS_NOCONVERT 0x7B
+#define NN_KEYS_YEN 0x7D
+#define NN_KEYS_CIRCUMFLEX 0x90
+#define NN_KEYS_AX 0x96
+
+#define NN_KEYS_NUMPAD0 0x52
+#define NN_KEYS_NUMPAD1 0x4F
+#define NN_KEYS_NUMPAD2 0x50
+#define NN_KEYS_NUMPAD3 0x51
+#define NN_KEYS_NUMPAD4 0x4B
+#define NN_KEYS_NUMPAD5 0x4C
+#define NN_KEYS_NUMPAD6 0x4D
+#define NN_KEYS_NUMPAD7 0x47
+#define NN_KEYS_NUMPAD8 0x48
+#define NN_KEYS_NUMPAD9 0x49
+#define NN_KEYS_NUMPADMUL 0x37
+#define NN_KEYS_NUMPADDIV 0xB5
+#define NN_KEYS_NUMPADSUB 0x4A
+#define NN_KEYS_NUMPADADD 0x4E
+#define NN_KEYS_NUMPADDECIMAL 0x53
+#define NN_KEYS_NUMPADCOMMA 0xB3
+#define NN_KEYS_NUMPADENTER 0x9C
+#define NN_KEYS_NUMPADEQUALS 0x8D
 
 // pushes a screen_resized signal
 nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight);

@@ -29,7 +29,7 @@ bool nn_decRef(nn_refc_t *refc) {
 #else
 // we need atomics for thread-safe reference counting that will be used
 // for managing the lifetimes of various resources
-// TODO: provide a way to use non-atomic values, and evaluate if the context should contain a method for atomics.
+// TODO: evaluate if the context should contain a method for atomics.
 #include <stdatomic.h>
 
 typedef atomic_size_t nn_refc_t;
@@ -1026,6 +1026,8 @@ void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit) {
 }
 
 nn_Exit nn_tick(nn_Computer *computer) {
+	nn_resetCallBudget(computer);
+	nn_resetComponentBudgets(computer);
 	nn_Exit err;
 	if(computer->state == NN_BOOTUP) {
 		// init state
@@ -1045,8 +1047,6 @@ nn_Exit nn_tick(nn_Computer *computer) {
 		nn_setErrorFromExit(computer, NN_EBADSTATE);
 		return NN_EBADSTATE;
 	}
-	nn_resetCallBudget(computer);
-	nn_resetComponentBudgets(computer);
 	computer->state = NN_RUNNING;
 	nn_ArchitectureRequest req;
 	req.computer = computer;
@@ -1072,6 +1072,7 @@ nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const ch
 	c.slot = slot;
 	c.userdata = userdata;
 	c.state = NULL;
+	c.budgetUsed = 0;
 
 	nn_ComponentRequest req;
 	req.typeUserdata = ctype->userdata;
@@ -1249,6 +1250,16 @@ const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const
 	return NULL;
 }
 
+void *nn_getComponentUserdata(nn_Computer *computer, const char *address) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component *c = &computer->components[i];
+		if(nn_strcmp(c->address, address) == 0) {
+			return c->userdata;
+		}
+	}
+	return 0;
+}
+
 static void nn_retainValue(nn_Value val) {
 	switch(val.type) {
 	case NN_VAL_NULL:
@@ -1345,11 +1356,6 @@ void nn_setCallBudget(nn_Computer *computer, size_t budget) {
 
 size_t nn_getCallBudget(nn_Computer *computer) {
 	return computer->totalCallBudget;
-}
-
-void nn_callCost(nn_Computer *computer, size_t callIntensity) {
-	if(computer->callBudget < callIntensity) computer->callBudget = 0;
-	else computer->callBudget -= callIntensity;
 }
 
 size_t nn_callBudgetRemaining(nn_Computer *computer) {
@@ -2270,9 +2276,10 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			}
 			fsreq.action = NN_FS_READ;
 			fsreq.fd = nn_tonumber(computer, 0);
-			size_t requested = nn_tonumber(computer, 1);
+			double requested = nn_tonumber(computer, 1);
 			if(requested > NN_MAX_READ) requested = NN_MAX_READ;
-			char buf[requested];
+			if(requested < 0) requested = 0;
+			char buf[(size_t)requested];
 			fsreq.strarg1 = buf;
 			fsreq.strarg1len = requested;
 			err = state->handler(&fsreq);
@@ -2426,6 +2433,84 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			nn_simplifyPath(path, truepath);
 
 			fsreq.action = NN_FS_EXISTS;
+			fsreq.strarg1 = truepath;
+			fsreq.strarg1len = nn_strlen(truepath);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushbool(computer, fsreq.size != 0);
+		}
+		if(nn_strcmp(method, "size") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			char truepath[NN_MAX_PATH];
+			size_t pathlen;
+			const char *path = nn_tolstring(computer, 0, &pathlen);
+			if(pathlen >= NN_MAX_PATH) {
+				nn_setError(computer, "path too long");
+				return NN_EBADCALL;
+			}
+			nn_simplifyPath(path, truepath);
+
+			fsreq.action = NN_FS_SIZE;
+			fsreq.strarg1 = truepath;
+			fsreq.strarg1len = nn_strlen(truepath);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushnumber(computer, fsreq.size);
+		}
+		if(nn_strcmp(method, "lastModified") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			char truepath[NN_MAX_PATH];
+			size_t pathlen;
+			const char *path = nn_tolstring(computer, 0, &pathlen);
+			if(pathlen >= NN_MAX_PATH) {
+				nn_setError(computer, "path too long");
+				return NN_EBADCALL;
+			}
+			nn_simplifyPath(path, truepath);
+
+			fsreq.action = NN_FS_SIZE;
+			fsreq.strarg1 = truepath;
+			fsreq.strarg1len = nn_strlen(truepath);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushnumber(computer, fsreq.size * 1000);
+		}
+		if(nn_strcmp(method, "isDirectory") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			char truepath[NN_MAX_PATH];
+			size_t pathlen;
+			const char *path = nn_tolstring(computer, 0, &pathlen);
+			if(pathlen >= NN_MAX_PATH) {
+				nn_setError(computer, "path too long");
+				return NN_EBADCALL;
+			}
+			nn_simplifyPath(path, truepath);
+
+			fsreq.action = NN_FS_ISDIRECTORY;
 			fsreq.strarg1 = truepath;
 			fsreq.strarg1len = nn_strlen(truepath);
 			err = state->handler(&fsreq);
