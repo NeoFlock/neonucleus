@@ -4,10 +4,43 @@
 // Error handling has been omitted in most places.
 
 #include "neonucleus.h"
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 nn_Architecture getLuaArch();
+
+#if defined(NN_WINDOWS)
+	#define NE_PATHSEP '\\'
+	#include <windows.h>
+	#error "Windows is not supported yet"
+#elif defined(NN_POSIX)
+	#define NE_PATHSEP '/'
+	#include <dirent.h>
+	#include <unistd.h>
+
+	typedef DIR ne_dir;
+
+	ne_dir *ne_opendir(const char *path) {
+		return opendir(path);
+	}
+
+	void ne_closedir(ne_dir *dir) {
+		closedir(dir);
+	}
+
+	bool ne_readdir(ne_dir *dir, char path[NN_MAX_PATH]) {
+		struct dirent *ent = readdir(dir);
+		if(ent == NULL) return true;
+		strncpy(path, ent->d_name, NN_MAX_PATH-1);
+		return false;
+	}
+
+	bool ne_exists(const char *path) {
+		return access(path, F_OK) == 0;
+	}
+#endif
 
 static const char minBIOS[] = {
 #embed "minBIOS.lua"
@@ -38,6 +71,161 @@ static nn_Exit sandbox_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
+typedef struct ne_FsState {
+	char path[NN_MAX_PATH];
+	bool isReadonly;
+	FILE *files[NN_MAX_OPENFILES];
+	ne_dir *dir;
+} ne_FsState;
+
+void ne_fsState_truepath(ne_FsState *state, char truepath[NN_MAX_PATH], const char *path) {
+	snprintf(truepath, sizeof(char) * NN_MAX_PATH, "%s%c%s", state->path, NE_PATHSEP, path);
+	for(size_t i = 0; truepath[i] != 0; i++) {
+		if(truepath[i] == '/') truepath[i] = NE_PATHSEP;
+	}
+}
+
+nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
+	nn_Computer *C = req->computer;
+	ne_FsState *state = req->instance;
+	FILE *f;
+	char truepath[NN_MAX_PATH];
+
+	switch(req->action) {
+	case NN_FS_DROP:
+		for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
+			if(state->files[i] != NULL) fclose(state->files[i]);
+		}
+		if(state->dir != NULL) {
+			ne_closedir(state->dir);
+		}
+		free(state);
+		return NN_OK;
+	case NN_FS_SPACEUSED:
+		req->size = 0;
+		return NN_OK;
+	case NN_FS_GETLABEL:
+		req->strarg1 = NULL;
+		return NN_OK;
+	case NN_FS_SETLABEL:
+		req->strarg1 = NULL;
+		return NN_OK;
+	case NN_FS_OPEN:;
+		req->fd = NN_MAX_OPENFILES;
+
+		for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
+			if(state->files[i] == NULL) {
+				req->fd = i;
+				break;
+			}
+		}
+
+		if(req->fd == NN_MAX_OPENFILES) {
+			nn_setError(C, "too many open handles");
+			return NN_EBADCALL;
+		}
+
+		const char *path = req->strarg1;
+		const char *mode = req->strarg2;
+		switch(mode[0]) {
+			case 'r':
+				mode = "rb";
+			case 'w':
+				mode = "wb";
+			case 'a':
+				mode = "ab";
+			default:
+				mode = "rb";
+		}
+		ne_fsState_truepath(state, truepath, path);
+
+		f = fopen(truepath, mode);
+		if(f == NULL) {
+			nn_setError(C, strerror(errno));
+			return NN_EBADCALL;
+		}
+		state->files[req->fd] = f;
+		return NN_OK;
+	case NN_FS_CLOSE:
+		if(req->fd < 0 || req->fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		f = state->files[req->fd];
+		if(f == NULL) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		fclose(f);
+		state->files[req->fd] = NULL;
+		return NN_OK;
+	case NN_FS_READ:
+		if(req->fd < 0 || req->fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		f = state->files[req->fd];
+		if(f == NULL) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		if(feof(f)) {
+			req->strarg1 = NULL;
+		} else {
+			req->strarg1len = fread(req->strarg1, sizeof(char), req->strarg1len, f);
+		}
+		return NN_OK;
+	case NN_FS_WRITE:
+		if(req->fd < 0 || req->fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		f = state->files[req->fd];
+		if(f == NULL) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		fwrite(req->strarg1, sizeof(char), req->strarg1len, f);
+		return NN_OK;
+	case NN_FS_OPENDIR:
+		ne_fsState_truepath(state, truepath, req->strarg1);
+		state->dir = ne_opendir(truepath);
+		if(state->dir == NULL) {
+			nn_setError(C, strerror(errno));
+			return NN_EBADCALL;
+		}
+		return NN_OK;
+	case NN_FS_READDIR:;
+		char ent[NN_MAX_PATH];
+		if(ne_readdir(state->dir, ent)) {
+			req->strarg1 = NULL;
+			return NN_OK;
+		}
+		strcpy(req->strarg1, ent);
+		req->strarg1len = strlen(ent);
+		return NN_OK;
+	case NN_FS_CLOSEDIR:
+		ne_closedir(state->dir);
+		state->dir = NULL;
+		return NN_OK;
+	case NN_FS_EXISTS:
+		ne_fsState_truepath(state, truepath, req->strarg1);
+		req->size = ne_exists(truepath) ? 1 : 0;
+		return NN_OK;
+	}
+	return NN_OK;
+}
+
+ne_FsState *ne_newFS(const char *path, bool readonly) {
+	ne_FsState *fs = malloc(sizeof(*fs));
+	for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
+		fs->files[i] = NULL;
+	}
+	sprintf(fs->path, "data%c%s", NE_PATHSEP, path);
+	fs->isReadonly = readonly;
+	return fs;
+}
+
 int main() {
 	nn_Context ctx;
 	nn_initContext(&ctx);
@@ -53,19 +241,6 @@ int main() {
 	};
 	nn_ComponentType *ctype = nn_createComponentType(u, "sandbox", NULL, sandboxMethods, sandbox_handler);
 
-	nn_EEPROM eeprom = {
-		.size = 4 * NN_KiB,
-		.dataSize = NN_KiB,
-		.readCallCost = 1,
-		.readEnergyCost = 0,
-		.readDataCallCost = 1,
-		.readDataEnergyCost = 0,
-		.writeCallCost = 1,
-		.writeEnergyCost = 0,
-		.writeDataCallCost = 1,
-		.writeDataEnergyCost = 0,
-		.handler = NULL,
-	};
 	nn_VEEPROM veeprom = {
 		.code = minBIOS,
 		.codelen = strlen(minBIOS),
@@ -77,7 +252,12 @@ int main() {
 		.isReadonly = false,
 	};
 
-	nn_ComponentType *etype = nn_createVEEPROM(u, &eeprom, &veeprom);
+	nn_ComponentType *etype = nn_createVEEPROM(u, &nn_defaultEEPROM, &veeprom);
+	nn_ComponentType *fstype[5];
+	fstype[0] = nn_createFilesystem(u, &nn_defaultFloppy, ne_fsState_handler, NULL);
+	for(size_t i = 1; i < 5; i++) {
+		fstype[i] = nn_createFilesystem(u, &nn_defaultFilesystems[i-1], ne_fsState_handler, NULL);
+	}
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", 8 * NN_MiB, 256, 256);
 	
@@ -86,10 +266,13 @@ int main() {
 
 	nn_addComponent(c, ctype, "sandbox", -1, NULL);
 	nn_addComponent(c, etype, "eeprom", 0, etype);
+
+	ne_FsState *mainFS = ne_newFS("OpenOS", false);
+	nn_addComponent(c, fstype[1], "mainFS", 2, mainFS);
 	
 	while(true) {
 		nn_Exit e = nn_tick(c);
-		if(e != NN_OK && e != NN_EBUSY) {
+		if(e != NN_OK) {
 			nn_setErrorFromExit(c, e);
 			printf("error: %s\n", nn_getError(c));
 			goto cleanup;
@@ -120,6 +303,7 @@ cleanup:;
 	nn_destroyComputer(c);
 	nn_destroyComponentType(ctype);
 	nn_destroyComponentType(etype);
+	for(size_t i = 0; i < 5; i++) nn_destroyComponentType(fstype[i]);
 	// rip the universe
 	nn_destroyUniverse(u);
 	return 0;

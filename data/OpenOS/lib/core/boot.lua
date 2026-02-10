@@ -73,7 +73,7 @@ local function dofile(file)
   status("> " .. file)
   local program, reason = raw_loadfile(file)
   if program then
-    local result = table.pack(pcall(program))
+    local result = table.pack(xpcall(program, debug.traceback))
     if result[1] then
       return table.unpack(result, 2, result.n)
     else

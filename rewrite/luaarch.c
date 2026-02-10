@@ -31,13 +31,13 @@ void *luaArch_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
 		return NULL;
 	}
 	if(ptr == NULL) {
-		if(arch->freeMem < nsize) return NULL;
+		//if(arch->freeMem < nsize) return NULL;
 		void *mem = malloc(nsize);
 		if(mem == NULL) return NULL;
 		arch->freeMem -= nsize;
 		return mem;
 	}
-	if(arch->freeMem + osize < nsize) return NULL;
+	//if(arch->freeMem + osize < nsize) return NULL;
 	void *mem = realloc(ptr, nsize);
 	if(mem == NULL) return NULL;
 	arch->freeMem += osize;
@@ -99,6 +99,19 @@ static void luaArch_nnToLua(luaArch *arch, size_t nnIdx) {
 	}
 	if(nn_isboolean(C, nnIdx)) {
 		lua_pushboolean(L, nn_toboolean(C, nnIdx));
+		return;
+	}
+	if(nn_istable(C, nnIdx)) {
+		size_t start = nn_getstacksize(C);
+		size_t len;
+		nn_dumptable(C, nnIdx, &len);
+		lua_createtable(L, 0, len);
+		for(size_t i = 0; i < len; i++) {
+			luaArch_nnToLua(arch, start + i * 2);
+			luaArch_nnToLua(arch, start + i * 2 + 1);
+			lua_settable(L, -3);
+		}
+		nn_popn(C, len * 2);
 		return;
 	}
 
@@ -212,6 +225,12 @@ static int luaArch_computer_shutdown(lua_State *L) {
 	bool restart = lua_toboolean(L, 1);
 	nn_setComputerState(c, restart ? NN_RESTART : NN_POWEROFF);
 	return 0;
+}
+
+static int luaArch_computer_isOverused(lua_State *L) {
+	nn_Computer *c = luaArch_from(L)->computer;
+	lua_pushboolean(L, nn_componentsOverused(c));
+	return 1;
 }
 
 static int luaArch_component_list(lua_State *L) {
@@ -385,6 +404,8 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_setfield(L, computer, "setArchitecture");
 	lua_pushcfunction(L, luaArch_computer_shutdown);
 	lua_setfield(L, computer, "shutdown");
+	lua_pushcfunction(L, luaArch_computer_isOverused);
+	lua_setfield(L, computer, "isOverused");
 	lua_setglobal(L, "computer");
 	lua_createtable(L, 0, 10);
 	int component = lua_gettop(L);

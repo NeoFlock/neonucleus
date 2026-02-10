@@ -23,7 +23,8 @@ function coroutine.resume(co, ...)
 	end
 end
 
-local clist = component.list
+local clist, cinvoke, computer, component, print = component.list, component.invoke, computer, component, print
+debug.print = print
 
 function component.list(ctype, exact)
 	local list = clist()
@@ -41,8 +42,24 @@ function component.list(ctype, exact)
 		end
 	end
 
-	setmetatable(desired, {__call = next})
+	local key = nil
+	setmetatable(desired, {__call = function()
+		local val
+		key, val = next(desired, key)
+		return key, val
+	end})
 	return desired
+end
+
+function component.invoke(address, method, ...)
+	local t = {pcall(cinvoke, address, method, ...)}
+	if computer.energy() <= 0 then sysyield() end -- out of power
+	if computer.isOverused() then sysyield() end -- overused
+
+	if t[1] then
+		return table.unpack(t, 2)
+	end
+	return nil, t[2]
 end
 
 local componentCallback = {
@@ -124,6 +141,35 @@ function computer.setArchitecture(arch)
 	local ok, err = setArch(arch)
 	sysyield()
 	return ok, err
+end
+
+function checkArg(arg, val, ...)
+	local t = {...}
+	for i=1,#t do
+		if type(val) == t[i] then return end
+	end
+	error("bad argument #" .. arg .. " (" .. table.concat(t, ", ") .. ") expected", 2)
+end
+
+-- HORRENDOUS approximation
+unicode = string
+
+if os.getenv("NN_REPL") == "1" then
+	while true do
+		io.write("lua> ")
+		io.flush()
+		local l = io.read("l")
+		if not l then break end
+		local f, err = load("return " .. l, "=repl")
+		if f then
+			print(f())
+		else
+			f, err = load(l, "=repl")
+			if f then f() else print(err) end
+		end
+	end
+	io.write("\n")
+	print("exiting repl")
 end
 
 local eeprom = component.list("eeprom", true)()

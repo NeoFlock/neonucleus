@@ -12,6 +12,9 @@
 // we need the header.
 #include "neonucleus.h"
 
+// to use the numerical accuracy better
+#define NN_COMPONENT_CALLBUDGET 10000
+
 #ifdef NN_ATOMIC_NONE
 typedef size_t nn_refc_t;
 
@@ -39,25 +42,6 @@ bool nn_decRef(nn_refc_t *refc) {
 	nn_refc_t old = atomic_fetch_sub(refc, 1);
 	return old == 1;
 }
-#endif
-
-// Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-   //define something for Windows (32-bit and 64-bit, this part is common)
-	#define NN_WINDOWS
-#elif __APPLE__
-    #define NN_MACOS
-#elif __linux__
-    #define NN_LINUX
-#endif
-
-#if __unix__ // all unices not caught above
-    // Unix
-    #define NN_UNIX
-    #define NN_POSIX
-#elif defined(_POSIX_VERSION)
-    // POSIX
-    #define NN_POSIX
 #endif
 
 typedef struct nn_Lock nn_Lock;
@@ -328,6 +312,43 @@ void nn_crc32ChecksumBytes(unsigned int checksum, char out[8]) {
 	}
 }
 
+bool nn_simplifyPath(const char original[NN_MAX_PATH], char simplified[NN_MAX_PATH]) {
+	// pass 1: check for valid characters, and \ becomes /
+	for(size_t i = 0; true; i++) {
+		if(original[i] == '\\') simplified[i] = '/';
+		else simplified[i] = original[i];
+		if(original[i] == '\0') break;
+	}
+	// get rid of //, starting / and ending /
+	{
+		while(simplified[0] == '/') {
+			for(size_t i = 1; true; i++) {
+				simplified[i-1] = simplified[i];
+				if(simplified[i] == '\0') break;
+			}
+		}
+
+		size_t j = 0;
+		for(size_t i = 0; simplified[i] != '\0'; i++) {
+			if(simplified[i] == '/' && simplified[i+1] == '/') {
+				// simply discard it
+				continue;
+			} else {
+				simplified[j] = simplified[i];
+				j++;
+			}
+		}
+		simplified[j] = '\0';
+		while(simplified[j-1] == '/') {
+			j--;
+			simplified[j] = '\0';
+		}
+	}
+	// TODO: handle ..
+	// valid
+	return true;
+}
+
 int nn_memcmp(const char *a, const char *b, size_t len) {
 	for(size_t i = 0; i < len; i++) {
 		char c = a[i];
@@ -549,6 +570,7 @@ typedef struct nn_Component {
 	char *address;
 	nn_ComponentType *ctype;
 	int slot;
+	float budgetUsed;
 	void *userdata;
 	void *state;
 } nn_Component;
@@ -1024,6 +1046,7 @@ nn_Exit nn_tick(nn_Computer *computer) {
 		return NN_EBADSTATE;
 	}
 	nn_resetCallBudget(computer);
+	nn_resetComponentBudgets(computer);
 	computer->state = NN_RUNNING;
 	nn_ArchitectureRequest req;
 	req.computer = computer;
@@ -1031,8 +1054,6 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	req.localState = computer->archState;
 	req.action = NN_ARCH_TICK;
 	err = computer->arch.handler(&req);
-	// dont crash on EBUSY because it just means go again
-	if(err == NN_EBUSY) return err;
 	if(err) {
 		computer->state = NN_CRASHED;
 		nn_setErrorFromExit(computer, err);
@@ -1284,7 +1305,7 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 		if(nn_strcmp(c.address, address) != 0) continue;
 
 		// minimum cost of a component call
-		nn_callCost(computer, 1);
+		if(computer->callBudget > 0) computer->callBudget--;
 		
 		nn_ComponentRequest req;
 		req.typeUserdata = c.ctype->userdata;
@@ -1340,8 +1361,30 @@ void nn_resetCallBudget(nn_Computer *computer) {
 }
 
 bool nn_componentsOverused(nn_Computer *computer) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		if(computer->components[i].budgetUsed >= NN_COMPONENT_CALLBUDGET) return true;
+	}
 	if(computer->totalCallBudget == 0) return false;
 	return computer->callBudget == 0;
+}
+
+void nn_resetComponentBudgets(nn_Computer *computer) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		computer->components[i].budgetUsed = 0;
+	}
+}
+bool nn_costComponent(nn_Computer *computer, const char *address, double perTick) {
+	return nn_costComponentN(computer, address, 1, perTick);
+}
+
+bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick) {
+	for(size_t i = 0; i < computer->componentLen; i++) {
+		nn_Component *c = &computer->components[i];
+		if(nn_strcmp(c->address, address) != 0) continue;
+		c->budgetUsed += (NN_COMPONENT_CALLBUDGET * amount) / perTick;
+		return c->budgetUsed >= NN_COMPONENT_CALLBUDGET;
+	}
+	return false;
 }
 
 bool nn_checkstack(nn_Computer *computer, size_t amount) {
@@ -1647,6 +1690,7 @@ typedef struct nn_EEPROM_state {
 	nn_Universe *universe;
 	nn_EEPROM eeprom;
 	void *userdata;
+	nn_EEPROMHandler *handler;
 } nn_EEPROM_state;
 
 typedef struct nn_VEEPROM_state {
@@ -1685,7 +1729,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		return NN_OK;
 	case NN_COMP_DEINIT:
 		ereq.action = NN_EEPROM_DROP;
-		return state->eeprom.handler(&ereq);
+		return state->handler(&ereq);
 	case NN_COMP_ENABLED:
 		req->methodEnabled = true;
 		return NN_OK;
@@ -1698,19 +1742,20 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		}
 		if(nn_strcmp(method, "isReadOnly") == 0) {
 			ereq.action = NN_EEPROM_ISREADONLY;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushbool(computer, ereq.buflen != 0);
 		}
 		if(nn_strcmp(method, "getChecksum") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
 			char buf[state->eeprom.size];
 			ereq.action = NN_EEPROM_GET;
 			ereq.buf = buf;
 			ereq.buflen = state->eeprom.size;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			unsigned int chksum = nn_computeCRC32(buf, ereq.buflen);
 			char encoded[8];
@@ -1719,6 +1764,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, encoded, 8);
 		}
 		if(nn_strcmp(method, "makeReadonly") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			// 1st argument is a string, which is the checksum we're meant to have
 			if(nn_getstacksize(computer) < 1) {
 				nn_setError(computer, "bad argument #1 (string expected)");
@@ -1740,7 +1786,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			ereq.action = NN_EEPROM_GET;
 			ereq.buf = buf;
 			ereq.buflen = state->eeprom.size;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			unsigned int chksum = nn_computeCRC32(buf, ereq.buflen);
 			char encoded[8];
@@ -1751,23 +1797,26 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			}
 		
 			ereq.action = NN_EEPROM_MAKEREADONLY;
-			e = state->eeprom.handler(&ereq);
+			e = state->handler(&ereq);
 			if(e) return e;
 
 			req->returnCount = 1;
 			return nn_pushbool(computer, true);
 		}
 		if(nn_strcmp(method, "getLabel") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			char buf[NN_MAX_LABEL];
 			ereq.action = NN_EEPROM_GETLABEL;
 			ereq.buf = buf;
 			ereq.buflen = NN_MAX_LABEL;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
+			if(ereq.buf == NULL) return nn_pushnull(computer);
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "setLabel") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			if(nn_getstacksize(computer) < 1) {
 				nn_setError(computer, "bad argument #1 (string expected)");
 				return NN_EBADCALL;
@@ -1784,46 +1833,50 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			ereq.action = NN_EEPROM_SETLABEL;
 			ereq.buf = buf;
 			ereq.buflen = len;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "get") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
 			char buf[state->eeprom.size];
 			ereq.action = NN_EEPROM_GET;
 			ereq.buf = buf;
 			ereq.buflen = state->eeprom.size;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "getData") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
 			char buf[state->eeprom.dataSize];
 			ereq.action = NN_EEPROM_GETDATA;
 			ereq.buf = buf;
 			ereq.buflen = state->eeprom.dataSize;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "getArchitecture") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			char buf[NN_MAX_ARCHNAME];
 			ereq.action = NN_EEPROM_GETARCH;
 			ereq.buf = buf;
 			ereq.buflen = NN_MAX_ARCHNAME;
-			nn_Exit e = state->eeprom.handler(&ereq);
+			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "set") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			if(nn_getstacksize(computer) < 1) {
 				nn_setError(computer, "bad argument #1 (string expected)");
 				return NN_EBADCALL;
@@ -1842,9 +1895,10 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			// DO NOT MODIFY IT!!!!
 			ereq.buf = (char*)s;
 			ereq.buflen = len;
-			return state->eeprom.handler(&ereq);
+			return state->handler(&ereq);
 		}
 		if(nn_strcmp(method, "setData") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			if(nn_getstacksize(computer) < 1) {
 				nn_setError(computer, "bad argument #1 (string expected)");
 				return NN_EBADCALL;
@@ -1863,9 +1917,10 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			// DO NOT MODIFY IT!!!!
 			ereq.buf = (char*)s;
 			ereq.buflen = len;
-			return state->eeprom.handler(&ereq);
+			return state->handler(&ereq);
 		}
 		if(nn_strcmp(method, "setArchitecture") == 0) {
+			nn_costComponent(computer, req->compAddress, 1);
 			if(nn_getstacksize(computer) < 1) {
 				nn_setError(computer, "bad argument #1 (string expected)");
 				return NN_EBADCALL;
@@ -1884,20 +1939,30 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			// DO NOT MODIFY IT!!!!
 			ereq.buf = (char*)s;
 			ereq.buflen = len;
-			return state->eeprom.handler(&ereq);
+			return state->handler(&ereq);
 		}
 		return NN_OK;
 	}
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, void *userdata) {
+nn_EEPROM nn_defaultEEPROM = (nn_EEPROM) {
+	.size = 4 * NN_KiB,
+	.dataSize = 256,
+	.readEnergyCost = 10,
+	.writeEnergyCost = 100,
+	.readDataEnergyCost = 10,
+	.writeDataEnergyCost = 50,
+};
+
+nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata) {
 	nn_Context ctx = universe->ctx;
 	nn_EEPROM_state *state = nn_alloc(&ctx, sizeof(*state));
 	if(state == NULL) return NULL;
 	state->universe = universe;
 	state->eeprom = *eeprom;
 	state->userdata = userdata;
+	state->handler = handler;
 	const nn_Method methods[] = {
 		{"getSize", "function(): number - Get the storage capacity of the EEPROM.", NN_DIRECT},
 		{"getDataSize", "function(): number - Get the storage capacity of the EEPROM data.", NN_DIRECT},
@@ -2006,9 +2071,7 @@ nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eepro
 	state->archlen = archlen;
 	nn_memcpy(state->arch, vmem->arch, sizeof(char) * archlen);
 
-	nn_EEPROM neeprom = *eeprom;
-	neeprom.handler = nn_veeprom_handler;
-	nn_ComponentType *ty = nn_createEEPROM(universe, &neeprom, state);
+	nn_ComponentType *ty = nn_createEEPROM(universe, eeprom, nn_veeprom_handler, state);
 	if(ty == NULL) goto fail;
 	return ty;
 fail:;
@@ -2017,4 +2080,396 @@ fail:;
 	 nn_free(&ctx, data, sizeof(char) * eeprom->dataSize);
 	 nn_free(&ctx, state, sizeof(*state));
 	 return NULL;
+}
+
+typedef struct nn_Filesystem_state {
+	nn_Universe *universe;
+	void *userdata;
+	nn_FilesystemHandler *handler;
+	nn_Filesystem fs;
+} nn_Filesystem_state;
+
+nn_Filesystem nn_defaultFilesystems[4] = {
+	(nn_Filesystem) {
+		.spaceTotal = 1 * NN_MiB,
+		.readsPerTick = 4,
+		.writesPerTick = 2,
+		.dataEnergyCost = 256.0 / NN_MiB,
+	},
+	(nn_Filesystem) {
+		.spaceTotal = 2 * NN_MiB,
+		.readsPerTick = 4,
+		.writesPerTick = 2,
+		.dataEnergyCost = 512.0 / NN_MiB,
+	},
+	(nn_Filesystem) {
+		.spaceTotal = 4 * NN_MiB,
+		.readsPerTick = 7,
+		.writesPerTick = 3,
+		.dataEnergyCost = 1024.0 / NN_MiB,
+	},
+	(nn_Filesystem) {
+		.spaceTotal = 8 * NN_MiB,
+		.readsPerTick = 13,
+		.writesPerTick = 5,
+		.dataEnergyCost = 2048.0 / NN_MiB,
+	},
+};
+
+
+nn_Filesystem nn_defaultFloppy = (nn_Filesystem) {
+	.spaceTotal = 512 * NN_KiB,
+	.readsPerTick = 1,
+	.writesPerTick = 1,
+	.dataEnergyCost = 8.0 / NN_MiB,
+};
+
+nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
+	nn_Filesystem_state *state = req->typeUserdata;
+	void *instance = req->compUserdata;
+	// NULL for FREETYPE
+	nn_Computer *computer = req->computer;
+	nn_Context ctx = state->universe->ctx;
+
+	nn_FilesystemRequest fsreq;
+	fsreq.userdata = state->userdata;
+	fsreq.instance = instance;
+	fsreq.computer = computer;
+	fsreq.fsConf = &state->fs;
+
+	const char *method = req->methodCalled;
+	nn_Exit err;
+
+	switch(req->action) {
+	case NN_COMP_FREETYPE:
+		nn_free(&ctx, state, sizeof(*state));
+		break;
+	case NN_COMP_INIT:
+		return NN_OK;
+	case NN_COMP_DEINIT:
+		fsreq.action = NN_FS_DROP;
+		return state->handler(&fsreq);
+	case NN_COMP_ENABLED:
+		req->methodEnabled = true;
+		return NN_OK;
+	case NN_COMP_CALL:
+		if(nn_strcmp(method, "spaceTotal") == 0) {
+			req->returnCount = 1;
+			return nn_pushnumber(computer, state->fs.spaceTotal);
+		}
+		if(nn_strcmp(method, "spaceUsed") == 0) {
+			fsreq.action = NN_FS_SPACEUSED;
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushnumber(computer, fsreq.size);
+		}
+		if(nn_strcmp(method, "isReadOnly") == 0) {
+			fsreq.action = NN_FS_ISREADONLY;
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushbool(computer, fsreq.size != 0);
+		}
+		if(nn_strcmp(method, "getLabel") == 0) {
+			char buf[NN_MAX_LABEL];
+			fsreq.action = NN_FS_GETLABEL;
+			fsreq.strarg1 = buf;
+			fsreq.strarg1len = NN_MAX_LABEL;
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
+			return nn_pushlstring(computer, buf, fsreq.strarg1len);
+		}
+		if(nn_strcmp(method, "setLabel") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			fsreq.action = NN_FS_SETLABEL;
+			// DO NOT MODIFY THE BUFFER!!!
+			fsreq.strarg1 = (char *)nn_tolstring(computer, 0, &fsreq.strarg1len);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
+			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
+		}
+		if(nn_strcmp(method, "open") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(nn_getstacksize(computer) < 2) {
+				err = nn_pushstring(computer, "r");
+				if(err) return err;
+			}
+			if(!nn_isstring(computer, 1)) {
+				nn_setError(computer, "bad argument #2 (string expected)");
+				return NN_EBADCALL;
+			}
+			size_t pathlen;
+			const char *path = nn_tolstring(computer, 0, &pathlen);
+			if(pathlen >= NN_MAX_PATH) {
+				nn_setError(computer, "path too long");
+				return NN_EBADCALL;
+			}
+			char truepath[NN_MAX_PATH];
+			nn_simplifyPath(path, truepath);
+			size_t modelen;
+			const char *mode = nn_tolstring(computer, 1, &modelen);
+			fsreq.action = NN_FS_OPEN;
+			fsreq.strarg1 = truepath;
+			fsreq.strarg1len = nn_strlen(truepath);
+			fsreq.strarg2 = (char *)mode;
+			fsreq.strarg2len = modelen;
+
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushnumber(computer, fsreq.fd);
+		}
+		if(nn_strcmp(method, "close") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isnumber(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			fsreq.fd = nn_tonumber(computer, 0);
+			fsreq.action = NN_FS_CLOSE;
+			return state->handler(&fsreq);
+		}
+		if(nn_strcmp(method, "read") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isnumber(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			if(nn_getstacksize(computer) < 2) {
+				err = nn_pushnumber(computer, NN_MAX_READ);
+				if(err) return err;
+			}
+			if(!nn_isnumber(computer, 1)) {
+				nn_setError(computer, "bad argument #2 (integer expected)");
+				return NN_EBADCALL;
+			}
+			fsreq.action = NN_FS_READ;
+			fsreq.fd = nn_tonumber(computer, 0);
+			size_t requested = nn_tonumber(computer, 1);
+			if(requested > NN_MAX_READ) requested = NN_MAX_READ;
+			char buf[requested];
+			fsreq.strarg1 = buf;
+			fsreq.strarg1len = requested;
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
+			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
+		}
+		if(nn_strcmp(method, "write") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isnumber(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			if(nn_getstacksize(computer) < 2) {
+				nn_setError(computer, "bad argument #2 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isnumber(computer, 1)) {
+				nn_setError(computer, "bad argument #2 (string expected)");
+				return NN_EBADCALL;
+			}
+			fsreq.action = NN_FS_WRITE;
+			fsreq.fd = nn_tonumber(computer, 0);
+			fsreq.strarg1 = (char *)nn_tolstring(computer, 1, &fsreq.strarg1len);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushbool(computer, true);
+		}
+		if(nn_strcmp(method, "seek") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isnumber(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (integer expected)");
+				return NN_EBADCALL;
+			}
+			if(nn_getstacksize(computer) < 2) {
+				err = nn_pushstring(computer, "cur");
+				if(err) return err;
+			}
+			if(!nn_isstring(computer, 1)) {
+				nn_setError(computer, "bad argument #2 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(nn_getstacksize(computer) < 2) {
+				err = nn_pushnumber(computer, 0);
+				if(err) return err;
+			}
+			if(!nn_isnumber(computer, 2)) {
+				nn_setError(computer, "bad argument #2 (string expected)");
+				return NN_EBADCALL;
+			}
+			fsreq.action = NN_FS_SEEK;
+			fsreq.fd = nn_tonumber(computer, 0);
+			const char *whence = nn_tostring(computer, 1);
+			fsreq.off = nn_tonumber(computer, 2);
+
+			if(nn_strcmp(whence, "set") == 0) {
+				fsreq.whence = NN_SEEK_SET;
+			} else if(nn_strcmp(whence, "cur") == 0) {
+				fsreq.whence = NN_SEEK_CUR;
+			} else if(nn_strcmp(whence, "end") == 0) {
+				fsreq.whence = NN_SEEK_END;
+			} else {
+				nn_setError(computer, "bad seek whence");
+				return NN_EBADCALL;
+			}
+			err = state->handler(&fsreq);
+			return nn_pushnumber(computer, fsreq.off);
+		}
+		if(nn_strcmp(method, "list") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			char truepath[NN_MAX_PATH];
+			size_t pathlen;
+			const char *path = nn_tolstring(computer, 0, &pathlen);
+			if(pathlen >= NN_MAX_PATH) {
+				nn_setError(computer, "path too long");
+				return NN_EBADCALL;
+			}
+			nn_simplifyPath(path, truepath);
+			int dirfd;
+			fsreq.action = NN_FS_OPENDIR;
+			fsreq.strarg1 = truepath;
+			fsreq.strarg1len = nn_strlen(truepath);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			dirfd = fsreq.fd;
+
+			// this sucks hard
+			size_t entryCount = 0;
+			while(1) {
+				char entry[NN_MAX_PATH];
+				fsreq.action = NN_FS_READDIR;
+				fsreq.fd = dirfd;
+				fsreq.strarg1 = entry;
+				fsreq.strarg1len = NN_MAX_PATH;
+
+				err = state->handler(&fsreq);
+				if(err) goto list_fail;
+				if(fsreq.strarg1 == NULL) break;
+
+				if(fsreq.strarg1len == 1 && entry[0] == '.') continue;
+				if(fsreq.strarg1len == 2 && entry[0] == '.' && entry[1] == '.') continue;
+
+				err = nn_pushlstring(computer, entry, fsreq.strarg1len);
+				if(err) goto list_fail;
+				entryCount++;
+			}
+			err = nn_pusharraytable(computer, entryCount);
+			if(err) goto list_fail;
+			req->returnCount = 1;
+			fsreq.action = NN_FS_CLOSEDIR;
+			fsreq.fd = dirfd;
+			state->handler(&fsreq);
+			return NN_OK;
+		list_fail:
+			fsreq.action = NN_FS_CLOSEDIR;
+			fsreq.fd = dirfd;
+			state->handler(&fsreq);
+			return err;
+		}
+		if(nn_strcmp(method, "exists") == 0) {
+			if(nn_getstacksize(computer) < 1) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			if(!nn_isstring(computer, 0)) {
+				nn_setError(computer, "bad argument #1 (string expected)");
+				return NN_EBADCALL;
+			}
+			char truepath[NN_MAX_PATH];
+			size_t pathlen;
+			const char *path = nn_tolstring(computer, 0, &pathlen);
+			if(pathlen >= NN_MAX_PATH) {
+				nn_setError(computer, "path too long");
+				return NN_EBADCALL;
+			}
+			nn_simplifyPath(path, truepath);
+
+			fsreq.action = NN_FS_EXISTS;
+			fsreq.strarg1 = truepath;
+			fsreq.strarg1len = nn_strlen(truepath);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushbool(computer, fsreq.size != 0);
+		}
+	}
+	return NN_OK;
+}
+
+nn_ComponentType *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata) {
+	nn_Context ctx = universe->ctx;
+	nn_Filesystem_state *state = nn_alloc(&ctx, sizeof(*state));
+	if(state == NULL) return NULL;
+	state->universe = universe;
+	state->userdata = userdata;
+	state->handler = handler;
+	state->fs = *filesystem;
+	const nn_Method methods[] = {
+		{"spaceTotal", "function(): number - Get the storage capacity of the filesystem.", NN_DIRECT},
+		{"spaceUsed", "function(): number - Get the space used by the files on the drive.", NN_DIRECT},
+		{"isReadOnly", "function(): boolean - Returns whether the drive is read-only.", NN_DIRECT},
+		{"getLabel", "function(): string - Get the filesystem label.", NN_INDIRECT},
+		{"setLabel", "function(label: string): string - Set the filesystem label and return what was actually set, which may be truncated.", NN_INDIRECT},
+		{"open", "function(path: string, mode?: string = 'r'): number - Open a file. Valid modes are 'r' (read-only), 'w' (write-only) and 'a' (append-only).", NN_INDIRECT},
+		{"close", "function(fd: number) - Closes a file.", NN_INDIRECT},
+		{"read", "function(fd: number, count?: number): string? - Reads part of a file. If there is no more data, nothing is returned.", NN_INDIRECT},
+		{"write", "function(fd: number, data: string): boolean - Writes the data to a file. Returns true on success.", NN_INDIRECT},
+		{"seek", "function(fd: number, whence: string, offset: number): number - Seeks a file. Valid whences are 'set' (relative to start), 'cur' (relative to current), 'end' (relative to EoF, backwards). Returns the new position.", NN_INDIRECT},
+		{"list", "function(path: string): string[] - Returns the names of the entries inside of the directory. Directories get a / appended to their names.", NN_INDIRECT},
+		{"exists", "function(path: string): boolean - Checks if there exists an entry at the specified path.", NN_INDIRECT},
+		{"size", "function(path: string) - Gets the size of the entry at the specified path.", NN_INDIRECT},
+		{"remove", "function(path: string): boolean - Removes the entry at the specified path.", NN_INDIRECT},
+		{"rename", "function(from: string, to: string): boolean - Renames or moves an entry to a new location.", NN_INDIRECT},
+		{"isDirectory", "function(path: string): boolean - Checks if the entry at the specified path is a directory.", NN_INDIRECT},
+		{"lastModified", "function(path: string): number - Returns the UNIX timestamp of the time the entry was last modified. This is stored in milliseconds, but is always a multiple of 1000.", NN_INDIRECT},
+		{"makeDirectory", "function(path: string): boolean - Creates a directory. Creates parent directories if necessary.", NN_INDIRECT},
+		{NULL, NULL, NN_INDIRECT},
+	};
+	nn_ComponentType *t = nn_createComponentType(universe, "filesystem", state, methods, nn_filesystem_handler);
+	if(t == NULL) {
+		nn_free(&ctx, state, sizeof(*state));
+		return NULL;
+	}
+	return t;
 }

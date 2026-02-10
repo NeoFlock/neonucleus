@@ -5,6 +5,27 @@
 extern "C" {
 #endif
 
+// Platform checking support, to help out users.
+// Used internally as well.
+// Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+   //define something for Windows (32-bit and 64-bit, this part is common)
+	#define NN_WINDOWS
+#elif __APPLE__
+    #define NN_MACOS
+#elif __linux__
+    #define NN_LINUX
+#endif
+
+#if __unix__ // all unices not caught above
+    // Unix
+    #define NN_UNIX
+    #define NN_POSIX
+#elif defined(_POSIX_VERSION)
+    // POSIX
+    #define NN_POSIX
+#endif
+
 // every C standard header we depend on, conveniently put here
 #include <stddef.h> // for NULL,
 #include <stdint.h> // for intptr_t
@@ -25,7 +46,7 @@ extern "C" {
 #define NN_ALLOC_ALIGN 16
 // the maximum amount of items the callstack can have.
 #define NN_MAX_STACK 256
-// the maximum size a path is allowed to have
+// the maximum size a path is allowed to have, including the NULL terminator!
 #define NN_MAX_PATH 256
 // the maximum amount of bytes which can be read from a file.
 // You are given a buffer you are meant to fill at least partially, this is simply the limit of that buffer's size.
@@ -206,8 +227,6 @@ typedef enum nn_Exit {
 	NN_EBADCALL,
 	// bad state, the function was called at the wrong time
 	NN_EBADSTATE,
-	// resource busy. If the result of nn_call, you should call it again later.
-	NN_EBUSY,
 } nn_Exit;
 
 // This stores necessary data between computers
@@ -369,6 +388,7 @@ void nn_setComputerState(nn_Computer *computer, nn_ComputerState state);
 nn_ComputerState nn_getComputerState(nn_Computer *computer);
 
 // runs a tick of the computer. Make sure to check the state as well!
+// This automatically resets the component budgets and call budget.
 nn_Exit nn_tick(nn_Computer *computer);
 
 typedef struct nn_DeviceInfoEntry {
@@ -493,10 +513,6 @@ void nn_setCallBudget(nn_Computer *computer, size_t budget);
 // gets the total call budget
 size_t nn_getCallBudget(nn_Computer *computer);
 
-// subtracts from the call budget.
-// This cannot underflow, it's clamped to 0.
-void nn_callCost(nn_Computer *computer, size_t callIntensity);
-
 // returns the remaining call budget
 size_t nn_callBudgetRemaining(nn_Computer *computer);
 
@@ -506,6 +522,19 @@ void nn_resetCallBudget(nn_Computer *computer);
 // returns whether there is no more call budget left.
 // At this point, the architecture should exit with a yield.
 bool nn_componentsOverused(nn_Computer *computer);
+
+void nn_resetComponentBudgets(nn_Computer *computer);
+
+// Uses 1/perTick to the component budget.
+// Upon a full component budget being used for that component, it returns true.
+// nn_componentsOverused() will also return true.
+// This indicates the architecture should yield, to throttle the computer for overuse.
+bool nn_costComponent(nn_Computer *computer, const char *address, double perTick);
+// Uses amount/perTick to the component budget.
+// Upon a full component budget being used for that component, it returns true.
+// nn_componentsOverused() will also return true.
+// This indicates the architecture should yield, to throttle the computer for overuse.
+bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick);
 
 // call stack operations.
 // The type system and API are inspired by Lua, as Lua remains the most popular architecture for OpenComputers.
@@ -664,29 +693,23 @@ typedef struct nn_EEPROMRequest {
 	char *buf;
 } nn_EEPROMRequest;
 
+// reads and writes are always 1/1
 typedef struct nn_EEPROM {
 	// the maximum capacity of the EEPROM
 	size_t size;
 	// the maximum capacity of the EEPROM's associated data
 	size_t dataSize;
-	// the call cost of reading an EEPROM
-	size_t readCallCost;
 	// the energy cost of reading an EEPROM
 	double readEnergyCost;
-	// the call cost of reading an EEPROM's associated data
-	size_t readDataCallCost;
 	// the energy cost of reading an EEPROM's associated data
 	double readDataEnergyCost;
-	// the call cost of writing to an EEPROM
-	size_t writeCallCost;
 	// the energy cost of writing to an EEPROM
 	double writeEnergyCost;
-	// the call cost of writing to an EEPROM's associated data
-	size_t writeDataCallCost;
 	// the energy cost of writing to an EEPROM's associated data
 	double writeDataEnergyCost;
-	nn_Exit (*handler)(nn_EEPROMRequest *request);
 } nn_EEPROM;
+
+extern nn_EEPROM nn_defaultEEPROM;
 
 typedef struct nn_VEEPROM {
 	const char *code;
@@ -699,9 +722,11 @@ typedef struct nn_VEEPROM {
 	bool isReadonly;
 } nn_VEEPROM;
 
+typedef nn_Exit nn_EEPROMHandler(nn_EEPROMRequest *request);
+
 // the userdata passed to the component is the userdata
 // in the handler
-nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, void *userdata);
+nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata);
 nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem);
 
 // Note on paths:
@@ -751,13 +776,14 @@ typedef enum nn_FilesystemAction {
 	// The entry should be stored in strarg2, and strarg2len is the capacity of the buffer.
 	// If the buffer is too short, truncate the result.
 	// Set strarg2len to the length of the entry.
+	// If there are no more entries, set strarg2 to NULL.
 	// Do note that directories should have / appended at the end of their entries.
-	// Directory file descriptors are not exposed to Lua,
+	// Directory file descriptors are not exposed to the architecture,
 	// thus they can only come from NN_FS_OPENDIR.
 	// This means you may not need to validate these file descriptors.
 	NN_FS_READDIR,
 	// close a directory file descriptor, stored in fd.
-	// Directory file descriptors are not exposed to Lua,
+	// Directory file descriptors are not exposed to the architecture,
 	// thus they can only come from NN_FS_OPENDIR.
 	// This means you may not need to validate these file descriptors.
 	NN_FS_CLOSEDIR,
@@ -767,11 +793,12 @@ typedef enum nn_FilesystemAction {
 	// as needed.
 	NN_FS_MKDIR,
 	// Return the lastmodified timestamp.
-	// This number is stored in milliseconds, but aligned to seconds.
-	// DO NOT RETURN A NUMBER NOT DIVISIBLE BY 1000, OpenOS WILL BREAK
-	// DUE TO BAD CODE.
+	// This number is stored in seconds.
 	// The timestamp should be stored in size, it may not make
 	// sense but it is a field and it is there.
+	// Do note that the lastModified() method returns it in milliseconds,
+	// however it must be a multiple of 1000 due to OpenOS depending
+	// on that behavior.
 	NN_FS_LASTMODIFIED,
 	// Checks if a path, stored in strarg1, is a directory.
 	// If it is, size should be set to 1.
@@ -781,8 +808,6 @@ typedef enum nn_FilesystemAction {
 	// If it is, size should be set to 1.
 	// If it is not, size should be set to 0.
 	NN_FS_ISREADONLY,
-	// Makes a file-system read-only.
-	NN_FS_MAKEREADONLY,
 	// Checks if a path, stored in strarg1, exists on the filesystem.
 	// If it is, size should be set to 1.
 	// If it is not, size should be set to 0.
@@ -824,6 +849,7 @@ typedef struct nn_FilesystemRequest {
 	void *userdata;
 	void *instance;
 	nn_Computer *computer;
+	struct nn_Filesystem *fsConf;
 	nn_FilesystemAction action;
 	int fd;
 	nn_FilesystemWhence whence;
@@ -834,6 +860,33 @@ typedef struct nn_FilesystemRequest {
 	size_t strarg2len;
 	size_t size;
 } nn_FilesystemRequest;
+
+typedef struct nn_Filesystem {
+	// the maximum capacity of the filesystem
+	size_t spaceTotal;
+	// how many read calls can be done per tick
+	// list, exists, isDirectory, seek also count as reads.
+	double readsPerTick;
+	// how many write calls can be done per tick
+	// makeDirectory, open, remove and rename also count as writes.
+	double writesPerTick;
+	// The energy cost of an actual read/write.
+	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
+	double dataEnergyCost;
+} nn_Filesystem;
+
+// 4 Tiers.
+// 0 - Tier 1 equivalent
+// 1 - Tier 2 equivalent
+// 2 - Tier 3 equivalent
+// 3 - Tier 4, a better version of Tier 3.
+extern nn_Filesystem nn_defaultFilesystems[4];
+// a basic floppy
+extern nn_Filesystem nn_defaultFloppy;
+
+typedef nn_Exit nn_FilesystemHandler(nn_FilesystemRequest *request);
+
+nn_ComponentType *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata);
 
 typedef enum nn_ScreenAction {
 	// instance dropped
