@@ -1448,7 +1448,7 @@ nn_Exit nn_pusharraytable(nn_Computer *computer, size_t len) {
 	t->len = len;
 	for(size_t i = 0; i < len; i++) {
 		t->vals[i*2].type = NN_VAL_NUM;
-		t->vals[i*2].number = (double)i;
+		t->vals[i*2].number = (double)i+1;
 		t->vals[i*2+1] = computer->callstack[computer->stackSize - len + i];
 	}
 	computer->stackSize -= len;
