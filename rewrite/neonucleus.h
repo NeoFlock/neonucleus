@@ -893,15 +893,42 @@ typedef enum nn_ScreenAction {
 	// instance dropped
 	NN_SCR_DROP,
 
-	// from screen component
+	// set w to 1 if it is on, or 0 if it is off.
 	NN_SCR_ISON,
+	// attempt to turn the screen on.
+	// set w to 1 if it was on, or 0 if it was off.
+	// set h to 1 if it is now on, or 0 if it is now off.
 	NN_SCR_TURNON,
+	// attempt to turn the screen off.
+	// set w to 1 if it was on, or 0 if it was off.
+	// set h to 1 if it is now on, or 0 if it is now off.
 	NN_SCR_TURNOFF,
+	// get a keyboard. The index requested is stored in h.
+	// If the index is out of bounds, set keyboard to NULL.
+	// Else, write the keyboard address into the buffer in keyboard.
+	// The capacity of the buffer is stored in w.
 	NN_SCR_GETKEYBOARD,
+	// change the screen to/from precise mode.
+	// Precise mode means mouse events will have real-number coordinates, as opposed to integer-based ones.
+	// NeoNucleus does not automatically round this, you are meant to round it.
+	// The new precision value is stored in w, where it is a 1 to enable it and 0 to disable it.
+	// Set w to 1 if precise mode is now enabled, or 0 if it isn't.
 	NN_SCR_SETPRECISE,
+	// Set w to 1 if precise mode is enabled, or 0 if it isn't.
 	NN_SCR_ISPRECISE,
+	// change the screen to/from inverted touch mode.
+	// Inverted touch mode normally provides an alternative way to interact with the touchscreen.
+	// For example, in OC, it makes the GUI only open with shift+rightclick, and normal rightclick
+	// triggers a touch event instead. It is best to give it an equivalent meaning to OC's to prevent
+	// unexpected program behavior.
+	// The new inverted touch mode state is stored in w, where it is a 1 to enable it and 0 to disable it.
+	// Set w to 1 if inverted touch mode is now enabled, or 0 if it isn't.
 	NN_SCR_SETTOUCHINVERTED,
+	// Set w to 1 if inverted touch mode is enabled, or 0 if it isn't.
 	NN_SCR_ISTOUCHINVERTED,
+	// Gets the aspect ratio (amount of screen blocks joined together).
+	// Outside of MC, this may not make much sense, in which case you can just set it to 1x1.
+	// Store the width in w and the height in h.
 	NN_SCR_GETASPECTRATIO,
 } nn_ScreenAction;
 
@@ -912,7 +939,41 @@ typedef struct nn_ScreenRequest {
 	nn_ScreenAction action;
 	int w;
 	int h;
+	char *keyboard;
 } nn_ScreenRequest;
+
+typedef enum nn_ScreenFeatures {
+	NN_SCRF_NONE = 0,
+	// whether it supports mouse input.
+	// If it doesn't, it should not emit
+	// touch, drag or other mouse events.
+	// Walk events should also not be emitted.
+	NN_SCRF_MOUSE = 1<<0,
+	// Whether precise mode is supported.
+	NN_SCRF_PRECISE = 1<<1,
+	// Whether touch inverted is supported.
+	NN_SCRF_TOUCHINVERTED = 1<<2,
+} nn_ScreenFeatures;
+
+// A struct for the reference screen configurations
+// This does not influence the interface at all,
+// however it exists as a runtime reference of what
+// the conventional screen tiers are.
+typedef struct nn_ScreenConfig {
+	int maxWidth;
+	int maxHeight;
+	nn_ScreenFeatures features;
+	int editableColors;
+	int paletteColors;
+	char maxDepth;
+} nn_ScreenConfig;
+
+// OC has 3 tiers, NN adds a 4th one as well.
+extern nn_ScreenConfig nn_defaultScreens[4];
+
+typedef nn_Exit nn_ScreenHandler(nn_ScreenRequest *req);
+
+nn_ComponentType *nn_createScreen(nn_Universe *universe, void *userdata, nn_ScreenHandler *handler);
 
 // Remember:
 // - Colors are in 0xRRGGBB format.
@@ -925,15 +986,19 @@ typedef enum nn_GPUAction {
 
 	// Conventional GPU functions
 
-	// requests to bind to a GPU connected to the computer.
+	// requests to bind to a screen connected to the computer.
 	// The address, as well as its length, are stored in text, with the length in width.
-	// The interface does check that the computer does have the screen.
+	// The interface does check that the computer does have the screen, but do look out
+	// for time-of-check/time-of-use issues which may occur in multi-threaded environments.
 	NN_GPU_BIND,
+	// requests to unbind the GPU from its screen.
+	// If there is no screen, it just does nothing.
+	NN_GPU_UNBIND,
 	// Ask for the screen the GPU is currently bound to.
 	// If it is not bound to any, text should be set to NULL.
 	// If it is, you must write to text the address of the screen.
 	// width stores the capacity of text, so if needed, truncate it to that many bytes.
-	// The length of this address should be stored in width.
+	// The length of this address must be stored in width.
 	NN_GPU_GETSCREEN,
 	// Gets the current background.
 	// x should store either the color in 0xRRGGBB format or the palette index.
@@ -1071,6 +1136,33 @@ typedef struct nn_GPURequest {
 	int dest;
 	int src;
 } nn_GPURequest;
+
+typedef struct nn_GPU {
+	// the minimum between these and the screen's
+	// are the maximum width/height/depth supported.
+	int maxWidth;
+	int maxHeight;
+	char maxDepth;
+	// this is in pixels.
+	size_t totalVRAM;
+	// amount of times copy can be called before running out of budget.
+	int copyPerTick;
+	// amount of times fill can be called before running out of budget.
+	int fillPerTick;
+	// amount of times set can be called before running out of budget.
+	int setPerTick;
+	// amount of times setForeground can be called before running out of budget.
+	int setForegroundPerTick;
+	// amount of times setBackground can be called before running out of budget.
+	int setBackgroundPerTick;
+	// energy per non-space set.
+	double energyPerWrite;
+	// energy per space set.
+	double energyPerClear;
+} nn_GPU;
+
+// 1 GPU tier for every screen.
+extern nn_GPU nn_defaultGPUs[4];
 
 // Colors and palettes.
 // Do note that the 

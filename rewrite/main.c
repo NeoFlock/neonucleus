@@ -106,6 +106,7 @@ void ne_fsState_truepath(ne_FsState *state, char truepath[NN_MAX_PATH], const ch
 	}
 }
 
+
 nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 	nn_Computer *C = req->computer;
 	ne_FsState *state = req->instance;
@@ -274,6 +275,108 @@ ne_FsState *ne_newFS(const char *path, bool readonly) {
 	return fs;
 }
 
+// this struct is quite wasteful and could be made like 10x better
+// for performance. But like, this test emulator is ahh anyways
+typedef struct ne_Pixel {
+	int fg;
+	int bg;
+	int truefg;
+	int truebg;
+	nn_codepoint codepoint;
+	bool isFgPalette;
+	bool isBgPalette;
+} ne_Pixel;
+
+typedef struct ne_ScreenBuffer {
+	int maxWidth;
+	int maxHeight;
+	int width;
+	int height;
+	char maxDepth;
+	ne_Pixel *pixels;
+	int maxPalette;
+	int editableColors;
+	int *virtualPalette;
+	int *mappedPalette;
+	const char *keyboard;
+} ne_ScreenBuffer;
+
+ne_ScreenBuffer *ne_newScreenBuf(nn_ScreenConfig conf, const char *keyboard) {
+	ne_ScreenBuffer *buf = malloc(sizeof(*buf));
+	buf->maxWidth = conf.maxWidth;
+	buf->maxHeight = conf.maxHeight;
+	buf->maxDepth = conf.maxDepth;
+	buf->maxPalette = conf.paletteColors;
+	buf->editableColors = conf.editableColors;
+	buf->pixels = malloc(sizeof(ne_Pixel) * conf.maxWidth * conf.maxHeight);
+	buf->virtualPalette = malloc(sizeof(int) * conf.paletteColors);
+	memset(buf->virtualPalette, 0, sizeof(int) * buf->maxPalette);
+	buf->mappedPalette = malloc(sizeof(int) * conf.paletteColors);
+	buf->keyboard = keyboard;
+
+	int *palette = NULL;
+	// TODO: uncomment once the palettes are implemented
+	if(buf->maxPalette == 16) {
+		//palette = nn_mcpalette4;
+	}
+	if(buf->maxPalette == 256) {
+		//palette = nn_ocpalette8;
+	}
+	if(palette) memcpy(buf->virtualPalette, palette, sizeof(int) * buf->maxPalette);
+	memcpy(buf->mappedPalette, buf->virtualPalette, sizeof(int) * buf->maxPalette);
+	return buf;
+}
+
+nn_Exit ne_screen_handler(nn_ScreenRequest *req) {
+	ne_ScreenBuffer *buf = req->instance;
+	switch(req->action) {
+	case NN_SCR_DROP:
+		free(buf->pixels);
+		free(buf->mappedPalette);
+		free(buf->virtualPalette);
+		free(buf);
+		return NN_OK;
+	case NN_SCR_GETASPECTRATIO:
+		req->w = 1;
+		req->h = 1;
+		return NN_OK;
+	case NN_SCR_GETKEYBOARD:
+		if(buf->keyboard == NULL) {
+			req->keyboard = NULL;
+			return NN_OK;
+		}
+		size_t keylen = strlen(buf->keyboard);
+		if(keylen > req->w) keylen = req->w;
+		memcpy(req->keyboard, buf->keyboard, keylen);
+		req->w = keylen;
+		return NN_OK;
+	case NN_SCR_ISON:
+		req->w = 1;
+		return NN_OK;
+	case NN_SCR_TURNON:
+		req->w = 1;
+		req->h = 1;
+		return NN_OK;
+	case NN_SCR_TURNOFF:
+		req->w = 1;
+		req->h = 1;
+		return NN_OK;
+	case NN_SCR_ISPRECISE:
+		req->w = 0;
+		return NN_OK;
+	case NN_SCR_SETPRECISE:
+		req->w = 0;
+		return NN_OK;
+	case NN_SCR_ISTOUCHINVERTED:
+		req->w = 0;
+		return NN_OK;
+	case NN_SCR_SETTOUCHINVERTED:
+		req->w = 0;
+		return NN_OK;
+	}
+	return NN_OK;
+}
+
 int main() {
 	nn_Context ctx;
 	nn_initContext(&ctx);
@@ -306,6 +409,7 @@ int main() {
 	for(size_t i = 1; i < 5; i++) {
 		fstype[i] = nn_createFilesystem(u, &nn_defaultFilesystems[i-1], ne_fsState_handler, NULL);
 	}
+	nn_ComponentType *scrtype = nn_createScreen(u, NULL, ne_screen_handler);
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", 8 * NN_MiB, 256, 256);
 	
@@ -317,7 +421,10 @@ int main() {
 
 	ne_FsState *mainFS = ne_newFS("OpenOS", false);
 	nn_addComponent(c, fstype[1], "mainFS", 2, mainFS);
-	
+
+	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(nn_defaultScreens[3], NULL);
+	nn_addComponent(c, scrtype, "mainScreen", -1, scrbuf);
+
 	while(true) {
 		nn_Exit e = nn_tick(c);
 		if(e != NN_OK) {
@@ -351,6 +458,7 @@ cleanup:;
 	nn_destroyComputer(c);
 	nn_destroyComponentType(ctype);
 	nn_destroyComponentType(etype);
+	nn_destroyComponentType(scrtype);
 	for(size_t i = 0; i < 5; i++) nn_destroyComponentType(fstype[i]);
 	// rip the universe
 	nn_destroyUniverse(u);

@@ -2558,3 +2558,183 @@ nn_ComponentType *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem
 	}
 	return t;
 }
+
+nn_ScreenConfig nn_defaultScreens[4] = {
+	(nn_ScreenConfig) {
+		.maxWidth = 50,
+		.maxHeight = 16,
+		.maxDepth = 1,
+		.editableColors = 0,
+		.paletteColors = 0,
+		.features = NN_SCRF_NONE,
+	},
+	(nn_ScreenConfig) {
+		.maxWidth = 80,
+		.maxHeight = 25,
+		.maxDepth = 4,
+		.editableColors = 0,
+		.paletteColors = 16,
+		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED,
+	},
+	(nn_ScreenConfig) {
+		.maxWidth = 160,
+		.maxHeight = 50,
+		.maxDepth = 8,
+		.editableColors = 16,
+		.paletteColors = 256,
+		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE,
+	},
+	(nn_ScreenConfig) {
+		.maxWidth = 240,
+		.maxHeight = 80,
+		.maxDepth = 16,
+		.editableColors = 256,
+		.paletteColors = 256,
+		.features = NN_SCRF_NONE,
+	},
+};
+
+typedef struct nn_Screen_state {
+	nn_Universe *universe;
+	void *userdata;
+	nn_ScreenHandler *handler;
+} nn_Screen_state;
+
+static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
+	nn_Screen_state *state = req->typeUserdata;
+	nn_Context ctx = state->universe->ctx;
+
+	nn_Computer *C = req->computer;
+
+	nn_ScreenRequest scrreq;
+	scrreq.computer = C;
+	scrreq.userdata = state->userdata;
+	scrreq.instance = req->compUserdata;
+
+	const char *method = req->methodCalled;
+	
+	switch(req->action) {
+	case NN_COMP_FREETYPE:
+		nn_free(&ctx, state, sizeof(*state));
+		return NN_OK;
+	case NN_COMP_DEINIT:
+		scrreq.action = NN_SCR_DROP;
+		return state->handler(&scrreq);
+	case NN_COMP_INIT:
+		return NN_OK;
+	case NN_COMP_ENABLED:
+		req->methodEnabled = true;
+		return NN_OK;
+	case NN_COMP_CALL:
+		nn_setError(C, "method not implemented yet");
+		return NN_EBADCALL;
+	}
+	return NN_OK;
+}
+
+nn_ComponentType *nn_createScreen(nn_Universe *universe, void *userdata, nn_ScreenHandler *handler) {
+	nn_Context ctx = universe->ctx;
+	nn_Screen_state *state = nn_alloc(&ctx, sizeof(*state));
+	if(state == NULL) return NULL;
+	state->handler = handler;
+	state->universe = universe;
+	state->userdata = userdata;
+
+	const nn_Method methods[] = {
+		{"isOn", "function(): boolean - Returns whether the screen is on", NN_DIRECT},
+		{"turnOn", "function(): boolean, boolean - Turns the screen on. Returns whether the screen is was off and the new power state.", NN_DIRECT},
+		{"turnOff", "function(): boolean, boolean - Turns the screen off. Returns whether the screen is was on and the new power state.", NN_DIRECT},
+		{"getAspectRatio", "function(): number, number - Returns how large the screen is, typically in blocks.", NN_DIRECT},
+		{"getKeyboards", "function(): string[] - Returns a list of keyboards attached to this screen.", NN_DIRECT},
+		{"setPrecise", "function(enabled: boolean): boolean - Enable or disable precise mode (sub-pixel precision in touch events).", NN_DIRECT},
+		{"isPrecise", "function(): boolean - Checks if precise mode is enabled.", NN_DIRECT},
+		{"setTouchModeInverted", "function(enabled: boolean): boolean - Enable or disable inverted touch mode (alters player interactions)", NN_DIRECT},
+		{"isTouchModeInverted", "function(): boolean - Checks if inverted touch mode is enabled.", NN_DIRECT},
+		{NULL, NULL, NN_INDIRECT},
+	};
+	nn_ComponentType *t = nn_createComponentType(universe, "screen", state, methods, nn_screen_handler);
+	if(t == NULL) {
+		nn_free(&ctx, state, sizeof(*state));
+		return NULL;
+	}
+	return t;
+}
+
+nn_GPU nn_defaultGPUs[4] = {
+	(nn_GPU) {
+		.maxWidth = 50,
+		.maxHeight = 16,
+		.maxDepth = 1,
+		.totalVRAM = 5000,
+		.copyPerTick = 1,
+		.fillPerTick = 1,
+		.setPerTick = 4,
+		.setForegroundPerTick = 2,
+		.setBackgroundPerTick = 2,
+		.energyPerWrite = 0.02,
+		.energyPerClear = 0.01,
+	},
+	(nn_GPU) {
+		.maxWidth = 80,
+		.maxHeight = 25,
+		.maxDepth = 4,
+		.totalVRAM = 10000,
+		.copyPerTick = 2,
+		.fillPerTick = 4,
+		.setPerTick = 8,
+		.setForegroundPerTick = 4,
+		.setBackgroundPerTick = 4,
+		.energyPerWrite = 0.1,
+		.energyPerClear = 0.05,
+	},
+	(nn_GPU) {
+		.maxWidth = 160,
+		.maxHeight = 50,
+		.maxDepth = 8,
+		.totalVRAM = 20000,
+		.copyPerTick = 4,
+		.fillPerTick = 8,
+		.setPerTick = 16,
+		.setForegroundPerTick = 8,
+		.setBackgroundPerTick = 8,
+		.energyPerWrite = 0.2,
+		.energyPerClear = 0.1,
+	},
+	(nn_GPU) {
+		.maxWidth = 240,
+		.maxHeight = 80,
+		.maxDepth = 16,
+		.totalVRAM = 65536,
+		.copyPerTick = 8,
+		.fillPerTick = 12,
+		.setPerTick = 32,
+		.setForegroundPerTick = 16,
+		.setBackgroundPerTick = 16,
+		.energyPerWrite = 0.25,
+		.energyPerClear = 0.12,
+	},
+};
+
+int nn_mapColor(int color, int *palette, size_t len) {
+	// TODO: color mapping
+	(void)palette;
+	(void)len;
+	return color;
+}
+
+int nn_mapDepth(int color, int depth, bool ocCompatible) {
+	if(depth == 1) return color == 0 ? 0 : 0xFFFFFF;
+	// TODO: map the other depths
+	return color;
+}
+
+const char *nn_depthName(int depth) {
+	if(depth == 1) return "OneBit";
+	if(depth == 2) return "TwoBit";
+	if(depth == 3) return "ThreeBit";
+	if(depth == 4) return "FourBit";
+	if(depth == 8) return "EightBit";
+	if(depth == 16) return "SixteenBit";
+	if(depth == 24) return "TwentyfourBit";
+	return NULL;
+}
