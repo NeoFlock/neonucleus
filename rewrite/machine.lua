@@ -163,9 +163,6 @@ function checkArg(arg, val, ...)
 	error("bad argument #" .. arg .. " (" .. table.concat(t, ", ") .. ") expected", 2)
 end
 
--- HORRENDOUS approximation
-unicode = string
-
 if os.getenv("NN_REPL") == "1" then
 	while true do
 		io.write("lua> ")

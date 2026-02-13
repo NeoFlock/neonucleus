@@ -95,35 +95,33 @@ extern "C" {
 
 typedef unsigned int nn_codepoint;
 
-// validates that a NULL-terminated string is valid UTF-8
-bool nn_unicode_validate(const char *s);
+bool nn_unicode_validate(const char *s, size_t len);
 // validates only the *first* codepoint in the NULL-terminated string.
 // This returns the length in bytes of the codepoint, with 0 meaning
 // invalid.
-size_t nn_unicode_validateFirstChar(const char *s);
+size_t nn_unicode_validateFirstChar(const char *s, size_t len);
 
 // returns the amount of unicode codepoints in the UTF-8 string.
 // Undefined behavior for invalid UTF-8, make sure to validate it if needed.
-size_t nn_unicode_len(const char *s);
+size_t nn_unicode_len(const char *s, size_t len);
 // returns the amount of unicode codepoints in the UTF-8 string.
 // If s is invalid UTF-8, all invalid bytes are considered a 1-byte codepoint.
-size_t nn_unicode_lenPermissive(const char *s);
+size_t nn_unicode_lenPermissive(const char *s, size_t len);
 
 // Writes the codepoints of s into codepoints.
 // Undefined behavior for invalid UTF-8, make sure to validate it if needed.
 // The codepoints buffer must be big enough to store the string, use nn_unicode_len()
 // to get the required buffer length.
-void nn_unicode_codepoints(const char *s, nn_codepoint *codepoints);
+void nn_unicode_codepoints(const char *s, size_t len, nn_codepoint *codepoints);
 // Writes the codepoints of s into codepoints.
 // If s is invalid UTF-8, all invalid bytes are considered a 1-byte codepoint.
 // The codepoints buffer must be big enough to store the string, use nn_unicode_lenPermissive()
 // to get the required buffer length.
-void nn_unicode_codepointsPermissive(const char *s, nn_codepoint *codepoints);
+void nn_unicode_codepointsPermissive(const char *s, size_t len, nn_codepoint *codepoints);
 
-// Returns the codepoint at a given byte offset in the string.
-// If it is out of bounds, the behavior is undefined.
-// If s is invalid UTF-8 at that offset, the behavior is undefined.
-nn_codepoint nn_unicode_codepointAt(const char *s, size_t byteOffset);
+// Returns the first codepoint from a UTF-8 string.
+// If s is invalid UTF-8, the behavior is undefined.
+nn_codepoint nn_unicode_firstCodepoint(const char *s);
 // Returns the size, in bytes, required by UTF-8 for a codepoint.
 size_t nn_unicode_codepointSize(nn_codepoint codepoint);
 // Writes the UTF-8 bytes for a given codepoint into buffer.
@@ -134,7 +132,18 @@ size_t nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], nn_cod
 size_t nn_unicode_charWidth(nn_codepoint codepoint);
 // The width, on a screen, for an entire string.
 // The behavior is undefined for 
-size_t nn_unicode_wlen(const char *s);
+size_t nn_unicode_wlen(const char *s, size_t len);
+size_t nn_unicode_wlenPermissive(const char *s, size_t len);
+
+// Returns the amount of bytes needed to store the UTF-8 encoded text.
+// The behavior on invalid codepoints is undefined.
+size_t nn_unicode_countBytes(nn_codepoint *codepoints, size_t len);
+// Writes the UTF-8 encoded text.
+// DOES NOT WRITE A NULL TERMINATOR.
+// s must be big enough to store the string, use nn_unicode_bytelen()
+// to allocate the correct amount of space.
+// The behavior on invalid codepoints is undefined.
+void nn_unicode_writeBytes(char *s, nn_codepoint *codepoints, size_t len);
 
 // Returns the uppercase version of the codepoint
 nn_codepoint nn_unicode_upper(nn_codepoint codepoint);
@@ -178,7 +187,7 @@ typedef struct nn_LockRequest {
 // This is used for synchronization. OpenComputers achieves synchronization
 // between the worker threads by sending them as requests to a central thread (indirect methods).
 // In NeoNucleus, the function pointer is invoked on the calling thead. This technically makes all methods direct,
-// however we consider methods to be indirect if they require synchronization of mutable state.
+// however methods which are meant to be slow may become indirect, as indirect methods consume the entire call budget.
 // Do note that locks are only used in "full" component implementations, such as the volatile storage devices.
 // The interfaces do not do any automatic synchronization via locks, all synchronization is assumed
 // to be handled in the implementer of the interface, because only you know how to best synchronize
@@ -306,6 +315,9 @@ void nn_destroyComputer(nn_Computer *computer);
 // get the userdata pointer
 void *nn_getComputerUserdata(nn_Computer *computer);
 const char *nn_getComputerAddress(nn_Computer *computer);
+nn_Universe *nn_getComputerUniverse(nn_Computer *computer);
+nn_Context *nn_getUniverseContext(nn_Universe *universe);
+nn_Context *nn_getComputerContext(nn_Computer *computer);
 
 // address is copied.
 // It can be NULL if you wish to have no tmp address.
@@ -411,7 +423,9 @@ void nn_removeDeviceInfo(nn_Computer *computer, const char *address);
 const nn_DeviceInfo *nn_getDeviceInfo(nn_Computer *computer, size_t *len);
 
 typedef enum nn_MethodFlags {
+	// calling will consume the entire call budget
 	NN_INDIRECT = 0,
+	// calling will only consume 1 call from the call budget
 	NN_DIRECT = (1<<0),
 	// this indicates this method wraps a *field*
 	// getter means calling it with no arguments will return the current value,
@@ -552,6 +566,8 @@ nn_Exit nn_pushnull(nn_Computer *computer);
 nn_Exit nn_pushbool(nn_Computer *computer, bool truthy);
 // pushes a number on the call stack
 nn_Exit nn_pushnumber(nn_Computer *computer, double num);
+// casts [num] to a double and pushes it on the call stack
+nn_Exit nn_pushinteger(nn_Computer *computer, intptr_t num);
 // pushes a NULL-terminated string on the call stack. The string is copied, so you can free it afterwards without worry.
 nn_Exit nn_pushstring(nn_Computer *computer, const char *str);
 // pushes a string on the call stack. The string is copied, so you can free it afterwards without worry. The copy will have a NULL terminator inserted
@@ -601,6 +617,9 @@ bool nn_isboolean(nn_Computer *computer, size_t idx);
 // Returns whether the value at [idx] is a number.
 // [idx] starts at 0.
 bool nn_isnumber(nn_Computer *computer, size_t idx);
+// Returns whether the value at [idx] is a number AND
+// the number can safely be cast to an intptr_t.
+bool nn_isinteger(nn_Computer *computer, size_t idx);
 // Returns whether the value at [idx] is a string.
 // [idx] starts at 0.
 bool nn_isstring(nn_Computer *computer, size_t idx);
@@ -614,12 +633,60 @@ bool nn_istable(nn_Computer *computer, size_t idx);
 // For out of bounds indexes, "none" is returned.
 const char *nn_typenameof(nn_Computer *computer, size_t idx);
 
+// Argument helpers
+
+// Returns true if the argument at that index is not null.
+bool nn_checknull(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not a boolean.
+bool nn_checkboolean(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not a number.
+bool nn_checknumber(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not an integer.
+bool nn_checkinteger(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not a string.
+bool nn_checkstring(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not userdata.
+bool nn_checkuserdata(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is a table.
+bool nn_checktable(nn_Computer *computer, size_t idx, const char *errMsg);
+
+// Checks if idx is equal to the stack size.
+// If it is, it will push a null.
+nn_Exit nn_defaultnull(nn_Computer *computer, size_t idx);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a boolean [value].
+nn_Exit nn_defaultboolean(nn_Computer *computer, size_t idx, bool value);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a number [num].
+nn_Exit nn_defaultnumber(nn_Computer *computer, size_t idx, double num);
+// Checks if idx is equal to the stack size.
+// If it is, it will push an integer [num].
+nn_Exit nn_defaultinteger(nn_Computer *computer, size_t idx, intptr_t num);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a string [str].
+nn_Exit nn_defaultstring(nn_Computer *computer, size_t idx, const char *str);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a string [str].
+nn_Exit nn_defaultlstring(nn_Computer *computer, size_t idx, const char *str, size_t len);
+// Checks if idx is equal to the stack size.
+// If it is, it will push the userdata [userdataIdx].
+nn_Exit nn_defaultuserdata(nn_Computer *computer, size_t idx, size_t userdataIdx);
+// Checks if idx is equal to the stack size.
+// If it is, it will push an empty table.
+nn_Exit nn_defaulttable(nn_Computer *computer, size_t idx);
+
 // NOTE: behavior of the nn_to*() functions and nn_dumptable() when the values have the wrong types or at out of bounds indexes is undefined.
 
 // Returns the boolean value at [idx].
 bool nn_toboolean(nn_Computer *computer, size_t idx);
 // Returns the number value at [idx].
 double nn_tonumber(nn_Computer *computer, size_t idx);
+// Returns the number value at [idx] cast to an intptr_t.
+// NOTE: for numbers where nn_isinteger() returns false,
+// the cast is undefined.
+// This includes values such as infinity and NaN, where 
+// the behavior is platform, ABI and compiler-specific.
+intptr_t nn_tointeger(nn_Computer *computer, size_t idx);
 // Returns the string value at [idx].
 const char *nn_tostring(nn_Computer *computer, size_t idx);
 // Returns the string value and its length at [idx].
@@ -953,6 +1020,8 @@ typedef enum nn_ScreenFeatures {
 	NN_SCRF_PRECISE = 1<<1,
 	// Whether touch inverted is supported.
 	NN_SCRF_TOUCHINVERTED = 1<<2,
+	// it indicates that the palette can be edited.
+	NN_SCRF_EDITABLECOLORS = 1<<3,
 } nn_ScreenFeatures;
 
 // A struct for the reference screen configurations
@@ -963,7 +1032,6 @@ typedef struct nn_ScreenConfig {
 	int maxWidth;
 	int maxHeight;
 	nn_ScreenFeatures features;
-	int editableColors;
 	int paletteColors;
 	char maxDepth;
 } nn_ScreenConfig;
@@ -973,7 +1041,9 @@ extern nn_ScreenConfig nn_defaultScreens[4];
 
 typedef nn_Exit nn_ScreenHandler(nn_ScreenRequest *req);
 
-nn_ComponentType *nn_createScreen(nn_Universe *universe, void *userdata, nn_ScreenHandler *handler);
+nn_ComponentType *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata);
+// a useless component which does nothing
+nn_ComponentType *nn_createKeyboard(nn_Universe *universe);
 
 // Remember:
 // - Colors are in 0xRRGGBB format.
@@ -987,9 +1057,11 @@ typedef enum nn_GPUAction {
 	// Conventional GPU functions
 
 	// requests to bind to a screen connected to the computer.
-	// The address, as well as its length, are stored in text, with the length in width.
+	// The address is stored in text, with the length in width.
 	// The interface does check that the computer does have the screen, but do look out
 	// for time-of-check/time-of-use issues which may occur in multi-threaded environments.
+	// If x is set to 1, the reset flag is enabled. This means the GPU should "reset" the state
+	// of the screen.
 	NN_GPU_BIND,
 	// requests to unbind the GPU from its screen.
 	// If there is no screen, it just does nothing.
@@ -1007,6 +1079,7 @@ typedef enum nn_GPUAction {
 	// Sets the current background.
 	// x should store either the color in 0xRRGGBB format or the palette index.
 	// y should be 1 if x is a palette index and 0 if it is a color.
+	// The values x and y should be updated to reflect the old state.
 	NN_GPU_SETBACKGROUND,
 	// Gets the current foreground.
 	// x should store either the color in 0xRRGGBB format or the palette index.
@@ -1015,6 +1088,7 @@ typedef enum nn_GPUAction {
 	// Sets the current foreground.
 	// x should store either the color in 0xRRGGBB format or the palette index.
 	// y should be 1 if x is a palette index and 0 if it is a color.
+	// The values x and y should be updated to reflect the old state.
 	NN_GPU_SETFOREGROUND,
 	// Gets the palette color.
 	// x is the index.
@@ -1054,6 +1128,12 @@ typedef enum nn_GPUAction {
 	// The new viewport dimensions are stored in width and height.
 	NN_GPU_SETVIEWPORT,
 	// Gets a character.
+	// The position requested is given in x and y.
+	// The codepoint of the character should be set in [codepoint].
+	// The foreground and background color should be set in [width] and [height].
+	// The palette indexes of the foreground and background should be set
+	// in [dest] and [src] respectively. If the pixel color was not from
+	// the palette, the imaginary -1 palette index can be used.
 	NN_GPU_GET,
 	// Sets a horizontal line of text at a given x, y.
 	// The position is stored in x, y, and is the position of the first character.
@@ -1120,6 +1200,7 @@ typedef struct nn_GPURequest {
 	void *userdata;
 	void *instance;
 	nn_Computer *computer;
+	struct nn_GPU *gpuConf;
 	nn_GPUAction action;
 	int x;
 	int y;
@@ -1161,8 +1242,12 @@ typedef struct nn_GPU {
 	double energyPerClear;
 } nn_GPU;
 
+typedef nn_Exit nn_GPUHandler(nn_GPURequest *req);
+
 // 1 GPU tier for every screen.
 extern nn_GPU nn_defaultGPUs[4];
+
+nn_ComponentType *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata);
 
 // Colors and palettes.
 // Do note that the 
@@ -1181,6 +1266,9 @@ extern int nn_mcpalette4[16];
 
 // The OC 8-bit palette.
 extern int nn_ocpalette8[256];
+
+// initializes the contents of the palettes.
+void nn_initPalettes();
 
 // Expensive.
 // Maps a color to the closest match in a palette.

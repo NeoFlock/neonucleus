@@ -409,6 +409,81 @@ static int luaArch_component_fields(lua_State *L) {
 	return 1;
 }
 
+static int luaArch_unicode_char(lua_State *L) {
+	size_t argc = lua_gettop(L);
+	size_t len = 0;
+	for(int i = 1; i <= argc; i++) {
+		nn_codepoint codepoint = lua_tointeger(L, i);
+		size_t size = nn_unicode_codepointSize(codepoint);
+		if(size == 0) luaL_error(L, "codepoint #%d out of range", i);
+		len += size;
+	}
+	char *buf = malloc(len);
+	len = 0;
+	for(int i = 1; i <= argc; i++) {
+		nn_codepoint codepoint = lua_tointeger(L, i);
+		size_t size = nn_unicode_codepointToChar(buf + len, codepoint);
+		len += size;
+	}
+	lua_pushlstring(L, buf, len);
+	free(buf);
+	return 1;
+}
+
+static int luaArch_unicode_len(lua_State *L) {
+	size_t len;
+	const char *s = lua_tolstring(L, 1, &len);
+	len = nn_unicode_lenPermissive(s, len);
+	lua_pushinteger(L, len);
+	return 1;
+}
+
+static int luaArch_unicode_sub(lua_State *L) {
+	size_t slen;
+	const char *s = lua_tolstring(L, 1, &slen);
+	if(lua_gettop(L) < 2) lua_pushinteger(L, 1);
+	if(lua_gettop(L) < 3) lua_pushinteger(L, -1);
+
+	size_t len = nn_unicode_lenPermissive(s, slen);
+
+	int start = lua_tointeger(L, 2);
+	int end = lua_tointeger(L, 3);
+
+	if(end == 0) {
+		lua_pushstring(L, "");
+		return 1;
+	}
+
+	if(start > 0) start--;
+	if(start < 0) start = len + start;
+	if(end > 0) end--;
+	if(end < 0) end = len + end;
+
+	if(start < 0) start = 0;
+	if(start >= len) start = len-1;
+	if(end < 0) end = 0;
+	if(end >= len) end = len-1;
+
+	nn_codepoint *cp = malloc(sizeof(*cp) * len);
+	nn_unicode_codepointsPermissive(s, slen, cp);
+
+	size_t substrlen = nn_unicode_countBytes(cp + start, end - start + 1);
+	char *buf = malloc(substrlen);
+	nn_unicode_writeBytes(buf, cp + start, end - start + 1);
+	lua_pushlstring(L, buf, substrlen);
+	free(buf);
+	free(cp);
+	return 1;
+}
+
+static int luaArch_unicode_wlen(lua_State *L) {
+	size_t slen;
+	const char *s = lua_tolstring(L, 1, &slen);
+	size_t len = nn_unicode_wlenPermissive(s, slen);
+	lua_pushinteger(L, len);
+	return 1;
+}
+
 static void luaArch_loadEnv(lua_State *L) {
 	lua_createtable(L, 0, 10);
 	int computer = lua_gettop(L);
@@ -464,6 +539,17 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_pushcfunction(L, luaArch_component_fields);
 	lua_setfield(L, component, "fields");
 	lua_setglobal(L, "component");
+	lua_createtable(L, 0, 10);
+	int unicode = lua_gettop(L);
+	lua_pushcfunction(L, luaArch_unicode_char);
+	lua_setfield(L, component, "char");
+	lua_pushcfunction(L, luaArch_unicode_len);
+	lua_setfield(L, component, "len");
+	lua_pushcfunction(L, luaArch_unicode_sub);
+	lua_setfield(L, component, "sub");
+	lua_pushcfunction(L, luaArch_unicode_wlen);
+	lua_setfield(L, component, "wlen");
+	lua_setglobal(L, "unicode");
 }
 
 static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {

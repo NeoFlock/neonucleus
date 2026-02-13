@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <raylib.h>
 
 nn_Architecture getLuaArch();
 
@@ -292,6 +293,7 @@ typedef struct ne_ScreenBuffer {
 	int maxHeight;
 	int width;
 	int height;
+	char depth;
 	char maxDepth;
 	ne_Pixel *pixels;
 	int maxPalette;
@@ -301,13 +303,39 @@ typedef struct ne_ScreenBuffer {
 	const char *keyboard;
 } ne_ScreenBuffer;
 
+bool ne_ocCompatibleColors = true;
+
+void ne_remapScreen(ne_ScreenBuffer *buf) {
+	int depth = buf->maxDepth;
+
+	for(int i = 0; i < buf->maxPalette; i++) {
+		buf->mappedPalette[i] = nn_mapDepth(buf->virtualPalette[i], depth, ne_ocCompatibleColors);
+	}
+
+	for(int y = 0; y < buf->height; y++) {
+		for(int x = 0; x < buf->width; x++) {
+			ne_Pixel *pixel = &buf->pixels[y * buf->maxWidth + x];
+			int virtfg = pixel->fg, virtbg = pixel->bg;
+			if(pixel->isFgPalette) virtfg = buf->mappedPalette[virtfg];
+			else virtfg = nn_mapDepth(virtfg, depth, ne_ocCompatibleColors);
+			if(pixel->isBgPalette) virtbg = buf->mappedPalette[virtfg];
+			else virtbg = nn_mapDepth(virtbg, depth, ne_ocCompatibleColors);
+
+			pixel->truefg = virtfg;
+			pixel->truebg = virtbg;
+		}
+	}
+}
+
 ne_ScreenBuffer *ne_newScreenBuf(nn_ScreenConfig conf, const char *keyboard) {
 	ne_ScreenBuffer *buf = malloc(sizeof(*buf));
 	buf->maxWidth = conf.maxWidth;
 	buf->maxHeight = conf.maxHeight;
+	buf->width = buf->maxWidth;
+	buf->height = buf->maxHeight;
 	buf->maxDepth = conf.maxDepth;
+	buf->depth = buf->maxDepth;
 	buf->maxPalette = conf.paletteColors;
-	buf->editableColors = conf.editableColors;
 	buf->pixels = malloc(sizeof(ne_Pixel) * conf.maxWidth * conf.maxHeight);
 	buf->virtualPalette = malloc(sizeof(int) * conf.paletteColors);
 	memset(buf->virtualPalette, 0, sizeof(int) * buf->maxPalette);
@@ -315,26 +343,73 @@ ne_ScreenBuffer *ne_newScreenBuf(nn_ScreenConfig conf, const char *keyboard) {
 	buf->keyboard = keyboard;
 
 	int *palette = NULL;
-	// TODO: uncomment once the palettes are implemented
-	if(buf->maxPalette == 16) {
-		//palette = nn_mcpalette4;
+	if(buf->maxDepth == 4) {
+		palette = nn_mcpalette4;
 	}
-	if(buf->maxPalette == 256) {
-		//palette = nn_ocpalette8;
+	if(buf->maxDepth == 8) {
+		palette = nn_ocpalette8;
 	}
 	if(palette) memcpy(buf->virtualPalette, palette, sizeof(int) * buf->maxPalette);
 	memcpy(buf->mappedPalette, buf->virtualPalette, sizeof(int) * buf->maxPalette);
+
+	for(int y = 0; y < buf->height; y++) {
+		for(int x = 0; x < buf->width; x++) {
+			buf->pixels[y * buf->width + x] = (ne_Pixel) {
+				.fg = 0xFFFFFF,
+				.bg = 0x000000,
+				.isFgPalette = false,
+				.isBgPalette = false,
+				.codepoint = ' ',
+				.truefg = 0xFFFFFF,
+				.truebg = 0x000000,
+			};
+		}
+	}
 	return buf;
+}
+
+void ne_dropScreenBuf(ne_ScreenBuffer *buf) {
+	free(buf->pixels);
+	free(buf->mappedPalette);
+	free(buf->virtualPalette);
+	free(buf);
+}
+
+ne_Pixel defaultPixel = {
+	.codepoint = ' ',
+	.fg = 0xFFFFFF,
+	.bg = 0x000000,
+	.isFgPalette = false,
+	.isBgPalette = false,
+	.truefg = 0xFFFFFF,
+	.truebg = 0x000000,
+};
+
+bool ne_inScreenBuf(ne_ScreenBuffer *buf, int x, int y) {
+	return x > 0 && y > 0 && x <= buf->width && y <= buf->height;
+}
+
+ne_Pixel ne_getPixel(ne_ScreenBuffer *buf, int x, int y) {
+	if(!ne_inScreenBuf(buf, x, y)) return defaultPixel;
+	x--;
+	y--;
+	return buf->pixels[y * buf->maxWidth + x];
+}
+
+void ne_setPixel(ne_ScreenBuffer *buf, int x, int y, ne_Pixel pixel) {
+	if(!ne_inScreenBuf(buf, x, y)) return;
+	x--;
+	y--;
+	buf->pixels[y * buf->maxWidth + x] = pixel;
 }
 
 nn_Exit ne_screen_handler(nn_ScreenRequest *req) {
 	ne_ScreenBuffer *buf = req->instance;
 	switch(req->action) {
 	case NN_SCR_DROP:
-		free(buf->pixels);
-		free(buf->mappedPalette);
-		free(buf->virtualPalette);
-		free(buf);
+		// this'd require the GPU is dropped first...
+		// its best we just dont bother and free later
+		//ne_dropScreenBuf(buf);
 		return NN_OK;
 	case NN_SCR_GETASPECTRATIO:
 		req->w = 1;
@@ -377,9 +452,181 @@ nn_Exit ne_screen_handler(nn_ScreenRequest *req) {
 	return NN_OK;
 }
 
+#define NE_MAX_VRAMBUF 16
+
+typedef struct ne_GPUState {
+	ne_ScreenBuffer *screenBuf;
+	int currentFg;
+	int currentBg;
+	bool isFgPalette;
+	bool isBgPalette;
+	int freeMemory;
+	int activeBuffer;
+	int scrAddrLen;
+	char scrAddr[NN_MAX_ADDRESS];
+	ne_ScreenBuffer *vramBufs[NE_MAX_VRAMBUF];
+} ne_GPUState;
+
+ne_GPUState *ne_newGPU(nn_GPU gpu) {
+	ne_GPUState *state = malloc(sizeof(*state));
+	state->screenBuf = NULL;
+	state->currentFg = 0xFFFFFF;
+	state->currentBg = 0x000000;
+	state->isFgPalette = false;
+	state->isBgPalette = false;
+	state->activeBuffer = 0;
+	state->freeMemory = gpu.totalVRAM;
+	for(int i = 0; i < NE_MAX_VRAMBUF; i++) {
+		state->vramBufs[i] = NULL;
+	}
+	return state;
+}
+
+ne_ScreenBuffer *ne_gpu_currentBuffer(ne_GPUState *state) {
+	if(state->activeBuffer == 0) return state->screenBuf;
+	return state->vramBufs[state->activeBuffer - 1];
+}
+
+nn_Exit ne_gpu_handler(nn_GPURequest *req) {
+	nn_Computer *C = req->computer;
+	ne_GPUState *state = req->instance;
+
+	int maxWidth = req->gpuConf->maxWidth;
+	int maxHeight = req->gpuConf->maxHeight;
+	int maxDepth = req->gpuConf->maxDepth;
+
+	ne_ScreenBuffer *activeBuf = ne_gpu_currentBuffer(state);
+
+	if(state->screenBuf != NULL) {
+		ne_ScreenBuffer *buf = state->screenBuf;
+		if(maxWidth > buf->maxWidth) maxWidth = buf->maxWidth;
+		if(maxHeight > buf->maxHeight) maxHeight = buf->maxHeight;
+		if(maxDepth > buf->maxDepth) maxDepth = buf->maxDepth;
+	}
+
+	int x, y, dx, dy, w, h, fg, bg;
+	ne_Pixel p;
+
+	switch(req->action) {
+	case NN_GPU_DROP:
+		for(int i = 0; i < NE_MAX_VRAMBUF; i++) {
+			ne_ScreenBuffer *buf = state->vramBufs[i];
+			if(buf != NULL) ne_dropScreenBuf(buf);
+		}
+		free(state);
+		return NN_OK;
+	case NN_GPU_BIND:
+		state->screenBuf = nn_getComponentUserdata(C, req->text);
+		memcpy(state->scrAddr, req->text, req->width);
+		state->scrAddrLen = req->width;
+		return NN_OK;
+	case NN_GPU_UNBIND:
+		state->screenBuf = NULL;
+		return NN_OK;
+	case NN_GPU_GETSCREEN:
+		if(state->screenBuf == NULL) {
+			req->text = NULL;
+			return NN_OK;
+		}
+		memcpy(req->text, state->scrAddr, state->scrAddrLen);
+		req->width = state->scrAddrLen;
+		return NN_OK;
+	case NN_GPU_GETRESOLUTION:
+		if(state->screenBuf == NULL) {
+			nn_setError(C, "no screen");
+			return NN_EBADCALL;
+		}
+		req->width = state->screenBuf->width;
+		req->height = state->screenBuf->height;
+		return NN_OK;
+	case NN_GPU_GET:
+		if(activeBuf == NULL) {
+			nn_setError(C, "no screen");
+			return NN_EBADCALL;
+		}
+		p = ne_getPixel(activeBuf, req->x, req->y);
+		fg = p.fg;
+		bg = p.bg;
+		if(p.isFgPalette) fg = activeBuf->virtualPalette[fg];
+		if(p.isBgPalette) bg = activeBuf->virtualPalette[bg];
+
+		req->codepoint = p.codepoint;
+		req->width = fg;
+		req->height = bg;
+		req->dest = p.isFgPalette ? p.fg : -1;
+		req->src = p.isBgPalette ? p.bg : -1;
+		return NN_OK;
+	case NN_GPU_SET:
+	case NN_GPU_SETVERTICAL:
+		if(activeBuf == NULL) {
+			nn_setError(C, "no screen");
+			return NN_EBADCALL;
+		}
+		dx = 1;
+		dy = 0;
+		if(req->action == NN_GPU_SETVERTICAL) dx = 0, dy = 1;
+
+		x = req->x;
+		y = req->y;
+		for(int i = 0; i < req->width; i++) {
+			if(!ne_inScreenBuf(activeBuf, x, y)) break;
+			ne_Pixel p = {
+				.fg = state->currentFg,
+				.bg = state->currentBg,
+				.isFgPalette = state->isFgPalette,
+				.isBgPalette = state->isBgPalette,
+				.codepoint = req->text[i],
+			};
+			ne_setPixel(activeBuf, x, y, p);
+			x += dx;
+			y += dy;
+		}
+		ne_remapScreen(activeBuf);
+		return NN_OK;
+	case NN_GPU_FILL:
+		if(activeBuf == NULL) {
+			nn_setError(C, "no screen");
+			return NN_EBADCALL;
+		}
+		x = req->x;
+		y = req->y;
+		w = req->width;
+		h = req->height;
+		if(x < 1) x = 1;
+		if(y < 1) y = 1;
+		if(w >= activeBuf->width) w = activeBuf->width - 1;
+		if(h >= activeBuf->height) h = activeBuf->height - 1;
+
+		p = (ne_Pixel) {
+			.fg = state->currentFg,
+			.bg = state->currentBg,
+			.isFgPalette = state->isFgPalette,
+			.isBgPalette = state->isBgPalette,
+			.codepoint = req->codepoint,
+		};
+		for(int oy = 0; oy < h; oy++) {
+			for(int ox = 0; ox < w; ox++) {
+				ne_setPixel(activeBuf, x + ox, y + oy, p);
+			}
+		}
+		return NN_OK;
+	}
+	return NN_OK;
+}
+
+Color ne_processColor(unsigned int color) {
+    color <<= 8;
+    color |= 0xFF;
+    return GetColor(color);
+}
+
 int main() {
 	nn_Context ctx;
 	nn_initContext(&ctx);
+	nn_initPalettes();
+
+	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+	InitWindow(800, 600, "NeoNucleus Test Emulator");
 
 	// create the universe
 	nn_Universe *u = nn_createUniverse(&ctx);
@@ -409,7 +656,9 @@ int main() {
 	for(size_t i = 1; i < 5; i++) {
 		fstype[i] = nn_createFilesystem(u, &nn_defaultFilesystems[i-1], ne_fsState_handler, NULL);
 	}
-	nn_ComponentType *scrtype = nn_createScreen(u, NULL, ne_screen_handler);
+	nn_ComponentType *scrtype = nn_createScreen(u, ne_screen_handler, NULL);
+	nn_ComponentType *keytype = nn_createKeyboard(u);
+	nn_ComponentType *gputype = nn_createGPU(u, &nn_defaultGPUs[3], ne_gpu_handler, NULL);
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", 8 * NN_MiB, 256, 256);
 	
@@ -422,35 +671,81 @@ int main() {
 	ne_FsState *mainFS = ne_newFS("OpenOS", false);
 	nn_addComponent(c, fstype[1], "mainFS", 2, mainFS);
 
-	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(nn_defaultScreens[3], NULL);
+	nn_addComponent(c, keytype, "mainKB", 4, NULL);
+	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(nn_defaultScreens[1], "mainKB");
 	nn_addComponent(c, scrtype, "mainScreen", -1, scrbuf);
 
+	ne_GPUState *gpu = ne_newGPU(nn_defaultGPUs[3]);
+	nn_addComponent(c, gputype, "mainGPU", 3, gpu);
+
+	SetExitKey(KEY_NULL);
+
+	Font font = LoadFont("unscii-16-full.ttf");
+	double tickDelay = 0.05;
+	double tickClock = 0;
+
 	while(true) {
-		nn_Exit e = nn_tick(c);
-		if(e != NN_OK) {
-			nn_setErrorFromExit(c, e);
-			printf("error: %s\n", nn_getError(c));
-			goto cleanup;
-		}
+		if(WindowShouldClose()) break;
 
-		nn_ComputerState state = nn_getComputerState(c);
-		if(state == NN_POWEROFF) break;
-		if(state == NN_CRASHED) {
-			printf("error: %s\n", nn_getError(c));
-			goto cleanup;
-		}
+		BeginDrawing();
+		ClearBackground(BLACK);
 
-		if(state == NN_CHARCH) {
-			printf("new arch: %s\n", nn_getDesiredArchitecture(c).name);
-			goto cleanup;
+		int scrW = scrbuf->width;
+		int scrH = scrbuf->height;
+
+		int pixelHeight = GetScreenHeight() / scrH;
+		float spacing = (float)pixelHeight/10;
+		int pixelWidth = MeasureTextEx(font, "A", pixelHeight, spacing).x;
+
+		int depth = scrbuf->depth;
+
+		int offX = (GetScreenWidth() - scrW * pixelWidth) / 2;
+		int offY = (GetScreenHeight() - scrH * pixelHeight) / 2;
+
+		for(int y = 0; y < scrH; y++) {
+			for(int x = 0; x < scrW; x++) {
+				ne_Pixel p = ne_getPixel(scrbuf, x+1, y+1);
+
+				Color fgColor = ne_processColor(p.truefg);
+				Color bgColor = ne_processColor(p.truebg);
+
+				DrawRectangle(x * pixelWidth + offX, y * pixelHeight + offY, pixelWidth, pixelHeight, bgColor);
+				DrawTextCodepoint(font, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight - 5, fgColor);
+			}
 		}
-		if(state == NN_BLACKOUT) {
-			printf("out of energy\n");
-			goto cleanup;
-		}
-		if(state == NN_RESTART) {
-			printf("restart requested\n");
-			goto cleanup;
+		EndDrawing();
+
+		tickClock -= GetFrameTime();
+
+		if(tickClock <= 0) {
+			tickClock = tickDelay;
+
+			nn_Exit e = nn_tick(c);
+			if(e != NN_OK) {
+				nn_setErrorFromExit(c, e);
+				printf("error: %s\n", nn_getError(c));
+				goto cleanup;
+			}
+
+			nn_ComputerState state = nn_getComputerState(c);
+			if(state == NN_POWEROFF) break;
+			if(state == NN_CRASHED) {
+				printf("error: %s\n", nn_getError(c));
+				goto cleanup;
+			}
+
+			if(state == NN_CHARCH) {
+				printf("new arch: %s\n", nn_getDesiredArchitecture(c).name);
+				goto cleanup;
+			}
+			if(state == NN_BLACKOUT) {
+				printf("out of energy\n");
+				goto cleanup;
+			}
+			if(state == NN_RESTART) {
+				printf("restart requested\n");
+				goto cleanup;
+			}
 		}
 	}
 
@@ -459,8 +754,13 @@ cleanup:;
 	nn_destroyComponentType(ctype);
 	nn_destroyComponentType(etype);
 	nn_destroyComponentType(scrtype);
+	nn_destroyComponentType(keytype);
+	nn_destroyComponentType(gputype);
 	for(size_t i = 0; i < 5; i++) nn_destroyComponentType(fstype[i]);
+	ne_dropScreenBuf(scrbuf);
 	// rip the universe
 	nn_destroyUniverse(u);
+	UnloadFont(font);
+	CloseWindow();
 	return 0;
 }

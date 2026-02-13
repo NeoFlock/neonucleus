@@ -831,6 +831,18 @@ const char *nn_getComputerAddress(nn_Computer *computer) {
 	return computer->address;
 }
 
+nn_Universe *nn_getComputerUniverse(nn_Computer *computer) {
+	return computer->universe;
+}
+
+nn_Context *nn_getUniverseContext(nn_Universe *universe) {
+	return &universe->ctx;
+}
+
+nn_Context *nn_getComputerContext(nn_Computer *computer) {
+	return &computer->universe->ctx;
+}
+
 nn_Exit nn_setTmpAddress(nn_Computer *computer, const char *address) {
 	nn_Context ctx = computer->universe->ctx;
 	if(address == NULL) {
@@ -1317,6 +1329,12 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 
 		// minimum cost of a component call
 		if(computer->callBudget > 0) computer->callBudget--;
+		for(size_t j = 0; j < c.ctype->methodCount; j++) {
+			nn_Method m = c.ctype->methods[j];
+			if(nn_strcmp(m.name, method) != 0) continue;
+			// indirect calls consume the entire call budget
+			if((m.flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
+		}
 		
 		nn_ComponentRequest req;
 		req.typeUserdata = c.ctype->userdata;
@@ -1416,6 +1434,10 @@ nn_Exit nn_pushbool(nn_Computer *computer, bool truthy) {
 
 nn_Exit nn_pushnumber(nn_Computer *computer, double num) {
 	return nn_pushvalue(computer, (nn_Value) {.type = NN_VAL_NUM, .number = num});
+}
+
+nn_Exit nn_pushinteger(nn_Computer *computer, intptr_t num) {
+	return nn_pushnumber(computer, num);
 }
 
 nn_Exit nn_pushstring(nn_Computer *computer, const char *str) {
@@ -1530,6 +1552,14 @@ bool nn_isnumber(nn_Computer *computer, size_t idx) {
 	return computer->callstack[idx].type == NN_VAL_NUM;
 }
 
+bool nn_isinteger(nn_Computer *computer, size_t idx) {
+	if(idx >= computer->stackSize) return false;
+	if(computer->callstack[idx].type != NN_VAL_NUM) return false;
+	double num = computer->callstack[idx].number;
+	intptr_t castNum = (intptr_t)num;
+	return (double)castNum == num;
+}
+
 bool nn_isstring(nn_Computer *computer, size_t idx) {
 	if(idx >= computer->stackSize) return false;
 	return computer->callstack[idx].type == NN_VAL_STR;
@@ -1550,11 +1580,96 @@ const char *nn_typenameof(nn_Computer *computer, size_t idx) {
 	return nn_typenames[computer->callstack[idx].type];
 }
 
+bool nn_checknull(nn_Computer *computer, size_t idx, const char *errMsg) {
+	if(nn_isnull(computer, idx)) return false;
+	nn_setError(computer, errMsg);
+	return true;
+}
+
+bool nn_checkboolean(nn_Computer *computer, size_t idx, const char *errMsg) {
+	if(nn_isboolean(computer, idx)) return false;
+	nn_setError(computer, errMsg);
+	return true;
+}
+
+bool nn_checknumber(nn_Computer *computer, size_t idx, const char *errMsg) {
+	if(nn_isnumber(computer, idx)) return false;
+	nn_setError(computer, errMsg);
+	return true;
+}
+
+bool nn_checkinteger(nn_Computer *computer, size_t idx, const char *errMsg) {
+	if(nn_isinteger(computer, idx)) return false;
+	nn_setError(computer, errMsg);
+	return true;
+}
+
+bool nn_checkstring(nn_Computer *computer, size_t idx, const char *errMsg) {
+	if(nn_isstring(computer, idx)) return false;
+	nn_setError(computer, errMsg);
+	return true;
+}
+
+bool nn_checkuserdata(nn_Computer *computer, size_t idx, const char *errMsg) {
+	if(nn_isuserdata(computer, idx)) return false;
+	nn_setError(computer, errMsg);
+	return true;
+}
+
+bool nn_checktable(nn_Computer *computer, size_t idx, const char *errMsg) {
+	if(nn_istable(computer, idx)) return false;
+	nn_setError(computer, errMsg);
+	return true;
+}
+
+nn_Exit nn_defaultnull(nn_Computer *computer, size_t idx) {
+	if(computer->stackSize != idx) return NN_OK;
+	return nn_pushnull(computer);
+}
+
+nn_Exit nn_defaultboolean(nn_Computer *computer, size_t idx, bool value) {
+	if(computer->stackSize != idx) return NN_OK;
+	return nn_pushbool(computer, value);
+}
+
+nn_Exit nn_defaultnumber(nn_Computer *computer, size_t idx, double num) {
+	if(computer->stackSize != idx) return NN_OK;
+	return nn_pushnumber(computer, num);
+}
+
+nn_Exit nn_defaultinteger(nn_Computer *computer, size_t idx, intptr_t num) {
+	if(computer->stackSize != idx) return NN_OK;
+	return nn_pushnumber(computer, num);
+}
+
+nn_Exit nn_defaultstring(nn_Computer *computer, size_t idx, const char *str) {
+	return nn_defaultlstring(computer, idx, str, nn_strlen(str));
+}
+
+nn_Exit nn_defaultlstring(nn_Computer *computer, size_t idx, const char *str, size_t len) {
+	if(computer->stackSize != idx) return NN_OK;
+	return nn_pushlstring(computer, str, len);
+}
+
+nn_Exit nn_defaultuserdata(nn_Computer *computer, size_t idx, size_t userdataIdx) {
+	if(computer->stackSize != idx) return NN_OK;
+	return nn_pushuserdata(computer, userdataIdx);
+}
+
+nn_Exit nn_defaulttable(nn_Computer *computer, size_t idx) {
+	if(computer->stackSize != idx) return NN_OK;
+	return nn_pushtable(computer, 0);
+}
+
 bool nn_toboolean(nn_Computer *computer, size_t idx) {
 	return computer->callstack[idx].boolean;
 }
 
 double nn_tonumber(nn_Computer *computer, size_t idx) {
+	return computer->callstack[idx].number;
+}
+
+intptr_t nn_tointeger(nn_Computer *computer, size_t idx) {
 	return computer->callstack[idx].number;
 }
 
@@ -1772,14 +1887,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		if(nn_strcmp(method, "makeReadonly") == 0) {
 			nn_costComponent(computer, req->compAddress, 1);
 			// 1st argument is a string, which is the checksum we're meant to have
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *desired = nn_tolstring(computer, 0, &len);
 			if(len != 8) {
@@ -1823,14 +1931,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		}
 		if(nn_strcmp(method, "setLabel") == 0) {
 			nn_costComponent(computer, req->compAddress, 1);
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
 			if(len > NN_MAX_LABEL) len = NN_MAX_LABEL;
@@ -1905,14 +2006,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		}
 		if(nn_strcmp(method, "setData") == 0) {
 			nn_costComponent(computer, req->compAddress, 1);
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
 			if(len > state->eeprom.dataSize) {
@@ -1927,14 +2021,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		}
 		if(nn_strcmp(method, "setArchitecture") == 0) {
 			nn_costComponent(computer, req->compAddress, 1);
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
 			if(len > NN_MAX_ARCHNAME) {
@@ -2189,14 +2276,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, buf, fsreq.strarg1len);
 		}
 		if(nn_strcmp(method, "setLabel") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			fsreq.action = NN_FS_SETLABEL;
 			// DO NOT MODIFY THE BUFFER!!!
 			fsreq.strarg1 = (char *)nn_tolstring(computer, 0, &fsreq.strarg1len);
@@ -2207,22 +2287,10 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
 		}
 		if(nn_strcmp(method, "open") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(nn_getstacksize(computer) < 2) {
-				err = nn_pushstring(computer, "r");
-				if(err) return err;
-			}
-			if(!nn_isstring(computer, 1)) {
-				nn_setError(computer, "bad argument #2 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+			err = nn_defaultstring(computer, 1, "r");
+			if(err) return err;
+			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
 			size_t pathlen;
 			const char *path = nn_tolstring(computer, 0, &pathlen);
 			if(pathlen >= NN_MAX_PATH) {
@@ -2245,38 +2313,20 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.fd);
 		}
 		if(nn_strcmp(method, "close") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isnumber(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			fsreq.fd = nn_tonumber(computer, 0);
+			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			fsreq.fd = nn_tointeger(computer, 0);
 			fsreq.action = NN_FS_CLOSE;
 			return state->handler(&fsreq);
 		}
 		if(nn_strcmp(method, "read") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isnumber(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			if(nn_getstacksize(computer) < 2) {
-				err = nn_pushnumber(computer, NN_MAX_READ);
-				if(err) return err;
-			}
-			if(!nn_isnumber(computer, 1)) {
-				nn_setError(computer, "bad argument #2 (integer expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			err = nn_defaultinteger(computer, 1, NN_MAX_READ);
+			if(err) return err;
+			if(nn_checknumber(computer, 1, "bad argument #2 (number expected)")) return NN_EBADCALL;
 			fsreq.action = NN_FS_READ;
-			fsreq.fd = nn_tonumber(computer, 0);
+			fsreq.fd = nn_tointeger(computer, 0);
 			double requested = nn_tonumber(computer, 1);
+			// handles infinity consistently
 			if(requested > NN_MAX_READ) requested = NN_MAX_READ;
 			if(requested < 0) requested = 0;
 			char buf[(size_t)requested];
@@ -2289,24 +2339,10 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
 		}
 		if(nn_strcmp(method, "write") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isnumber(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			if(nn_getstacksize(computer) < 2) {
-				nn_setError(computer, "bad argument #2 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isnumber(computer, 1)) {
-				nn_setError(computer, "bad argument #2 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
 			fsreq.action = NN_FS_WRITE;
-			fsreq.fd = nn_tonumber(computer, 0);
+			fsreq.fd = nn_tointeger(computer, 0);
 			fsreq.strarg1 = (char *)nn_tolstring(computer, 1, &fsreq.strarg1len);
 			err = state->handler(&fsreq);
 			if(err) return err;
@@ -2314,34 +2350,17 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushbool(computer, true);
 		}
 		if(nn_strcmp(method, "seek") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isnumber(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (integer expected)");
-				return NN_EBADCALL;
-			}
-			if(nn_getstacksize(computer) < 2) {
-				err = nn_pushstring(computer, "cur");
-				if(err) return err;
-			}
-			if(!nn_isstring(computer, 1)) {
-				nn_setError(computer, "bad argument #2 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(nn_getstacksize(computer) < 2) {
-				err = nn_pushnumber(computer, 0);
-				if(err) return err;
-			}
-			if(!nn_isnumber(computer, 2)) {
-				nn_setError(computer, "bad argument #2 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			err = nn_defaultstring(computer, 1, "cur");
+			if(err) return err;
+			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
+			err = nn_defaultinteger(computer, 2, 0);
+			if(err) return err;
+			if(nn_checkinteger(computer, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
 			fsreq.action = NN_FS_SEEK;
-			fsreq.fd = nn_tonumber(computer, 0);
+			fsreq.fd = nn_tointeger(computer, 0);
 			const char *whence = nn_tostring(computer, 1);
-			fsreq.off = nn_tonumber(computer, 2);
+			fsreq.off = nn_tointeger(computer, 2);
 
 			if(nn_strcmp(whence, "set") == 0) {
 				fsreq.whence = NN_SEEK_SET;
@@ -2357,14 +2376,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.off);
 		}
 		if(nn_strcmp(method, "list") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
 			const char *path = nn_tolstring(computer, 0, &pathlen);
@@ -2415,14 +2427,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return err;
 		}
 		if(nn_strcmp(method, "exists") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
 			const char *path = nn_tolstring(computer, 0, &pathlen);
@@ -2441,14 +2446,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushbool(computer, fsreq.size != 0);
 		}
 		if(nn_strcmp(method, "size") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
 			const char *path = nn_tolstring(computer, 0, &pathlen);
@@ -2467,14 +2465,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.size);
 		}
 		if(nn_strcmp(method, "lastModified") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
 			const char *path = nn_tolstring(computer, 0, &pathlen);
@@ -2493,14 +2484,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.size * 1000);
 		}
 		if(nn_strcmp(method, "isDirectory") == 0) {
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
+			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
 			const char *path = nn_tolstring(computer, 0, &pathlen);
@@ -2536,19 +2520,19 @@ nn_ComponentType *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem
 		{"isReadOnly", "function(): boolean - Returns whether the drive is read-only.", NN_DIRECT},
 		{"getLabel", "function(): string - Get the filesystem label.", NN_INDIRECT},
 		{"setLabel", "function(label: string): string - Set the filesystem label and return what was actually set, which may be truncated.", NN_INDIRECT},
-		{"open", "function(path: string, mode?: string = 'r'): number - Open a file. Valid modes are 'r' (read-only), 'w' (write-only) and 'a' (append-only).", NN_INDIRECT},
-		{"close", "function(fd: number) - Closes a file.", NN_INDIRECT},
-		{"read", "function(fd: number, count?: number): string? - Reads part of a file. If there is no more data, nothing is returned.", NN_INDIRECT},
-		{"write", "function(fd: number, data: string): boolean - Writes the data to a file. Returns true on success.", NN_INDIRECT},
-		{"seek", "function(fd: number, whence: string, offset: number): number - Seeks a file. Valid whences are 'set' (relative to start), 'cur' (relative to current), 'end' (relative to EoF, backwards). Returns the new position.", NN_INDIRECT},
-		{"list", "function(path: string): string[] - Returns the names of the entries inside of the directory. Directories get a / appended to their names.", NN_INDIRECT},
-		{"exists", "function(path: string): boolean - Checks if there exists an entry at the specified path.", NN_INDIRECT},
-		{"size", "function(path: string) - Gets the size of the entry at the specified path.", NN_INDIRECT},
-		{"remove", "function(path: string): boolean - Removes the entry at the specified path.", NN_INDIRECT},
-		{"rename", "function(from: string, to: string): boolean - Renames or moves an entry to a new location.", NN_INDIRECT},
-		{"isDirectory", "function(path: string): boolean - Checks if the entry at the specified path is a directory.", NN_INDIRECT},
-		{"lastModified", "function(path: string): number - Returns the UNIX timestamp of the time the entry was last modified. This is stored in milliseconds, but is always a multiple of 1000.", NN_INDIRECT},
-		{"makeDirectory", "function(path: string): boolean - Creates a directory. Creates parent directories if necessary.", NN_INDIRECT},
+		{"open", "function(path: string, mode?: string = 'r'): number - Open a file. Valid modes are 'r' (read-only), 'w' (write-only) and 'a' (append-only).", NN_DIRECT},
+		{"close", "function(fd: number) - Closes a file.", NN_DIRECT},
+		{"read", "function(fd: number, count?: number): string? - Reads part of a file. If there is no more data, nothing is returned.", NN_DIRECT},
+		{"write", "function(fd: number, data: string): boolean - Writes the data to a file. Returns true on success.", NN_DIRECT},
+		{"seek", "function(fd: number, whence: string, offset: number): number - Seeks a file. Valid whences are 'set' (relative to start), 'cur' (relative to current), 'end' (relative to EoF, backwards). Returns the new position.", NN_DIRECT},
+		{"list", "function(path: string): string[] - Returns the names of the entries inside of the directory. Directories get a / appended to their names.", NN_DIRECT},
+		{"exists", "function(path: string): boolean - Checks if there exists an entry at the specified path.", NN_DIRECT},
+		{"size", "function(path: string) - Gets the size of the entry at the specified path.", NN_DIRECT},
+		{"remove", "function(path: string): boolean - Removes the entry at the specified path.", NN_DIRECT},
+		{"rename", "function(from: string, to: string): boolean - Renames or moves an entry to a new location.", NN_DIRECT},
+		{"isDirectory", "function(path: string): boolean - Checks if the entry at the specified path is a directory.", NN_DIRECT},
+		{"lastModified", "function(path: string): number - Returns the UNIX timestamp of the time the entry was last modified. This is stored in milliseconds, but is always a multiple of 1000.", NN_DIRECT},
+		{"makeDirectory", "function(path: string): boolean - Creates a directory. Creates parent directories if necessary.", NN_DIRECT},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentType *t = nn_createComponentType(universe, "filesystem", state, methods, nn_filesystem_handler);
@@ -2564,7 +2548,6 @@ nn_ScreenConfig nn_defaultScreens[4] = {
 		.maxWidth = 50,
 		.maxHeight = 16,
 		.maxDepth = 1,
-		.editableColors = 0,
 		.paletteColors = 0,
 		.features = NN_SCRF_NONE,
 	},
@@ -2572,7 +2555,6 @@ nn_ScreenConfig nn_defaultScreens[4] = {
 		.maxWidth = 80,
 		.maxHeight = 25,
 		.maxDepth = 4,
-		.editableColors = 0,
 		.paletteColors = 16,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED,
 	},
@@ -2580,17 +2562,15 @@ nn_ScreenConfig nn_defaultScreens[4] = {
 		.maxWidth = 160,
 		.maxHeight = 50,
 		.maxDepth = 8,
-		.editableColors = 16,
 		.paletteColors = 256,
-		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE,
+		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE | NN_SCRF_EDITABLECOLORS,
 	},
 	(nn_ScreenConfig) {
 		.maxWidth = 240,
 		.maxHeight = 80,
 		.maxDepth = 16,
-		.editableColors = 256,
 		.paletteColors = 256,
-		.features = NN_SCRF_NONE,
+		.features = NN_SCRF_NONE | NN_SCRF_EDITABLECOLORS,
 	},
 };
 
@@ -2632,7 +2612,7 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createScreen(nn_Universe *universe, void *userdata, nn_ScreenHandler *handler) {
+nn_ComponentType *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata) {
 	nn_Context ctx = universe->ctx;
 	nn_Screen_state *state = nn_alloc(&ctx, sizeof(*state));
 	if(state == NULL) return NULL;
@@ -2658,6 +2638,18 @@ nn_ComponentType *nn_createScreen(nn_Universe *universe, void *userdata, nn_Scre
 		return NULL;
 	}
 	return t;
+}
+
+static nn_Exit nn_keyboard_handler(nn_ComponentRequest *req) {
+	(void)req;
+	return NN_OK;
+}
+
+nn_ComponentType *nn_createKeyboard(nn_Universe *universe) {
+	const nn_Method methods[] = {
+		{NULL, NULL, NN_INDIRECT},
+	};
+	return nn_createComponentType(universe, "keyboard", NULL, methods, nn_keyboard_handler);
 }
 
 nn_GPU nn_defaultGPUs[4] = {
@@ -2715,6 +2707,242 @@ nn_GPU nn_defaultGPUs[4] = {
 	},
 };
 
+typedef struct nn_GPU_state {
+	void *userdata;
+	nn_GPUHandler *handler;
+	nn_Universe *universe;
+	nn_GPU gpu;
+} nn_GPU_state;
+
+nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
+	nn_Computer *C = req->computer;
+	nn_GPU_state *state = req->typeUserdata;
+	nn_Context ctx = state->universe->ctx;
+	nn_GPU conf = state->gpu;
+
+	nn_GPURequest greq;
+	greq.computer = C;
+	greq.userdata = state->userdata;
+	greq.instance = req->compUserdata;
+	greq.gpuConf = &state->gpu;
+
+	const char *method = req->methodCalled;
+	nn_Exit err;
+
+	switch(req->action) {
+	case NN_COMP_FREETYPE:
+		nn_free(&ctx, state, sizeof(*state));
+		return NN_OK;
+	case NN_COMP_INIT:
+		return NN_OK;
+	case NN_COMP_DEINIT:
+		greq.action = NN_GPU_DROP;
+		return state->handler(&greq);
+	case NN_COMP_ENABLED:
+		req->methodEnabled = true;
+		return NN_OK;
+	case NN_COMP_CALL:
+		if(nn_strcmp(method, "bind") == 0) {
+			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+			err = nn_defaultboolean(C, 1, false);
+			if(err) return err;
+			if(nn_checkboolean(C, 1, "bad argument #2 (bool expected)")) return NN_EBADCALL;
+			greq.action = NN_GPU_BIND;
+			size_t len;
+			greq.text = (char *)nn_tolstring(C, 0, &len);
+			greq.width = len;
+			greq.x = nn_toboolean(C, 1) ? 1 : 0;
+			return state->handler(&greq);
+		}
+		if(nn_strcmp(method, "unbind") == 0) {
+			greq.action = NN_GPU_UNBIND;
+			return state->handler(&greq);
+		}
+		if(nn_strcmp(method, "getScreen") == 0) {
+			char buf[NN_MAX_ADDRESS];
+			greq.action = NN_GPU_GETSCREEN;
+			greq.text = buf;
+			greq.width = NN_MAX_ADDRESS;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 1;
+			if(greq.text == NULL) return nn_pushnull(C);
+			return nn_pushlstring(C, greq.text, greq.width);
+		}
+		if(nn_strcmp(method, "getResolution") == 0) {
+			greq.action = NN_GPU_GETRESOLUTION;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.width);
+			if(err) return err;
+			return nn_pushinteger(C, greq.height);
+		}
+		if(nn_strcmp(method, "set") == 0) {
+			nn_costComponent(C, req->compAddress, conf.setPerTick);
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkstring(C, 2, "bad argument #3 (string expected)")) return NN_EBADCALL;
+			err = nn_defaultboolean(C, 3, false);
+			if(err) return err;
+			if(nn_checkboolean(C, 3, "bad argument #4 (boolean expected)")) return NN_EBADCALL;
+			greq.action = nn_toboolean(C, 3) ? NN_GPU_SETVERTICAL : NN_GPU_SET;
+			size_t len;
+			greq.text = (char *)nn_tolstring(C, 2, &len);
+			if(len > conf.maxWidth) len = conf.maxWidth;
+			greq.width = len;
+			greq.x = nn_tointeger(C, 0);
+			greq.y = nn_tointeger(C, 1);
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushbool(C, true);
+		}
+		nn_setError(C, "method not yet implemented");
+		return NN_EBADCALL;
+	}
+	return NN_OK;
+}
+
+nn_ComponentType *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata) {
+	nn_Context ctx = universe->ctx;
+	nn_GPU_state *state = nn_alloc(&ctx, sizeof(*state));
+	if(state == NULL) return NULL;
+	state->handler = handler;
+	state->universe = universe;
+	state->userdata = userdata;
+	state->gpu = *gpu;
+
+	const nn_Method methods[] = {
+		{"bind", "function(address: string, reset?: boolean) - Bind the GPU to a screen.", NN_INDIRECT},
+		{"unbind", "function() - Unbind the GPU, if bound.", NN_INDIRECT},
+		{"getScreen", "function(): string? - Get the screen address, if any.", NN_DIRECT},
+		{"getBackground", "function(): integer, boolean - Get the current background color, and whether it is a palette index.", NN_DIRECT},
+		{"getForeground", "function(): integer, boolean - Get the current foreground color, and whether it is a palette index.", NN_DIRECT},
+		{"setBackground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current background color. Returns the old background color.", NN_DIRECT},
+		{"setForeground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current foreground color. Returns the old foreground color.", NN_DIRECT},
+		{"getPaletteColor", "function(index: integer): integer - Get a color from the palette.", NN_DIRECT},
+		{"setPaletteColor", "function(index: integer, color: integer): integer - Change a color from the palette. Returns the old one.", NN_DIRECT},
+		{"maxDepth", "function(): integer - Returns the maximum depth supported.", NN_DIRECT},
+		{"getDepth", "function(): integer - Returns the current depth used.", NN_DIRECT},
+		{"setDepth", "function(depth: integer): string - Change the current depth. Returns the name of the old one.", NN_DIRECT},
+		{"maxResolution", "function(): integer, integer - Returns the maximum working resolution.", NN_DIRECT},
+		{"getResolution", "function(): integer, integer - Returns the current resolution.", NN_DIRECT},
+		{"setResolution", "function(w: integer, h: integer): boolean - Changes the current resolution.", NN_DIRECT},
+		{"getViewport", "function(): integer, integer - Returns the current viewport resolution.", NN_DIRECT},
+		{"setViewport", "function(w: integer, h: integer): boolean - Changes the current viewport resolution.", NN_DIRECT},
+		{"get", "function(x: integer, y: integer): string, integer, integer, integer?, integer? - Gets information about a character. Returns the character, foreground color, background color, foreground palette index (if applicable), background palette index (if applicable).", NN_DIRECT},
+		{"set", "function(x: integer, y: integer, value: string, vertical?: boolean): boolean - Writes a string to the screen. The string is simply copied to the buffer, escapes and special characters are not given special treatment.", NN_DIRECT},
+		{"copy", "function(x: integer, y: integer, width: integer, height: integer, dx: integer, dy: integer) - Copies a rectangle on the screen buffer to a new position. The new position is x + dx, y + dy, thus dx and dy determine the translation of the copy.", NN_DIRECT},
+		{"fill", "function(x: integer, y: integer, width: integer, height: integer, char: string): boolean - Fills a rectangle on the screen buffer. Returns true on success, false otherwise.", NN_DIRECT},
+		// TODO: vram buffers
+		{NULL, NULL, NN_INDIRECT},
+	};
+	nn_ComponentType *t = nn_createComponentType(universe, "gpu", state, methods, nn_gpu_handler);
+	if(t == NULL) {
+		nn_free(&ctx, state, sizeof(*state));
+		return NULL;
+	}
+	return t;
+}
+
+int nn_palette2[4] = {
+	0x000000,
+	0x444444,
+	0x999999,
+	0xFFFFFF,
+};
+
+// The NeoNucleus 3-bit palette
+int nn_palette3[8] = {
+	0x000000,
+	0xFF0000,
+	0x00FF00,
+	0xFFFF00,
+	0x0000FF,
+	0xFF00FF,
+	0x00FFFF,
+	0xFFFFFF,
+};
+
+// The OC 4-bit palette.
+int nn_ocpalette4[16] = {
+	0xFFFFFF, // white
+	0xFFCC33, // orange
+	0xCC66CC, // magenta
+	0x6699FF, // lightblue
+	0xFFFF33, // yellow
+	0x33CC33, // lime
+	0xFF6699, // pink
+	0x333333, // gray
+	0xCCCCCC, // silver
+	0x336699, // cyan
+	0x9933CC, // purple
+	0x333399, // blue
+	0x663300, // brown
+	0x336600, // green
+	0xFF3333, // red
+	0x000000, // black
+};
+
+// The Minecraft 4-bit palette, using dye colors.
+int nn_mcpalette4[16] = {
+	0xFFFFFF, // white
+	0xF9801D, // orange
+	0xC74EBD, // magenta
+	0x3AB3DA, // lightblue
+	0xFED83D, // yellow
+	0x80C71F, // lime
+	0xF38BAA, // pink
+	0x474F52, // gray
+	0x9D9D97, // silver
+	0x169C9C, // cyan
+	0x8932B8, // purple
+	0x3C44AA, // blue
+	0x835432, // brown
+	0x5E7C16, // green
+	0xB02E26, // red
+	0x000000, // black
+};
+
+// The OC 8-bit palette.
+int nn_ocpalette8[256];
+
+void nn_initPalettes() {
+	// generate the 8-bit palette
+    // source: https://ocdoc.cil.li/component:gpu
+    int reds[6] = {0x00, 0x33, 0x66, 0x99, 0xCC, 0xFF};
+    int greens[8] = {0x00, 0x24, 0x49, 0x6D, 0x92, 0xB6, 0xDB, 0xFF};
+    int blues[5] = {0x00, 0x40, 0x80, 0xC0, 0xFF};
+
+    for(int r = 0; r < 6; r++) {
+        for(int g = 0; g < 8; g++) {
+            for(int b = 0; b < 5; b++) {
+                int i = r * 8 * 5 + g * 5 + b;
+                nn_ocpalette8[i+16] = (reds[r] << 16) | (greens[g] << 8) | (blues[b]);
+            }
+        }
+    }
+
+    // TODO: turn into an algorithm
+    nn_ocpalette8[0] = 0x0F0F0F;
+    nn_ocpalette8[1] = 0x1E1E1E;
+    nn_ocpalette8[2] = 0x2D2D2D;
+    nn_ocpalette8[3] = 0x3C3C3C;
+    nn_ocpalette8[4] = 0x4B4B4B;
+    nn_ocpalette8[5] = 0x5A5A5A;
+    nn_ocpalette8[6] = 0x696969;
+    nn_ocpalette8[7] = 0x787878;
+    nn_ocpalette8[8] = 0x878787;
+    nn_ocpalette8[9] = 0x969696;
+    nn_ocpalette8[10] = 0xA5A5A5;
+    nn_ocpalette8[11] = 0xB4B4B4;
+    nn_ocpalette8[12] = 0xC3C3C3;
+    nn_ocpalette8[13] = 0xD2D2D2;
+    nn_ocpalette8[14] = 0xE1E1E1;
+    nn_ocpalette8[15] = 0xF0F0F0;
+}
+
 int nn_mapColor(int color, int *palette, size_t len) {
 	// TODO: color mapping
 	(void)palette;
@@ -2737,4 +2965,389 @@ const char *nn_depthName(int depth) {
 	if(depth == 16) return "SixteenBit";
 	if(depth == 24) return "TwentyfourBit";
 	return NULL;
+}
+
+// Unicode
+
+// both tables copied from: https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/scala/li/cil/oc/util/FontUtils.scala
+static const unsigned char nn_unicode_charWidth_table[] = {
+    16, 16, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 16, 33, 16, 16, 16, 34, 35, 36,
+    37, 38, 39, 40, 16, 16, 41, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 42, 43, 16, 16, 44, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 45, 16, 46, 47, 48, 49, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 50, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 51, 16, 16, 52,
+    53, 16, 54, 55, 56, 16, 16, 16, 16, 16, 16, 57, 16, 16, 58, 16, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
+    69, 70, 16, 71, 72, 73, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 74, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 75, 76, 16, 16, 16, 77, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 78, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 79, 80, 16, 16, 16, 16, 16, 16, 16, 81, 16, 16, 16, 16, 16, 82, 83, 84, 16, 16, 16, 16, 16, 85,
+    86, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 248, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 254, 255, 255, 255, 255, 191, 182, 0, 0, 0, 0, 0, 0, 0, 63, 0, 255, 23, 0, 0, 0, 0, 0, 248, 255,
+    255, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 159, 61, 0, 0, 0, 128, 2, 0, 0, 0, 255, 255, 255,
+    7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 255, 1, 0, 0, 0, 0, 0, 0, 248, 15, 32, 0, 0, 192, 251, 239, 62, 0, 0,
+    0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 255, 255, 255, 255,
+    255, 7, 0, 0, 0, 0, 0, 0, 20, 254, 33, 254, 0, 12, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 16, 30, 32, 0, 0, 12, 0, 0,
+    64, 6, 0, 0, 0, 0, 0, 0, 16, 134, 57, 2, 0, 0, 0, 35, 0, 6, 0, 0, 0, 0, 0, 0, 16, 190, 33, 0, 0, 12, 0, 0,
+    252, 2, 0, 0, 0, 0, 0, 0, 144, 30, 32, 64, 0, 12, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 1, 32, 0, 0, 0, 0, 0, 0, 17,
+    0, 0, 0, 0, 0, 0, 192, 193, 61, 96, 0, 12, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 144, 64, 48, 0, 0, 12, 0, 0, 0, 3, 0,
+    0, 0, 0, 0, 0, 24, 30, 32, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 92, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    242, 7, 128, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 242, 31, 0, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 160,
+    2, 0, 0, 0, 0, 0, 0, 254, 127, 223, 224, 255, 254, 255, 255, 255, 31, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 224, 253, 102, 0, 0, 0, 195, 1, 0, 30, 0, 100, 32, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 0, 0, 0, 28, 0, 0, 0, 12, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 176, 63, 64, 254,
+    15, 32, 0, 0, 0, 0, 0, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 135, 1, 4, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    128, 9, 0, 0, 0, 0, 0, 0, 64, 127, 229, 31, 248, 159, 0, 0, 0, 0, 0, 0, 255, 127, 0, 0, 0, 0, 0, 0, 0, 0,
+    15, 0, 0, 0, 0, 0, 208, 23, 4, 0, 0, 0, 0, 248, 15, 0, 3, 0, 0, 0, 60, 59, 0, 0, 0, 0, 0, 0, 64, 163, 3, 0, 0,
+    0, 0, 0, 0, 240, 207, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 247, 255, 253, 33, 16,
+    3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255,
+    251, 0, 248, 0, 0, 0, 124, 0, 0, 0, 0, 0, 0, 223, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255,
+    255, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 3, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0, 0,
+    0, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 128, 247, 63, 0, 0, 0, 192, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 68, 8, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 0, 0, 0, 255, 255, 3, 128, 0, 0, 0, 0, 192, 63, 0, 0, 128, 255, 3, 0,
+    0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 200, 51, 0, 0, 0, 0, 32, 0, 0,
+    0, 0, 0, 0, 0, 0, 126, 102, 0, 8, 16, 0, 0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 157, 193, 2, 0, 0, 0, 0, 48, 64, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 33, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0,
+    64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 0, 0, 255,
+    255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 110, 240, 0,
+    0, 0, 0, 0, 135, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 0, 0, 0, 0, 0, 0, 0, 240, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 192, 255, 1, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 255, 127, 0, 0, 0, 0, 0, 0, 128,
+    3, 0, 0, 0, 0, 0, 120, 38, 0, 32, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 128, 239, 31, 0, 0, 0, 0, 0, 0, 0, 8, 0, 3, 0,
+    0, 0, 0, 0, 192, 127, 0, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 211, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 128, 248, 7, 0, 0, 3, 0, 0, 0, 0, 0, 0, 24, 1, 0, 0, 0, 192, 31, 31, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 255, 92, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 248, 133, 13, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60, 176, 1, 0, 0, 48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    248, 167, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 191, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 224, 188, 15, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 255, 6, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 240, 12, 1, 0, 0, 0, 254, 7, 0, 0, 0, 0, 248, 121, 128, 0, 126, 14, 0, 0, 0, 0, 0, 252,
+    127, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 191, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 252, 255,
+    255, 252, 109, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 126, 180, 191, 0, 0, 0, 0, 0, 0, 0, 0, 0, 163, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 0, 255,
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 128, 7, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 3, 248, 255, 231, 15, 0, 0, 0, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255,
+    255, 255, 255, 255, 127, 248, 255, 255, 255, 255, 255, 31, 32, 0, 16, 0, 0, 248, 254, 255, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 127, 255, 255, 249, 219, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 240, 7, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+static const unsigned char nn_unicode_charWidth_wide_table[] = {
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 18, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 19, 16, 20, 21, 22, 16, 16, 16, 23, 16, 16, 24, 25, 26, 27, 28, 17,
+    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 29,
+    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+    17, 17, 17, 17, 17, 17, 17, 17, 30, 16, 16, 16, 16, 31, 16, 16, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+    17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+    17, 17, 17, 17, 17, 17, 17, 32, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 17, 17, 16, 16, 16, 33,
+    34, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 35, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17,
+    17, 17, 17, 17, 17, 17, 36, 17, 17, 37, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 17, 38, 39, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+    16, 16, 16, 16, 16, 16, 16, 40, 41, 42, 43, 44, 45, 46, 47, 16, 48, 49, 16, 16, 16, 16,
+    16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 0, 0, 0, 80, 184, 0, 0, 0, 0, 0, 0, 0, 224,
+    0, 0, 0, 1, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 0, 0, 0, 0, 0, 0, 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 251, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 15, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 63, 0, 0, 0, 255, 15, 255, 255, 255, 255,
+    255, 255, 255, 127, 254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127, 254, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 224, 255, 255, 255, 255, 255, 254, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 127, 255, 255, 255, 255, 255, 7, 255, 255, 255, 255, 15, 0,
+    255, 255, 255, 255, 255, 127, 255, 255, 255, 255, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0,
+    0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 31, 255, 255, 255, 255, 255, 255, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255,
+    255, 255, 31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 3, 0, 0, 255, 255, 255, 255, 247, 255, 127, 15, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 7, 0, 255, 255, 255, 127, 0, 0, 0, 0, 0,
+    0, 7, 0, 240, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    15, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 254, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 255, 255, 255,
+    255, 255, 15, 255, 1, 3, 0, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255,
+    1, 224, 191, 255, 255, 255, 255, 255, 255, 255, 255, 223, 255, 255, 15, 0, 255, 255, 255, 255,
+    255, 135, 15, 0, 255, 255, 17, 255, 255, 255, 255, 255, 255, 255, 255, 127, 253, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    159, 255, 255, 255, 255, 255, 255, 255, 63, 0, 120, 255, 255, 255, 0, 0, 4, 0, 0, 96, 0, 16, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 248, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 255, 255,
+    255, 255, 255, 255, 255, 255, 63, 16, 39, 0, 0, 24, 240, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 15, 0,
+    0, 0, 224, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 123, 252, 255, 255, 255,
+    255, 231, 199, 255, 255, 255, 231, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 15, 7, 7, 0, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
+
+static bool nn_unicode_is_continuation(unsigned char byte) {
+    return (byte >> 6) == 0b10;
+}
+
+bool nn_unicode_validate(const char *s, size_t len) {
+	for(size_t i = 0; i < len;) {
+		size_t w = nn_unicode_validateFirstChar(s + i, len - i);
+		if(w == 0) return false;
+		i += w;
+	}
+	return true;
+}
+
+size_t nn_unicode_validateFirstChar(const char *s, size_t len) {
+	if(len < 1) return 0;
+    if(s[0] <= 0x7F) {
+        return 1;
+    } else if((s[0] >> 5) == 0b110) {
+		if(len < 2) return 0;
+        if (!nn_unicode_is_continuation(s[1])) {
+            return 0;
+        }
+		return 2;
+    } else if((s[0] >> 4) == 0b1110) {
+		if(len < 3) return 0;
+        if (!nn_unicode_is_continuation(s[1])) {
+            return 0;
+        }
+        if (!nn_unicode_is_continuation(s[2])) {
+            return 0;
+        }
+		return 3;
+    } else if((s[0] >> 3) == 0b11110) {
+		if(len < 4) return 0;
+        if (!nn_unicode_is_continuation(s[1])) {
+            return 0;
+        }
+        if (!nn_unicode_is_continuation(s[2])) {
+            return 0;
+        }
+        if (!nn_unicode_is_continuation(s[3])) {
+            return 0;
+        }
+		return 4;
+	}
+    return 0;
+}
+
+size_t nn_unicode_len(const char *s, size_t len) {
+	size_t ulen = 0;
+	for(size_t i = 0; i < len;) {
+		size_t cw = nn_unicode_validateFirstChar(s + i, len - i);
+		i += cw;
+		ulen++;
+	}
+	return ulen;
+}
+
+size_t nn_unicode_lenPermissive(const char *s, size_t len) {
+	size_t ulen = 0;
+	for(size_t i = 0; i < len;) {
+		size_t cw = nn_unicode_validateFirstChar(s + i, len - i);
+		if(cw == 0) cw = 1;
+		i += cw;
+		ulen++;
+	}
+	return ulen;
+}
+
+void nn_unicode_codepoints(const char *s, size_t len, nn_codepoint *codepoints) {
+	size_t i = 0;
+	for(size_t j = 0; j < len;) {
+		codepoints[i++] = nn_unicode_firstCodepoint(s + j);
+		size_t cw = nn_unicode_validateFirstChar(s + j, len - j);
+		j += cw;
+	}
+}
+
+void nn_unicode_codepointsPermissive(const char *s, size_t len, nn_codepoint *codepoints) {
+	size_t i = 0;
+	for(size_t j = 0; j < len;) {
+		size_t cw = nn_unicode_validateFirstChar(s + j, len - j);
+		if(cw == 0) {
+			codepoints[i++] = (unsigned char)s[j];
+			j++;
+		} else {
+			codepoints[i++] = nn_unicode_firstCodepoint(s + j);
+		}
+		j += cw;
+	}
+}
+
+nn_codepoint nn_unicode_firstCodepoint(const char *s) {
+	nn_codepoint point = 0;
+	const unsigned char *b = (const unsigned char *)s;
+    const unsigned char subpartMask = 0b111111;
+    if(b[0] <= 0x7F) {
+        return b[0];
+    } else if((b[0] >> 5) == 0b110) {
+        point += ((unsigned int)(b[0] & 0b11111)) << 6;
+        point += ((unsigned int)(b[1] & subpartMask));
+    } else if((b[0] >> 4) == 0b1110) {
+        point += ((unsigned int)(b[0] & 0b1111)) << 12;
+        point += ((unsigned int)(b[1] & subpartMask)) << 6;
+        point += ((unsigned int)(b[2] & subpartMask));
+    } else if((b[0] >> 3) == 0b11110) {
+        point += ((unsigned int)(b[0] & 0b111)) << 18;
+        point += ((unsigned int)(b[1] & subpartMask)) << 12;
+        point += ((unsigned int)(b[2] & subpartMask)) << 6;
+        point += ((unsigned int)(b[3] & subpartMask));
+    }
+    return point;
+}
+
+size_t nn_unicode_codepointSize(nn_codepoint codepoint) {
+    if (codepoint <= 0x007f) {
+        return 1;
+    } else if (codepoint <= 0x07ff) {
+        return 2;
+    } else if (codepoint <= 0xffff) {
+        return 3;
+    } else if (codepoint <= 0x10ffff) {
+        return 4;
+    }
+
+    return 1;
+}
+
+size_t nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], nn_codepoint codepoint) {
+    size_t codepointSize = nn_unicode_codepointSize(codepoint);
+
+    if (codepointSize == 1) {
+        buffer[0] = (char)codepoint;
+    } else if (codepointSize == 2) {
+        buffer[0] = 0b11000000 + ((codepoint >> 6) & 0b11111);
+        buffer[1] = 0b10000000 + (codepoint & 0b111111);
+    } else if (codepointSize == 3) {
+        buffer[0] = 0b11100000 + ((codepoint >> 12) & 0b1111);
+        buffer[1] = 0b10000000 + ((codepoint >> 6) & 0b111111);
+        buffer[2] = 0b10000000 + (codepoint & 0b111111);
+    } else if (codepointSize == 4) {
+        buffer[0] = 0b11110000 + ((codepoint >> 18) & 0b111);
+        buffer[1] = 0b10000000 + ((codepoint >> 12) & 0b111111);
+        buffer[2] = 0b10000000 + ((codepoint >> 6) & 0b111111);
+        buffer[3] = 0b10000000 + (codepoint & 0b111111);
+    }
+	return codepointSize;
+}
+
+// copied straight from opencomputers and musl's libc
+// https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/scala/li/cil/oc/util/FontUtils.scala#L205
+// https://git.musl-libc.org/cgit/musl/tree/src/ctype/wcwidth.c
+size_t nn_unicode_charWidth(nn_codepoint codepoint) {
+    if (codepoint < 0xff) {
+        if (((codepoint + 1) & 0x7f) >= 0x21) {
+            return 1;
+        } else {
+            return 0;
+        }
+    } else if ((codepoint & 0xfffeffff) < 0xfffe) {
+        if ((nn_unicode_charWidth_table[nn_unicode_charWidth_table[codepoint>>8]*32+((codepoint&255)>>3)]>>(codepoint&7))&1)
+			return 0;
+		if ((nn_unicode_charWidth_wide_table[nn_unicode_charWidth_wide_table[codepoint>>8]*32+((codepoint&255)>>3)]>>(codepoint&7))&1)
+			return 2;
+        return 1;
+    } else if (codepoint-0x20000 < 0x20000) {
+        return 2;
+    } else if (codepoint == 0xe0001 || codepoint-0xe0020 < 0x5f || codepoint-0xe0100 < 0xef) {
+        return 0;
+    }
+    return 1;
+}
+
+size_t nn_unicode_wlen(const char *s, size_t len) {
+	size_t wlen = 0;
+	for(size_t i = 0; i < len;) {
+		nn_codepoint codepoint = nn_unicode_firstCodepoint(s + i);
+		size_t size = nn_unicode_codepointSize(codepoint);
+		wlen += nn_unicode_charWidth(codepoint);
+		i += size;
+	}
+	return wlen;
+}
+
+size_t nn_unicode_wlenPermissive(const char *s, size_t len) {
+	size_t wlen = 0;
+	for(size_t i = 0; i < len;) {
+		if(nn_unicode_validateFirstChar(s + i, len - i) == 0) {
+			size_t width = nn_unicode_charWidth((unsigned char)s[i]);
+			wlen += width;
+			i++;
+		} else {
+			nn_codepoint codepoint = nn_unicode_firstCodepoint(s + i);
+			size_t size = nn_unicode_codepointSize(codepoint);
+			size_t width = nn_unicode_charWidth(codepoint);
+			wlen += width;
+			i += size;
+		}
+	}
+	return wlen;
+}
+
+size_t nn_unicode_countBytes(nn_codepoint *codepoints, size_t len) {
+	size_t count = 0;
+	for(size_t i = 0; i < len; i++) count += nn_unicode_codepointSize(codepoints[i]);
+	return count;
+}
+
+void nn_unicode_writeBytes(char *s, nn_codepoint *codepoints, size_t len) {
+	for(size_t i = 0; i < len; i++) {
+		nn_codepoint cp = codepoints[i];
+		size_t size = nn_unicode_codepointSize(cp);
+		nn_unicode_codepointToChar(s, cp);
+		s += size;
+	}
+}
+
+// TODO: impl ts
+nn_codepoint nn_unicode_upper(nn_codepoint codepoint) {
+	return codepoint;
+}
+
+nn_codepoint nn_unicode_lower(nn_codepoint codepoint) {
+	return codepoint;
 }
