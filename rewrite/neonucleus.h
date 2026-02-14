@@ -85,7 +85,7 @@ extern "C" {
 #define NN_MAX_USERNAME 128
 
 // the maximum size of a UTF-8 character
-#define NN_MAXIMUM_UNICODE_BUFFER 4
+#define NN_MAX_UNICODE_BUFFER 4
 
 // the maximum size of a component error message. If the error is bigger than this,
 // it is truncated.
@@ -126,7 +126,7 @@ nn_codepoint nn_unicode_firstCodepoint(const char *s);
 size_t nn_unicode_codepointSize(nn_codepoint codepoint);
 // Writes the UTF-8 bytes for a given codepoint into buffer.
 // It does NOT write a NULL terminator, but it does return the length.
-size_t nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], nn_codepoint codepoint);
+size_t nn_unicode_codepointToChar(char buffer[NN_MAX_UNICODE_BUFFER], nn_codepoint codepoint);
 // the width, on a screen, for a codepoint.
 // This matters for emojies.
 size_t nn_unicode_charWidth(nn_codepoint codepoint);

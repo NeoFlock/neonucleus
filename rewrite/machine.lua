@@ -21,8 +21,9 @@ function coroutine.resume(co, ...)
 	end
 end
 
-local clist, cinvoke, computer, component, print = component.list, component.invoke, computer, component, print
+local clist, cinvoke, computer, component, print, unicode = component.list, component.invoke, computer, component, print, unicode
 debug.print = print
+debug.sysyield = sysyield
 
 function component.list(ctype, exact)
 	local list = clist()
@@ -155,6 +156,44 @@ function computer.pullSignal(timeout)
 	end
 end
 
+unicode.upper, unicode.lower = string.upper, string.lower
+
+unicode.isWide = function(s)
+	local c = unicode.sub(s, 1, 1)
+	return unicode.wlen(c) > unicode.len(c)
+end
+
+unicode.wtrunc = function(str,space)
+	space = space - 1
+	return unicode.sub(str, 1, space)
+end
+
+unicode.sub = function(str, a, b)
+	if not b then b = utf8.len(str) end
+	if not a then a = 1 end
+	-- a = math.max(a,1)
+	
+	if a < 0 then
+		-- negative
+		
+		a = utf8.len(str) + a + 1
+	end
+	
+	if b < 0 then
+		b = utf8.len(str) + b + 1
+	end
+	
+	if a > b then return "" end
+	
+	if b >= utf8.len(str) then b = #str else b = utf8.offset(str,b+1)-1 end
+	
+	if a > utf8.len(str) then return "" end
+	a = utf8.offset(str,a)
+	
+	return str:sub(a,b)
+	-- return str:sub(a, b)
+end
+
 function checkArg(arg, val, ...)
 	local t = {...}
 	for i=1,#t do
@@ -165,7 +204,7 @@ end
 
 if os.getenv("NN_REPL") == "1" then
 	while true do
-		io.write("lua> ")
+		io.write("\x1b[34mlua>\x1b[0m ")
 		io.flush()
 		local l = io.read("l")
 		if not l then break end
@@ -176,6 +215,7 @@ if os.getenv("NN_REPL") == "1" then
 			f, err = load(l, "=repl")
 			if f then f() else print(err) end
 		end
+		coroutine.yield()
 	end
 	io.write("\n")
 	print("exiting repl")

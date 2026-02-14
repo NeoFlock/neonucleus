@@ -445,6 +445,12 @@ static int luaArch_unicode_sub(lua_State *L) {
 	if(lua_gettop(L) < 3) lua_pushinteger(L, -1);
 
 	size_t len = nn_unicode_lenPermissive(s, slen);
+   
+	// OpenOS does this...
+	if(len == 0) {
+        lua_pushstring(L, "");
+        return 1;
+    }
 
 	int start = lua_tointeger(L, 2);
 	int end = lua_tointeger(L, 3);
@@ -464,6 +470,11 @@ static int luaArch_unicode_sub(lua_State *L) {
 	if(end < 0) end = 0;
 	if(end >= len) end = len-1;
 
+	if(start > end) {
+		lua_pushstring(L, "");
+		return 1;
+	}
+
 	nn_codepoint *cp = malloc(sizeof(*cp) * len);
 	nn_unicode_codepointsPermissive(s, slen, cp);
 
@@ -481,6 +492,11 @@ static int luaArch_unicode_wlen(lua_State *L) {
 	const char *s = lua_tolstring(L, 1, &slen);
 	size_t len = nn_unicode_wlenPermissive(s, slen);
 	lua_pushinteger(L, len);
+	return 1;
+}
+
+static int luaArch_unicode_wtrunc(lua_State *L) {
+	lua_pushvalue(L, 1);
 	return 1;
 }
 
@@ -547,8 +563,10 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_setfield(L, component, "len");
 	lua_pushcfunction(L, luaArch_unicode_sub);
 	lua_setfield(L, component, "sub");
-	lua_pushcfunction(L, luaArch_unicode_wlen);
+	lua_pushcfunction(L, luaArch_unicode_len);
 	lua_setfield(L, component, "wlen");
+	lua_pushcfunction(L, luaArch_unicode_wtrunc);
+	lua_setfield(L, component, "wtrunc");
 	lua_setglobal(L, "unicode");
 }
 

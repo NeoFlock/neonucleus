@@ -2752,11 +2752,15 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			greq.text = (char *)nn_tolstring(C, 0, &len);
 			greq.width = len;
 			greq.x = nn_toboolean(C, 1) ? 1 : 0;
-			return state->handler(&greq);
+			err = state->handler(&greq);
+			if(err) return err;
+			return nn_pushbool(C, true);
 		}
 		if(nn_strcmp(method, "unbind") == 0) {
 			greq.action = NN_GPU_UNBIND;
-			return state->handler(&greq);
+			err = state->handler(&greq);
+			if(err) return err;
+			return nn_pushbool(C, true);
 		}
 		if(nn_strcmp(method, "getScreen") == 0) {
 			char buf[NN_MAX_ADDRESS];
@@ -2797,6 +2801,148 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			req->returnCount = 1;
 			return nn_pushbool(C, true);
+		}
+		if(nn_strcmp(method, "get") == 0) {
+			nn_costComponent(C, req->compAddress, conf.setPerTick);
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
+			greq.action = NN_GPU_GET;
+			greq.x = nn_tointeger(C, 0);
+			greq.y = nn_tointeger(C, 1);
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 5;
+			char buf[NN_MAX_UNICODE_BUFFER];
+			size_t len = nn_unicode_codepointToChar(buf, greq.codepoint);
+			err = nn_pushlstring(C, buf, len);
+			if(err) return err;
+			err = nn_pushinteger(C, greq.width);
+			if(err) return err;
+			err = nn_pushinteger(C, greq.height);
+			if(err) return err;
+			if(greq.dest == -1) err = nn_pushnull(C);
+			else err = nn_pushinteger(C, greq.dest);
+			if(err) return err;
+			if(greq.src == -1) err = nn_pushnull(C);
+			else err = nn_pushinteger(C, greq.src);
+			if(err) return err;
+			return NN_OK;
+		}
+		if(nn_strcmp(method, "fill") == 0) {
+			nn_costComponent(C, req->compAddress, conf.fillPerTick);
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 3, "bad argument #4 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkstring(C, 4, "bad argument #5 (string expected)")) return NN_EBADCALL;
+			greq.action = NN_GPU_FILL;
+			size_t len;
+			const char *text = nn_tolstring(C, 4, &len);
+			if(nn_unicode_validateFirstChar(text, len) == 0) {
+				nn_setError(C, "invalid UTF-8 character");
+				return NN_EBADCALL;
+			}
+			greq.codepoint = nn_unicode_firstCodepoint(text);
+			greq.x = nn_tointeger(C, 0);
+			greq.y = nn_tointeger(C, 1);
+			greq.width = nn_tointeger(C, 2);
+			greq.height = nn_tointeger(C, 3);
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushbool(C, true);
+		}
+		if(nn_strcmp(method, "copy") == 0) {
+			nn_costComponent(C, req->compAddress, conf.copyPerTick);
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 3, "bad argument #4 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 4, "bad argument #5 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkinteger(C, 5, "bad argument #6 (integer expected)")) return NN_EBADCALL;
+			greq.action = NN_GPU_COPY;
+			greq.x = nn_tointeger(C, 0);
+			greq.y = nn_tointeger(C, 1);
+			greq.width = nn_tointeger(C, 2);
+			greq.height = nn_tointeger(C, 3);
+			greq.tx = nn_tointeger(C, 4);
+			greq.ty = nn_tointeger(C, 5);
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushbool(C, true);
+		}
+		if(nn_strcmp(method, "getDepth") == 0) {
+			greq.action = NN_GPU_GETDEPTH;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushinteger(C, greq.x);
+		}
+		if(nn_strcmp(method, "getViewport") == 0) {
+			greq.action = NN_GPU_GETVIEWPORT;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.width);
+			if(err) return err;
+			return nn_pushinteger(C, greq.height);
+		}
+		if(nn_strcmp(method, "setForeground") == 0) {
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			err = nn_defaultboolean(C, 1, false);
+			if(err) return err;
+			if(nn_checkinteger(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
+			greq.action = NN_GPU_SETFOREGROUND;
+			greq.x = nn_tointeger(C, 0);
+			greq.y = nn_toboolean(C, 1) ? 1 : 0;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.x);
+			if(err) return err;
+			err = nn_pushbool(C, greq.y != 0);
+			if(err) return err;
+			return NN_OK;
+		}
+		if(nn_strcmp(method, "getForeground") == 0) {
+			greq.action = NN_GPU_GETFOREGROUND;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.x);
+			if(err) return err;
+			err = nn_pushbool(C, greq.y != 0);
+			if(err) return err;
+			return NN_OK;
+		}
+		if(nn_strcmp(method, "setBackground") == 0) {
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			err = nn_defaultboolean(C, 1, false);
+			if(err) return err;
+			if(nn_checkinteger(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
+			greq.action = NN_GPU_SETBACKGROUND;
+			greq.x = nn_tointeger(C, 0);
+			greq.y = nn_toboolean(C, 1) ? 1 : 0;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.x);
+			if(err) return err;
+			err = nn_pushbool(C, greq.y != 0);
+			if(err) return err;
+			return NN_OK;
+		}
+		if(nn_strcmp(method, "getBackground") == 0) {
+			greq.action = NN_GPU_GETBACKGROUND;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.x);
+			if(err) return err;
+			err = nn_pushbool(C, greq.y != 0);
+			if(err) return err;
+			return NN_OK;
 		}
 		nn_setError(C, "method not yet implemented");
 		return NN_EBADCALL;
@@ -3254,7 +3400,7 @@ size_t nn_unicode_codepointSize(nn_codepoint codepoint) {
     return 1;
 }
 
-size_t nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], nn_codepoint codepoint) {
+size_t nn_unicode_codepointToChar(char buffer[NN_MAX_UNICODE_BUFFER], nn_codepoint codepoint) {
     size_t codepointSize = nn_unicode_codepointSize(codepoint);
 
     if (codepointSize == 1) {
@@ -3304,7 +3450,9 @@ size_t nn_unicode_wlen(const char *s, size_t len) {
 	for(size_t i = 0; i < len;) {
 		nn_codepoint codepoint = nn_unicode_firstCodepoint(s + i);
 		size_t size = nn_unicode_codepointSize(codepoint);
-		wlen += nn_unicode_charWidth(codepoint);
+		size_t width = nn_unicode_charWidth(codepoint);
+		if(width == 0) width = 1;
+		wlen += width;
 		i += size;
 	}
 	return wlen;
@@ -3315,12 +3463,14 @@ size_t nn_unicode_wlenPermissive(const char *s, size_t len) {
 	for(size_t i = 0; i < len;) {
 		if(nn_unicode_validateFirstChar(s + i, len - i) == 0) {
 			size_t width = nn_unicode_charWidth((unsigned char)s[i]);
+			if(width == 0) width = 1;
 			wlen += width;
 			i++;
 		} else {
 			nn_codepoint codepoint = nn_unicode_firstCodepoint(s + i);
 			size_t size = nn_unicode_codepointSize(codepoint);
 			size_t width = nn_unicode_charWidth(codepoint);
+			if(width == 0) width = 1;
 			wlen += width;
 			i += size;
 		}

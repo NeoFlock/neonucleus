@@ -153,12 +153,16 @@ nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 		switch(mode[0]) {
 			case 'r':
 				mode = "rb";
+				break;
 			case 'w':
 				mode = "wb";
+				break;
 			case 'a':
 				mode = "ab";
+				break;
 			default:
 				mode = "rb";
+				break;
 		}
 		ne_fsState_truepath(state, truepath, path);
 
@@ -568,15 +572,21 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 
 		x = req->x;
 		y = req->y;
-		for(int i = 0; i < req->width; i++) {
+		const char *s = req->text;
+		for(int i = 0; i < req->width;) {
 			if(!ne_inScreenBuf(activeBuf, x, y)) break;
+			size_t w = nn_unicode_validateFirstChar(s + i, req->width - i);
 			ne_Pixel p = {
 				.fg = state->currentFg,
 				.bg = state->currentBg,
 				.isFgPalette = state->isFgPalette,
 				.isBgPalette = state->isBgPalette,
-				.codepoint = req->text[i],
+				.codepoint = (unsigned char)s[i],
 			};
+			if(w > 0) {
+				p.codepoint = nn_unicode_firstCodepoint(s + i);
+				i += w;
+			} else i++;
 			ne_setPixel(activeBuf, x, y, p);
 			x += dx;
 			y += dy;
@@ -592,8 +602,7 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 		y = req->y;
 		w = req->width;
 		h = req->height;
-		if(x < 1) x = 1;
-		if(y < 1) y = 1;
+		// prevent CPU DoS
 		if(w >= activeBuf->width) w = activeBuf->width - 1;
 		if(h >= activeBuf->height) h = activeBuf->height - 1;
 
@@ -609,6 +618,93 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 				ne_setPixel(activeBuf, x + ox, y + oy, p);
 			}
 		}
+		ne_remapScreen(activeBuf);
+		return NN_OK;
+	case NN_GPU_COPY:
+		if(activeBuf == NULL) {
+			nn_setError(C, "no screen");
+			return NN_EBADCALL;
+		}
+		x = req->x;
+		y = req->y;
+		w = req->width;
+		h = req->height;
+		// prevent CPU DoS
+		if(w >= activeBuf->width) w = activeBuf->width - 1;
+		if(h >= activeBuf->height) h = activeBuf->height - 1;
+
+		ne_Pixel *buf = malloc(sizeof(*buf) * w * h);
+		if(buf == NULL) return NN_ENOMEM;
+		
+		for(int oy = 0; oy < h; oy++) {
+			for(int ox = 0; ox < w; ox++) {
+				buf[oy * w + ox] = ne_getPixel(activeBuf, x + ox, y + oy);
+			}
+		}
+
+		for(int oy = 0; oy < h; oy++) {
+			for(int ox = 0; ox < w; ox++) {
+				p = buf[oy * w + ox];
+				ne_setPixel(activeBuf, x + ox + req->tx, y + oy + req->ty, p);
+			}
+		}
+		free(buf);
+		ne_remapScreen(activeBuf);
+		return NN_OK;
+	case NN_GPU_GETDEPTH:
+		if(activeBuf != NULL) {
+			req->x = activeBuf->depth;
+		} else {
+			req->x = req->gpuConf->maxDepth;
+		}
+		return NN_OK;
+	case NN_GPU_GETVIEWPORT:
+		if(activeBuf == NULL) {
+			nn_setError(C, "no screen");
+			return NN_EBADCALL;
+		}
+		req->width = activeBuf->width;
+		req->height = activeBuf->height;
+		return NN_OK;
+	case NN_GPU_GETFOREGROUND:
+		req->x = state->currentFg;
+		req->y = state->isFgPalette ? 1 : 0;
+		return NN_OK;
+	case NN_GPU_GETBACKGROUND:
+		req->x = state->currentBg;
+		req->y = state->isBgPalette ? 1 : 0;
+		return NN_OK;
+	case NN_GPU_SETFOREGROUND:
+		x = req->x;
+		y = req->y;
+		if(y != 0) {
+			// validate the palette index
+			if(activeBuf == NULL || x < 0 || x >= activeBuf->maxPalette) {
+				nn_setError(C, "invalid palette index");
+				return NN_EBADCALL;
+			}
+		}
+		req->x = state->currentFg;
+		req->y = state->isFgPalette ? 1 : 0;
+		state->currentFg = x;
+		state->isFgPalette = y != 0;
+		ne_remapScreen(activeBuf);
+		return NN_OK;
+	case NN_GPU_SETBACKGROUND:
+		x = req->x;
+		y = req->y;
+		if(y != 0) {
+			// validate the palette index
+			if(activeBuf == NULL || x < 0 || x >= activeBuf->maxPalette) {
+				nn_setError(C, "invalid palette index");
+				return NN_EBADCALL;
+			}
+		}
+		req->x = state->currentBg;
+		req->y = state->isBgPalette ? 1 : 0;
+		state->currentBg = x;
+		state->isBgPalette = y != 0;
+		ne_remapScreen(activeBuf);
 		return NN_OK;
 	}
 	return NN_OK;
@@ -620,10 +716,18 @@ Color ne_processColor(unsigned int color) {
     return GetColor(color);
 }
 
+double ne_timeProc(void *_) {
+	(void)_;
+	double t = GetTime();
+	return (int)(t*100) / 100.0;
+}
+
 int main() {
 	nn_Context ctx;
 	nn_initContext(&ctx);
 	nn_initPalettes();
+
+	ctx.time = ne_timeProc;
 
 	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(800, 600, "NeoNucleus Test Emulator");

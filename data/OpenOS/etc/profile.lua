@@ -40,5 +40,6 @@ shell.setWorkingDirectory(os.getenv("HOME"))
 
 local home_shrc = shell.resolve(".shrc")
 if fs.exists(home_shrc) then
-  assert(loadfile(shell.resolve("source", "lua")))(home_shrc)
+	local resolved = shell.resolve("source", "lua")
+  assert(loadfile(resolved))(home_shrc)
 end
