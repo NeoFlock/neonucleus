@@ -595,8 +595,8 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 		w = req->width;
 		h = req->height;
 		// prevent CPU DoS
-		if(w >= activeBuf->width) w = activeBuf->width - 1;
-		if(h >= activeBuf->height) h = activeBuf->height - 1;
+		if(w > activeBuf->width) w = activeBuf->width;
+		if(h > activeBuf->height) h = activeBuf->height;
 
 		p = (ne_Pixel) {
 			.fg = state->currentFg,
