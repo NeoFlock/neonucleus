@@ -1066,6 +1066,10 @@ int main() {
 	double tickDelay = 0.05;
 	double tickClock = 0;
 
+	struct {int key; nn_codepoint unicode;} keybuf[512];
+	memset(keybuf, 0, sizeof(keybuf));
+	size_t keycap = sizeof(keybuf) / sizeof(keybuf[0]);
+
 	while(true) {
 		if(WindowShouldClose()) break;
 
@@ -1112,6 +1116,9 @@ int main() {
 			nn_codepoint unicode = GetCharPressed();
 
 			if(keycode == 0 && unicode == 0) break;
+			
+			keybuf[keycode].key = keycode;
+			keybuf[keycode].unicode = unicode;
 
 			if(keycode != 0) {
 				if(keycode == KEY_ENTER) unicode = '\r';
@@ -1120,6 +1127,16 @@ int main() {
 			}
 
 			nn_pushKeyDown(c, "mainKB", unicode, keycode_to_oc(keycode), player);
+		}
+
+		for(size_t i = 0; i < keycap; i++) {
+			if(keybuf[i].key != 0) {
+				if(IsKeyReleased(keybuf[i].key)) {
+					int key = keycode_to_oc(keybuf[i].key);
+					keybuf[i].key = 0;
+					nn_pushKeyUp(c, "mainKB", keybuf[i].unicode, key, player);
+				}
+			}
 		}
 
 		tickClock -= GetFrameTime();

@@ -3640,7 +3640,7 @@ nn_Exit nn_pushKeyDown(nn_Computer *computer, const char *keyboardAddress, nn_co
 
 nn_Exit nn_pushKeyUp(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player) {
 	if(!nn_hasUser(computer, player)) return NN_OK;
-	nn_Exit err = nn_pushstring(computer, "key_down");
+	nn_Exit err = nn_pushstring(computer, "key_up");
 	if(err) return err;
 	err = nn_pushstring(computer, keyboardAddress);
 	if(err) return err;
