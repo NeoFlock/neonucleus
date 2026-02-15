@@ -107,7 +107,6 @@ void ne_fsState_truepath(ne_FsState *state, char truepath[NN_MAX_PATH], const ch
 	}
 }
 
-
 nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 	nn_Computer *C = req->computer;
 	ne_FsState *state = req->instance;
@@ -988,7 +987,7 @@ int main() {
 	const char *player = getenv("USER");
 	if(player == NULL) player = "me";
 
-	bool sandboxMem = true;
+	bool sandboxMem = getenv("NN_MEMSAND") != NULL;
 
 	nn_Context ctx;
 	nn_initContext(&ctx);
@@ -1097,7 +1096,7 @@ int main() {
 			}
 		}
 
-		DrawText(TextFormat("mem used: %.2f%%", (double)sand.used / sand.cap * 100), 10, 10, 20, WHITE);
+		if(sand.buf != NULL) DrawText(TextFormat("mem used: %.2f%%", (double)sand.used / sand.cap * 100), 10, 10, 20, WHITE);
 
 		EndDrawing();
 

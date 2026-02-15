@@ -53,8 +53,7 @@ static luaArch *luaArch_from(lua_State *L) {
 }
 
 // pushes an NN value from a Lua stack index
-static nn_Exit luaArch_luaToNN(luaArch *arch, int luaIdx) {
-	lua_State *L = arch->L;
+static nn_Exit luaArch_luaToNN(luaArch *arch, lua_State *L, int luaIdx) {
 	nn_Computer *C = arch->computer;
 
 	if(lua_isnoneornil(L, luaIdx)) {
@@ -76,8 +75,7 @@ static nn_Exit luaArch_luaToNN(luaArch *arch, int luaIdx) {
 }
 
 // pushes a Lua value from an NN stack index
-static void luaArch_nnToLua(luaArch *arch, size_t nnIdx) {
-	lua_State *L = arch->L;
+static void luaArch_nnToLua(luaArch *arch, lua_State *L, size_t nnIdx) {
 	nn_Computer *C = arch->computer;
 
 	if(nn_isnull(C, nnIdx)) {
@@ -104,8 +102,8 @@ static void luaArch_nnToLua(luaArch *arch, size_t nnIdx) {
 		nn_dumptable(C, nnIdx, &len);
 		lua_createtable(L, 0, len);
 		for(size_t i = 0; i < len; i++) {
-			luaArch_nnToLua(arch, start + i * 2);
-			luaArch_nnToLua(arch, start + i * 2 + 1);
+			luaArch_nnToLua(arch, L, start + i * 2);
+			luaArch_nnToLua(arch, L, start + i * 2 + 1);
 			lua_settable(L, -3);
 		}
 		nn_popn(C, len * 2);
@@ -236,7 +234,7 @@ static int luaArch_computer_pushSignal(lua_State *L) {
 	size_t signalCount = lua_gettop(L);
 	nn_Exit err;
 	for(int i = 1; i <= signalCount; i++) {
-		err = luaArch_luaToNN(arch, i);
+		err = luaArch_luaToNN(arch, L, i);
 		if(err) { 
 			nn_setErrorFromExit(c, err);
 			luaL_error(L, "%s", nn_getError(c));
@@ -260,7 +258,7 @@ static int luaArch_computer_popSignal(lua_State *L) {
 	nn_Exit err = nn_popSignal(c, &signalCount);
 	if(err) goto fail;
 	for(size_t i = 0; i < signalCount; i++) {
-		luaArch_nnToLua(arch, i);
+		luaArch_nnToLua(arch, L, i);
 	}
 	nn_clearstack(c);
 	return signalCount;
@@ -301,7 +299,7 @@ static int luaArch_component_invoke(lua_State *L) {
 	
 	nn_clearstack(arch->computer);
 	for(size_t i = 3; i <= argc; i++) {
-		luaArch_luaToNN(arch, i);
+		luaArch_luaToNN(arch, L, i);
 	}
 	nn_Exit err = nn_call(arch->computer, address, method);
 	if(err != NN_OK) {
@@ -310,29 +308,8 @@ static int luaArch_component_invoke(lua_State *L) {
 		return 2;
 	}
 	size_t retc = nn_getstacksize(arch->computer);
-	if(strcmp(method, "getViewport") == 0) {
-		printf("component.invoke(%s, %s) = %zu\n", address, method, retc);
-		for(size_t i = 0; i < retc; i++) {
-			printf("%zu. %s\n", i+1, nn_typenameof(arch->computer, i));
-		}
-		printf("prev lua stack size: %d\n", lua_gettop(L));
-	}
 	for(size_t i = 0; i < retc; i++) {
-		if(strcmp(method, "getViewport") == 0) {
-			printf("lua stack size: %d\n", lua_gettop(L));
-		}
-		luaArch_nnToLua(arch, i);
-	}
-	if(strcmp(method, "getViewport") == 0) {
-		printf("RECHECK STACK\n");
-		for(size_t i = 0; i < retc; i++) {
-			printf("%zu. %s\n", i+1, nn_typenameof(arch->computer, i));
-		}
-		printf("new lua stack size: %d\n", lua_gettop(L));
-		printf("Lua rets:\n");
-		for(int i = 0; i < retc; i++) {
-			printf("%d. %s\n", i+1, luaL_typename(L, i - retc));
-		}
+		luaArch_nnToLua(arch, L, i);
 	}
 	nn_clearstack(arch->computer);
 	return retc;

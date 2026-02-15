@@ -30,7 +30,6 @@ function tty.getViewport()
   if window.fullscreen and screen and not screen_cache[screen] then
     screen_cache[screen] = true
     window.width, window.height = window.gpu.getViewport()
-	debug.print("viewport is", window.width, window.height)
   end
 
   return window.width, window.height, window.dx, window.dy, window.x, window.y

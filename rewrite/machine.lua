@@ -227,6 +227,8 @@ if os.getenv("NN_REPL") == "1" then
 	print("exiting repl")
 end
 
+collectgarbage("stop")
+
 local eeprom = component.list("eeprom", true)()
 assert(eeprom, "missing firmware")
 
