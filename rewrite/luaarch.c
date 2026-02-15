@@ -419,6 +419,7 @@ static int luaArch_unicode_char(lua_State *L) {
 	}
 	nn_Context *ctx = nn_getComputerContext(luaArch_from(L)->computer);
 	char *buf = nn_alloc(ctx, len);
+	size_t buflen = len;
 	len = 0;
 	for(int i = 1; i <= argc; i++) {
 		nn_codepoint codepoint = lua_tointeger(L, i);
@@ -426,7 +427,7 @@ static int luaArch_unicode_char(lua_State *L) {
 		len += size;
 	}
 	lua_pushlstring(L, buf, len);
-	nn_free(ctx, buf, len);
+	nn_free(ctx, buf, buflen);
 	return 1;
 }
 
