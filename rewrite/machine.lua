@@ -168,6 +168,12 @@ unicode.wtrunc = function(str,space)
 	return unicode.sub(str, 1, space)
 end
 
+unicode.reverse = string.reverse
+
+unicode.charWidth = function(s)
+	return 1
+end
+
 unicode.sub = function(str, a, b)
 	if not b then b = utf8.len(str) end
 	if not a then a = 1 end

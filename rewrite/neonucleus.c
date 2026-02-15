@@ -149,9 +149,6 @@ void *nn_aralloc(nn_Arena *arena, size_t size) {
 		size += NN_ALLOC_ALIGN - over;
 	}
 
-	if(arena->block == NULL) {
-	}
-
 	nn_ArenaBlock *block = arena->block;
 	while(block != NULL) {
 		nn_ArenaBlock *cur = block;
@@ -900,6 +897,14 @@ const char *nn_getUser(nn_Computer *computer, size_t idx) {
 	return computer->users[idx];
 }
 
+bool nn_hasUser(nn_Computer *computer, const char *user) {
+	if(computer->userCount == 0) return true;
+	for(size_t i = 0; i < computer->userCount; i++) {
+		if(nn_strcmp(computer->users[i], user) == 0) return true;
+	}
+	return false;
+}
+
 void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
 	computer->arch = *arch;
 }
@@ -1040,6 +1045,7 @@ void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit) {
 nn_Exit nn_tick(nn_Computer *computer) {
 	nn_resetCallBudget(computer);
 	nn_resetComponentBudgets(computer);
+	nn_clearstack(computer);
 	nn_Exit err;
 	if(computer->state == NN_BOOTUP) {
 		// init state
@@ -1351,6 +1357,13 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 		if(err) {
 			if(err != NN_EBADCALL) nn_setErrorFromExit(computer, err);
 			// clear junk
+			nn_clearstack(computer);
+			return err;
+		}
+
+		if(computer->stackSize < req.returnCount) {
+			err = NN_EBELOWSTACK;
+			nn_setErrorFromExit(computer, err);
 			nn_clearstack(computer);
 			return err;
 		}
@@ -1769,8 +1782,7 @@ nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount) {
 	if(computer->signalCount == NN_MAX_SIGNALS) return NN_ELIMIT;
 	if(computer->stackSize < valueCount) return NN_EBELOWSTACK;
 	
-	int cost = nn_countSignalCost(computer, valueCount);
-	if(cost == -1) return NN_EBADSTATE;
+	size_t cost = nn_countSignalCost(computer, valueCount);
 	if(cost > NN_MAX_SIGNALSIZE) return NN_ELIMIT;
 
 	nn_Context ctx = computer->universe->ctx;
@@ -1795,8 +1807,9 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount) {
 
 	if(valueCount != NULL) *valueCount = s.len;
 	for(size_t i = 0; i < s.len; i++) {
-		nn_pushvalue(computer, s.values[i]);
+		computer->callstack[computer->stackSize + i] = s.values[i];
 	}
+	computer->stackSize += s.len;
 	for(size_t i = 1; i < computer->signalCount; i++) {
 		computer->signals[i-1] = computer->signals[i];
 	}
@@ -2879,8 +2892,33 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushinteger(C, greq.x);
 		}
+		if(nn_strcmp(method, "maxDepth") == 0) {
+			greq.action = NN_GPU_MAXDEPTH;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushinteger(C, greq.x);
+		}
 		if(nn_strcmp(method, "getViewport") == 0) {
 			greq.action = NN_GPU_GETVIEWPORT;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.width);
+			if(err) return err;
+			return nn_pushinteger(C, greq.height);
+		}
+		if(nn_strcmp(method, "getResolution") == 0) {
+			greq.action = NN_GPU_GETRESOLUTION;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.width);
+			if(err) return err;
+			return nn_pushinteger(C, greq.height);
+		}
+		if(nn_strcmp(method, "maxResolution") == 0) {
+			greq.action = NN_GPU_MAXRESOLUTION;
 			err = state->handler(&greq);
 			if(err) return err;
 			req->returnCount = 2;
@@ -2892,7 +2930,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultboolean(C, 1, false);
 			if(err) return err;
-			if(nn_checkinteger(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
+			if(nn_checkboolean(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
 			greq.action = NN_GPU_SETFOREGROUND;
 			greq.x = nn_tointeger(C, 0);
 			greq.y = nn_toboolean(C, 1) ? 1 : 0;
@@ -2920,10 +2958,21 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultboolean(C, 1, false);
 			if(err) return err;
-			if(nn_checkinteger(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
+			if(nn_checkboolean(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
 			greq.action = NN_GPU_SETBACKGROUND;
 			greq.x = nn_tointeger(C, 0);
 			greq.y = nn_toboolean(C, 1) ? 1 : 0;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.x);
+			if(err) return err;
+			err = nn_pushbool(C, greq.y != 0);
+			if(err) return err;
+			return NN_OK;
+		}
+		if(nn_strcmp(method, "getBackground") == 0) {
+			greq.action = NN_GPU_GETBACKGROUND;
 			err = state->handler(&greq);
 			if(err) return err;
 			req->returnCount = 2;
@@ -3285,8 +3334,9 @@ bool nn_unicode_validate(const char *s, size_t len) {
 	return true;
 }
 
-size_t nn_unicode_validateFirstChar(const char *s, size_t len) {
+size_t nn_unicode_validateFirstChar(const char *b, size_t len) {
 	if(len < 1) return 0;
+	const unsigned char *s = (const unsigned char *)b;
     if(s[0] <= 0x7F) {
         return 1;
     } else if((s[0] >> 5) == 0b110) {
@@ -3500,4 +3550,119 @@ nn_codepoint nn_unicode_upper(nn_codepoint codepoint) {
 
 nn_codepoint nn_unicode_lower(nn_codepoint codepoint) {
 	return codepoint;
+}
+
+// signal helper funcs
+
+nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight) {
+	nn_Exit err = nn_pushstring(computer, "screen_resized");
+	if(err) return err;
+	err = nn_pushstring(computer, screenAddress);
+	if(err) return err;
+	err = nn_pushinteger(computer, newWidth);
+	if(err) return err;
+	err = nn_pushinteger(computer, newHeight);
+	if(err) return err;
+	return nn_pushSignal(computer, 4);
+}
+
+nn_Exit nn_pushTouch(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "touch");
+	if(err) return err;
+	err = nn_pushstring(computer, screenAddress);
+	if(err) return err;
+	err = nn_pushnumber(computer, x);
+	if(err) return err;
+	err = nn_pushnumber(computer, y);
+	if(err) return err;
+	err = nn_pushinteger(computer, button);
+	if(err) return err;
+	err = nn_pushstring(computer, player);
+	if(err) return err;
+	return nn_pushSignal(computer, 6);
+}
+
+nn_Exit nn_pushDrag(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "drag");
+	if(err) return err;
+	err = nn_pushstring(computer, screenAddress);
+	if(err) return err;
+	err = nn_pushnumber(computer, x);
+	if(err) return err;
+	err = nn_pushnumber(computer, y);
+	if(err) return err;
+	err = nn_pushinteger(computer, button);
+	if(err) return err;
+	err = nn_pushstring(computer, player);
+	if(err) return err;
+	return nn_pushSignal(computer, 6);
+}
+
+nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "drag");
+	if(err) return err;
+	err = nn_pushstring(computer, screenAddress);
+	if(err) return err;
+	err = nn_pushnumber(computer, x);
+	if(err) return err;
+	err = nn_pushnumber(computer, y);
+	if(err) return err;
+	err = nn_pushinteger(computer, button);
+	if(err) return err;
+	err = nn_pushstring(computer, player);
+	if(err) return err;
+	return nn_pushSignal(computer, 6);
+}
+
+nn_Exit nn_pushScroll(nn_Computer *computer, const char *screenAddress, double x, double y, double direction, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+}
+
+nn_Exit nn_pushWalk(nn_Computer *computer, const char *screenAddress, double x, double y, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+}
+
+nn_Exit nn_pushKeyDown(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "key_down");
+	if(err) return err;
+	err = nn_pushstring(computer, keyboardAddress);
+	if(err) return err;
+	err = nn_pushinteger(computer, charcode);
+	if(err) return err;
+	err = nn_pushinteger(computer, keycode);
+	if(err) return err;
+	return nn_pushSignal(computer, 4);
+}
+
+nn_Exit nn_pushKeyUp(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "key_down");
+	if(err) return err;
+	err = nn_pushstring(computer, keyboardAddress);
+	if(err) return err;
+	err = nn_pushinteger(computer, charcode);
+	if(err) return err;
+	err = nn_pushinteger(computer, keycode);
+	if(err) return err;
+	return nn_pushSignal(computer, 4);
+}
+
+nn_Exit nn_pushClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+	return nn_pushLClipboard(computer, keyboardAddress, clipboard, nn_strlen(clipboard), player);
+}
+
+nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, size_t len, const char *player) {
+	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "clipboard");
+	if(err) return err;
+	err = nn_pushstring(computer, keyboardAddress);
+	if(err) return err;
+	err = nn_pushlstring(computer, clipboard, len);
+	if(err) return err;
+	return nn_pushSignal(computer, 3);
 }

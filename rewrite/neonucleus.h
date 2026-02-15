@@ -221,6 +221,12 @@ typedef struct nn_Context {
 // call it in loops.
 void nn_initContext(nn_Context *ctx);
 
+// Memory allocation!!!
+
+void *nn_alloc(nn_Context *ctx, size_t size);
+void nn_free(nn_Context *ctx, void *memory, size_t size);
+void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize);
+
 typedef enum nn_Exit {
 	// no error
 	NN_OK = 0,
@@ -1398,32 +1404,32 @@ const char *nn_depthName(int depth);
 #define NN_KEY_F18 0x69
 #define NN_KEY_F19 0x71
 
-#define NN_KEYS_KANA 0x70
-#define NN_KEYS_KANJI 0x94
-#define NN_KEYS_CONVERT 0x79
-#define NN_KEYS_NOCONVERT 0x7B
-#define NN_KEYS_YEN 0x7D
-#define NN_KEYS_CIRCUMFLEX 0x90
-#define NN_KEYS_AX 0x96
+#define NN_KEY_KANA 0x70
+#define NN_KEY_KANJI 0x94
+#define NN_KEY_CONVERT 0x79
+#define NN_KEY_NOCONVERT 0x7B
+#define NN_KEY_YEN 0x7D
+#define NN_KEY_CIRCUMFLEX 0x90
+#define NN_KEY_AX 0x96
 
-#define NN_KEYS_NUMPAD0 0x52
-#define NN_KEYS_NUMPAD1 0x4F
-#define NN_KEYS_NUMPAD2 0x50
-#define NN_KEYS_NUMPAD3 0x51
-#define NN_KEYS_NUMPAD4 0x4B
-#define NN_KEYS_NUMPAD5 0x4C
-#define NN_KEYS_NUMPAD6 0x4D
-#define NN_KEYS_NUMPAD7 0x47
-#define NN_KEYS_NUMPAD8 0x48
-#define NN_KEYS_NUMPAD9 0x49
-#define NN_KEYS_NUMPADMUL 0x37
-#define NN_KEYS_NUMPADDIV 0xB5
-#define NN_KEYS_NUMPADSUB 0x4A
-#define NN_KEYS_NUMPADADD 0x4E
-#define NN_KEYS_NUMPADDECIMAL 0x53
-#define NN_KEYS_NUMPADCOMMA 0xB3
-#define NN_KEYS_NUMPADENTER 0x9C
-#define NN_KEYS_NUMPADEQUALS 0x8D
+#define NN_KEY_NUMPAD0 0x52
+#define NN_KEY_NUMPAD1 0x4F
+#define NN_KEY_NUMPAD2 0x50
+#define NN_KEY_NUMPAD3 0x51
+#define NN_KEY_NUMPAD4 0x4B
+#define NN_KEY_NUMPAD5 0x4C
+#define NN_KEY_NUMPAD6 0x4D
+#define NN_KEY_NUMPAD7 0x47
+#define NN_KEY_NUMPAD8 0x48
+#define NN_KEY_NUMPAD9 0x49
+#define NN_KEY_NUMPADMUL 0x37
+#define NN_KEY_NUMPADDIV 0xB5
+#define NN_KEY_NUMPADSUB 0x4A
+#define NN_KEY_NUMPADADD 0x4E
+#define NN_KEY_NUMPADDECIMAL 0x53
+#define NN_KEY_NUMPADCOMMA 0xB3
+#define NN_KEY_NUMPADENTER 0x9C
+#define NN_KEY_NUMPADEQUALS 0x8D
 
 // pushes a screen_resized signal
 nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight);

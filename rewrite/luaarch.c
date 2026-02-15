@@ -262,6 +262,7 @@ static int luaArch_computer_popSignal(lua_State *L) {
 	for(size_t i = 0; i < signalCount; i++) {
 		luaArch_nnToLua(arch, i);
 	}
+	nn_clearstack(c);
 	return signalCount;
 fail:
 	nn_setErrorFromExit(c, err);
@@ -309,8 +310,29 @@ static int luaArch_component_invoke(lua_State *L) {
 		return 2;
 	}
 	size_t retc = nn_getstacksize(arch->computer);
+	if(strcmp(method, "getViewport") == 0) {
+		printf("component.invoke(%s, %s) = %zu\n", address, method, retc);
+		for(size_t i = 0; i < retc; i++) {
+			printf("%zu. %s\n", i+1, nn_typenameof(arch->computer, i));
+		}
+		printf("prev lua stack size: %d\n", lua_gettop(L));
+	}
 	for(size_t i = 0; i < retc; i++) {
+		if(strcmp(method, "getViewport") == 0) {
+			printf("lua stack size: %d\n", lua_gettop(L));
+		}
 		luaArch_nnToLua(arch, i);
+	}
+	if(strcmp(method, "getViewport") == 0) {
+		printf("RECHECK STACK\n");
+		for(size_t i = 0; i < retc; i++) {
+			printf("%zu. %s\n", i+1, nn_typenameof(arch->computer, i));
+		}
+		printf("new lua stack size: %d\n", lua_gettop(L));
+		printf("Lua rets:\n");
+		for(int i = 0; i < retc; i++) {
+			printf("%d. %s\n", i+1, luaL_typename(L, i - retc));
+		}
 	}
 	nn_clearstack(arch->computer);
 	return retc;
@@ -418,7 +440,8 @@ static int luaArch_unicode_char(lua_State *L) {
 		if(size == 0) luaL_error(L, "codepoint #%d out of range", i);
 		len += size;
 	}
-	char *buf = malloc(len);
+	nn_Context *ctx = nn_getComputerContext(luaArch_from(L)->computer);
+	char *buf = nn_alloc(ctx, len);
 	len = 0;
 	for(int i = 1; i <= argc; i++) {
 		nn_codepoint codepoint = lua_tointeger(L, i);
@@ -426,7 +449,7 @@ static int luaArch_unicode_char(lua_State *L) {
 		len += size;
 	}
 	lua_pushlstring(L, buf, len);
-	free(buf);
+	nn_free(ctx, buf, len);
 	return 1;
 }
 
@@ -475,15 +498,16 @@ static int luaArch_unicode_sub(lua_State *L) {
 		return 1;
 	}
 
-	nn_codepoint *cp = malloc(sizeof(*cp) * len);
+	nn_Context *ctx = nn_getComputerContext(luaArch_from(L)->computer);
+	nn_codepoint *cp = nn_alloc(ctx, sizeof(*cp) * len);
 	nn_unicode_codepointsPermissive(s, slen, cp);
 
 	size_t substrlen = nn_unicode_countBytes(cp + start, end - start + 1);
-	char *buf = malloc(substrlen);
+	char *buf = nn_alloc(ctx, substrlen);
 	nn_unicode_writeBytes(buf, cp + start, end - start + 1);
 	lua_pushlstring(L, buf, substrlen);
-	free(buf);
-	free(cp);
+	nn_free(ctx, buf, substrlen);
+	nn_free(ctx, cp, sizeof(*cp) * len);
 	return 1;
 }
 
@@ -573,6 +597,7 @@ static void luaArch_loadEnv(lua_State *L) {
 static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 	nn_Computer *computer = req->computer;
 	luaArch *arch = req->localState;
+	nn_Context *ctx = nn_getComputerContext(computer);
 	switch(req->action) {
 	case NN_ARCH_FREEMEM:
 		req->freeMemory = arch->freeMem;
@@ -580,10 +605,10 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 	case NN_ARCH_INIT:
 		// wrapped in a block to prevent L from leaking, because L is common in Lua code so it may be used by mistake
 		{
-			arch = malloc(sizeof(*arch));
+			arch = nn_alloc(ctx, sizeof(*arch));
 			arch->freeMem = nn_getTotalMemory(computer);
 			arch->computer = computer;
-			lua_State *L = lua_newstate(luaArch_alloc, arch);
+			lua_State *L = luaL_newstate();
 			arch->L = L;
 			req->localState = arch;
 			luaL_openlibs(L);
@@ -598,7 +623,7 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 		return NN_OK;
 	case NN_ARCH_DEINIT:
 		lua_close(arch->L);
-		free(arch);
+		nn_free(ctx, arch, sizeof(*arch));
 		return NN_OK;
 	case NN_ARCH_TICK:;
 		lua_settop(arch->L, 1);

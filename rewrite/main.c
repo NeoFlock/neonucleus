@@ -255,6 +255,9 @@ nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 		}
 		req->size = ne_lastModified(truepath);
 		return NN_OK;
+	case NN_FS_ISREADONLY:
+		req->size = state->isReadonly ? 1 : 0;
+		return NN_OK;
 	case NN_FS_ISDIRECTORY:
 		ne_fsState_truepath(state, truepath, req->strarg1);
 		if(!ne_exists(truepath)) {
@@ -310,7 +313,7 @@ typedef struct ne_ScreenBuffer {
 bool ne_ocCompatibleColors = true;
 
 void ne_remapScreen(ne_ScreenBuffer *buf) {
-	int depth = buf->maxDepth;
+	int depth = buf->depth;
 
 	for(int i = 0; i < buf->maxPalette; i++) {
 		buf->mappedPalette[i] = nn_mapDepth(buf->virtualPalette[i], depth, ne_ocCompatibleColors);
@@ -322,7 +325,7 @@ void ne_remapScreen(ne_ScreenBuffer *buf) {
 			int virtfg = pixel->fg, virtbg = pixel->bg;
 			if(pixel->isFgPalette) virtfg = buf->mappedPalette[virtfg];
 			else virtfg = nn_mapDepth(virtfg, depth, ne_ocCompatibleColors);
-			if(pixel->isBgPalette) virtbg = buf->mappedPalette[virtfg];
+			if(pixel->isBgPalette) virtbg = buf->mappedPalette[virtbg];
 			else virtbg = nn_mapDepth(virtbg, depth, ne_ocCompatibleColors);
 
 			pixel->truefg = virtfg;
@@ -331,8 +334,8 @@ void ne_remapScreen(ne_ScreenBuffer *buf) {
 	}
 }
 
-ne_ScreenBuffer *ne_newScreenBuf(nn_ScreenConfig conf, const char *keyboard) {
-	ne_ScreenBuffer *buf = malloc(sizeof(*buf));
+ne_ScreenBuffer *ne_newScreenBuf(nn_Context *ctx, nn_ScreenConfig conf, const char *keyboard) {
+	ne_ScreenBuffer *buf = nn_alloc(ctx, sizeof(*buf));
 	buf->maxWidth = conf.maxWidth;
 	buf->maxHeight = conf.maxHeight;
 	buf->width = buf->maxWidth;
@@ -340,10 +343,10 @@ ne_ScreenBuffer *ne_newScreenBuf(nn_ScreenConfig conf, const char *keyboard) {
 	buf->maxDepth = conf.maxDepth;
 	buf->depth = buf->maxDepth;
 	buf->maxPalette = conf.paletteColors;
-	buf->pixels = malloc(sizeof(ne_Pixel) * conf.maxWidth * conf.maxHeight);
-	buf->virtualPalette = malloc(sizeof(int) * conf.paletteColors);
+	buf->pixels = nn_alloc(ctx, sizeof(ne_Pixel) * conf.maxWidth * conf.maxHeight);
+	buf->virtualPalette = nn_alloc(ctx, sizeof(int) * conf.paletteColors);
 	memset(buf->virtualPalette, 0, sizeof(int) * buf->maxPalette);
-	buf->mappedPalette = malloc(sizeof(int) * conf.paletteColors);
+	buf->mappedPalette = nn_alloc(ctx, sizeof(int) * conf.paletteColors);
 	buf->keyboard = keyboard;
 
 	int *palette = NULL;
@@ -372,11 +375,11 @@ ne_ScreenBuffer *ne_newScreenBuf(nn_ScreenConfig conf, const char *keyboard) {
 	return buf;
 }
 
-void ne_dropScreenBuf(ne_ScreenBuffer *buf) {
-	free(buf->pixels);
-	free(buf->mappedPalette);
-	free(buf->virtualPalette);
-	free(buf);
+void ne_dropScreenBuf(nn_Context *ctx, ne_ScreenBuffer *buf) {
+	nn_free(ctx, buf->pixels, sizeof(ne_Pixel) * buf->maxWidth * buf->maxHeight);
+	nn_free(ctx, buf->mappedPalette, sizeof(int) * buf->maxPalette);
+	nn_free(ctx, buf->virtualPalette, sizeof(int) * buf->maxPalette);
+	nn_free(ctx, buf, sizeof(*buf));
 }
 
 ne_Pixel defaultPixel = {
@@ -411,9 +414,6 @@ nn_Exit ne_screen_handler(nn_ScreenRequest *req) {
 	ne_ScreenBuffer *buf = req->instance;
 	switch(req->action) {
 	case NN_SCR_DROP:
-		// this'd require the GPU is dropped first...
-		// its best we just dont bother and free later
-		//ne_dropScreenBuf(buf);
 		return NN_OK;
 	case NN_SCR_GETASPECTRATIO:
 		req->w = 1;
@@ -464,14 +464,14 @@ typedef struct ne_GPUState {
 	int currentBg;
 	bool isFgPalette;
 	bool isBgPalette;
-	int freeMemory;
+	int usedMemory;
 	int activeBuffer;
 	int scrAddrLen;
 	char scrAddr[NN_MAX_ADDRESS];
 	ne_ScreenBuffer *vramBufs[NE_MAX_VRAMBUF];
 } ne_GPUState;
 
-ne_GPUState *ne_newGPU(nn_GPU gpu) {
+ne_GPUState *ne_newGPU() {
 	ne_GPUState *state = malloc(sizeof(*state));
 	state->screenBuf = NULL;
 	state->currentFg = 0xFFFFFF;
@@ -479,7 +479,7 @@ ne_GPUState *ne_newGPU(nn_GPU gpu) {
 	state->isFgPalette = false;
 	state->isBgPalette = false;
 	state->activeBuffer = 0;
-	state->freeMemory = gpu.totalVRAM;
+	state->usedMemory = 0;
 	for(int i = 0; i < NE_MAX_VRAMBUF; i++) {
 		state->vramBufs[i] = NULL;
 	}
@@ -494,6 +494,7 @@ ne_ScreenBuffer *ne_gpu_currentBuffer(ne_GPUState *state) {
 nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 	nn_Computer *C = req->computer;
 	ne_GPUState *state = req->instance;
+	nn_Context *ctx = nn_getComputerContext(C);
 
 	int maxWidth = req->gpuConf->maxWidth;
 	int maxHeight = req->gpuConf->maxHeight;
@@ -515,7 +516,7 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 	case NN_GPU_DROP:
 		for(int i = 0; i < NE_MAX_VRAMBUF; i++) {
 			ne_ScreenBuffer *buf = state->vramBufs[i];
-			if(buf != NULL) ne_dropScreenBuf(buf);
+			if(buf != NULL) ne_dropScreenBuf(ctx, buf);
 		}
 		free(state);
 		return NN_OK;
@@ -534,14 +535,6 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 		}
 		memcpy(req->text, state->scrAddr, state->scrAddrLen);
 		req->width = state->scrAddrLen;
-		return NN_OK;
-	case NN_GPU_GETRESOLUTION:
-		if(state->screenBuf == NULL) {
-			nn_setError(C, "no screen");
-			return NN_EBADCALL;
-		}
-		req->width = state->screenBuf->width;
-		req->height = state->screenBuf->height;
 		return NN_OK;
 	case NN_GPU_GET:
 		if(activeBuf == NULL) {
@@ -633,7 +626,7 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 		if(w >= activeBuf->width) w = activeBuf->width - 1;
 		if(h >= activeBuf->height) h = activeBuf->height - 1;
 
-		ne_Pixel *buf = malloc(sizeof(*buf) * w * h);
+		ne_Pixel *buf = nn_alloc(ctx, sizeof(*buf) * w * h);
 		if(buf == NULL) return NN_ENOMEM;
 		
 		for(int oy = 0; oy < h; oy++) {
@@ -648,7 +641,7 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 				ne_setPixel(activeBuf, x + ox + req->tx, y + oy + req->ty, p);
 			}
 		}
-		free(buf);
+		nn_free(ctx, buf, sizeof(*buf) * w * h);
 		ne_remapScreen(activeBuf);
 		return NN_OK;
 	case NN_GPU_GETDEPTH:
@@ -658,13 +651,21 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 			req->x = req->gpuConf->maxDepth;
 		}
 		return NN_OK;
+	case NN_GPU_MAXDEPTH:
+		req->x = maxDepth;
+		return NN_OK;
 	case NN_GPU_GETVIEWPORT:
+	case NN_GPU_GETRESOLUTION:
 		if(activeBuf == NULL) {
 			nn_setError(C, "no screen");
 			return NN_EBADCALL;
 		}
 		req->width = activeBuf->width;
 		req->height = activeBuf->height;
+		return NN_OK;
+	case NN_GPU_MAXRESOLUTION:
+		req->width = maxWidth;
+		req->height = maxHeight;
 		return NN_OK;
 	case NN_GPU_GETFOREGROUND:
 		req->x = state->currentFg;
@@ -722,10 +723,288 @@ double ne_timeProc(void *_) {
 	return (int)(t*100) / 100.0;
 }
 
+int keycode_to_oc(int keycode) {
+    switch (keycode) {
+        case KEY_NULL:
+            return 0;
+        case KEY_APOSTROPHE:
+            return NN_KEY_APOSTROPHE;
+        case KEY_COMMA:
+            return NN_KEY_COMMA;
+        case KEY_MINUS:
+            return NN_KEY_MINUS;
+        case KEY_PERIOD:
+            return NN_KEY_PERIOD;
+        case KEY_SLASH:
+            return NN_KEY_SLASH;
+        case KEY_ZERO:
+            return NN_KEY_0;
+        case KEY_ONE:
+            return NN_KEY_1;
+        case KEY_TWO:
+            return NN_KEY_2;
+        case KEY_THREE:
+            return NN_KEY_3;
+        case KEY_FOUR:
+            return NN_KEY_4;
+        case KEY_FIVE:
+            return NN_KEY_5;
+        case KEY_SIX:
+            return NN_KEY_6;
+        case KEY_SEVEN:
+            return NN_KEY_7;
+        case KEY_EIGHT:
+            return NN_KEY_8;
+        case KEY_NINE:
+            return NN_KEY_9;
+        case KEY_SEMICOLON:
+            return NN_KEY_SEMICOLON;
+        case KEY_EQUAL:
+            return NN_KEY_EQUALS;
+        case KEY_A:
+            return NN_KEY_A;
+        case KEY_B:
+            return NN_KEY_B;
+        case KEY_C:
+            return NN_KEY_C;
+        case KEY_D:
+            return NN_KEY_D;
+        case KEY_E:
+            return NN_KEY_E;
+        case KEY_F:
+            return NN_KEY_F;
+        case KEY_G:
+            return NN_KEY_G;
+        case KEY_H:
+            return NN_KEY_H;
+        case KEY_I:
+            return NN_KEY_I;
+        case KEY_J:
+            return NN_KEY_J;
+        case KEY_K:
+            return NN_KEY_K;
+        case KEY_L:
+            return NN_KEY_L;
+        case KEY_M:
+            return NN_KEY_M;
+        case KEY_N:
+            return NN_KEY_N;
+        case KEY_O:
+            return NN_KEY_O;
+        case KEY_P:
+            return NN_KEY_P;
+        case KEY_Q:
+            return NN_KEY_Q;
+        case KEY_R:
+            return NN_KEY_R;
+        case KEY_S:
+            return NN_KEY_S;
+        case KEY_T:
+            return NN_KEY_T;
+        case KEY_U:
+            return NN_KEY_U;
+        case KEY_V:
+            return NN_KEY_V;
+        case KEY_W:
+            return NN_KEY_W;
+        case KEY_X:
+            return NN_KEY_X;
+        case KEY_Y:
+            return NN_KEY_Y;
+        case KEY_Z:
+            return NN_KEY_Z;
+        case KEY_LEFT_BRACKET:
+            return NN_KEY_LBRACKET;
+        case KEY_BACKSLASH:
+            return NN_KEY_BACKSLASH;
+        case KEY_RIGHT_BRACKET:
+            return NN_KEY_RBRACKET;
+        case KEY_GRAVE:
+            return NN_KEY_GRAVE;
+        case KEY_SPACE:
+            return NN_KEY_SPACE;
+        case KEY_ESCAPE:
+            return 0;
+        case KEY_ENTER:
+            return NN_KEY_ENTER;
+        case KEY_TAB:
+            return NN_KEY_TAB;
+        case KEY_BACKSPACE:
+            return NN_KEY_BACK;
+        case KEY_INSERT:
+            return NN_KEY_INSERT;
+        case KEY_DELETE:
+            return NN_KEY_DELETE;
+        case KEY_RIGHT:
+            return NN_KEY_RIGHT;
+        case KEY_LEFT:
+            return NN_KEY_LEFT;
+        case KEY_DOWN:
+            return NN_KEY_DOWN;
+        case KEY_UP:
+            return NN_KEY_UP;
+        case KEY_PAGE_UP:
+            return NN_KEY_PAGEUP;
+        case KEY_PAGE_DOWN:
+            return NN_KEY_PAGEDOWN;
+        case KEY_HOME:
+            return NN_KEY_HOME;
+        case KEY_END:
+            return NN_KEY_END;
+        case KEY_CAPS_LOCK:
+            return NN_KEY_CAPITAL;
+        case KEY_SCROLL_LOCK:
+            return NN_KEY_SCROLL;
+        case KEY_NUM_LOCK:
+            return NN_KEY_NUMLOCK;
+        case KEY_PRINT_SCREEN:
+            return 0;
+        case KEY_PAUSE:
+            return NN_KEY_PAUSE;
+        case KEY_F1:
+            return NN_KEY_F1;
+        case KEY_F2:
+            return NN_KEY_F2;
+        case KEY_F3:
+            return NN_KEY_F3;
+        case KEY_F4:
+            return NN_KEY_F4;
+        case KEY_F5:
+            return NN_KEY_F5;
+        case KEY_F6:
+            return NN_KEY_F6;
+        case KEY_F7:
+            return NN_KEY_F7;
+        case KEY_F8:
+            return NN_KEY_F8;
+        case KEY_F9:
+            return NN_KEY_F9;
+        case KEY_F10:
+            return NN_KEY_F10;
+        case KEY_F11:
+            return NN_KEY_F11;
+        case KEY_F12:
+            return NN_KEY_F12;
+        case KEY_LEFT_SHIFT:
+            return NN_KEY_LSHIFT;
+        case KEY_LEFT_CONTROL:
+            return NN_KEY_LCONTROL;
+        case KEY_LEFT_ALT:
+            return NN_KEY_LMENU;
+        case KEY_LEFT_SUPER:
+            return 0;
+        case KEY_RIGHT_SHIFT:
+            return NN_KEY_RSHIFT;
+        case KEY_RIGHT_CONTROL:
+            return NN_KEY_RCONTROL;
+        case KEY_RIGHT_ALT:
+            return NN_KEY_RMENU;
+        case KEY_RIGHT_SUPER:
+            return 0;
+        case KEY_KB_MENU:
+            return 0;
+        case KEY_KP_0:
+            return NN_KEY_NUMPAD0;
+        case KEY_KP_1:
+            return NN_KEY_NUMPAD1;
+        case KEY_KP_2:
+            return NN_KEY_NUMPAD2;
+        case KEY_KP_3:
+            return NN_KEY_NUMPAD3;
+        case KEY_KP_4:
+            return NN_KEY_NUMPAD4;
+        case KEY_KP_5:
+            return NN_KEY_NUMPAD5;
+        case KEY_KP_6:
+            return NN_KEY_NUMPAD6;
+        case KEY_KP_7:
+            return NN_KEY_NUMPAD7;
+        case KEY_KP_8:
+            return NN_KEY_NUMPAD8;
+        case KEY_KP_9:
+            return NN_KEY_NUMPAD9;
+        case KEY_KP_DECIMAL:
+            return NN_KEY_NUMPADDECIMAL;
+        case KEY_KP_DIVIDE:
+            return NN_KEY_NUMPADDIV;
+        case KEY_KP_MULTIPLY:
+            return NN_KEY_NUMPADMUL;
+        case KEY_KP_SUBTRACT:
+            return NN_KEY_NUMPADSUB;
+        case KEY_KP_ADD:
+            return NN_KEY_NUMPADADD;
+        case KEY_KP_ENTER:
+            return NN_KEY_NUMPADENTER;
+        case KEY_KP_EQUAL:
+            return NN_KEY_NUMPADEQUALS;
+        case KEY_BACK:
+            return 0;
+        case KEY_MENU:
+            return 0;
+        case KEY_VOLUME_DOWN:
+            return 0;
+        case KEY_VOLUME_UP:
+            return 0;
+    }
+    return 0;
+}
+
+size_t ne_alignAlloc(size_t num, size_t align) {
+	if(num % align == 0) return num;
+	return num + align - (num % align);
+}
+
+typedef struct ne_memSand {
+	char *buf;
+	size_t used;
+	size_t cap;
+} ne_memSand;
+
+void *ne_sandbox_alloc(void *state, void *memory, size_t oldSize, size_t newSize) {
+	ne_memSand *sand = (ne_memSand *)state;
+
+	oldSize = ne_alignAlloc(oldSize, NN_ALLOC_ALIGN);
+	newSize = ne_alignAlloc(newSize, NN_ALLOC_ALIGN);
+
+	// never free
+	if(newSize == 0) return NULL;
+	if(memory == NULL) {
+		if(sand->cap - sand->used < newSize) return NULL;
+		// alloc new
+		void *mem = sand->buf + sand->used;
+		sand->used += newSize;
+		return mem;
+	}
+	// realloc
+	if(newSize <= oldSize) return memory;
+	if(sand->cap - sand->used < newSize) return NULL;
+	void *mem = sand->buf + sand->used;
+	sand->used += newSize;
+	memcpy(mem, memory, oldSize);
+	return mem;
+}
+
 int main() {
+	const char *player = getenv("USER");
+	if(player == NULL) player = "me";
+
+	bool sandboxMem = true;
+
 	nn_Context ctx;
 	nn_initContext(&ctx);
 	nn_initPalettes();
+	
+	ne_memSand sand;
+	sand.buf = NULL;
+	
+	if(sandboxMem) {
+		// 1 MiB pre-allocated to prevent erasing the free-list
+		sand.used = NN_MiB;
+		sand.cap = 1 * NN_GiB;
+		sand.buf = malloc(sand.cap);
+		ctx.state = &sand;
+		ctx.alloc = ne_sandbox_alloc;
+	}
 
 	ctx.time = ne_timeProc;
 
@@ -772,14 +1051,14 @@ int main() {
 	nn_addComponent(c, ctype, "sandbox", -1, NULL);
 	nn_addComponent(c, etype, "eeprom", 0, etype);
 
-	ne_FsState *mainFS = ne_newFS("OpenOS", false);
-	nn_addComponent(c, fstype[1], "mainFS", 2, mainFS);
+	ne_FsState *mainFS = ne_newFS("OpenOS", true);
+	nn_addComponent(c, fstype[0], "mainFS", 2, mainFS);
 
 	nn_addComponent(c, keytype, "mainKB", 4, NULL);
-	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(nn_defaultScreens[1], "mainKB");
+	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(&ctx, nn_defaultScreens[2], "mainKB");
 	nn_addComponent(c, scrtype, "mainScreen", -1, scrbuf);
 
-	ne_GPUState *gpu = ne_newGPU(nn_defaultGPUs[3]);
+	ne_GPUState *gpu = ne_newGPU();
 	nn_addComponent(c, gputype, "mainGPU", 3, gpu);
 
 	SetExitKey(KEY_NULL);
@@ -817,12 +1096,38 @@ int main() {
 				DrawTextCodepoint(font, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight - 5, fgColor);
 			}
 		}
+
+		DrawText(TextFormat("mem used: %.2f%%", (double)sand.used / sand.cap * 100), 10, 10, 20, WHITE);
+
 		EndDrawing();
+
+		// keyboard input
+
+		// 1: clipboard
+		if(IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE)) {
+			nn_pushClipboard(c, "mainKB", GetClipboardText(), player);
+		}
+
+		while(1) {
+			int keycode = GetKeyPressed();
+			nn_codepoint unicode = GetCharPressed();
+
+			if(keycode == 0 && unicode == 0) break;
+
+			if(keycode != 0) {
+				if(keycode == KEY_ENTER) unicode = '\r';
+				if(keycode == KEY_BACKSPACE) unicode = '\b';
+				if(keycode == KEY_TAB) unicode = '\t';
+			}
+
+			nn_pushKeyDown(c, "mainKB", unicode, keycode_to_oc(keycode), player);
+		}
 
 		tickClock -= GetFrameTime();
 
 		if(tickClock <= 0) {
 			tickClock = tickDelay;
+			nn_clearstack(c);
 
 			nn_Exit e = nn_tick(c);
 			if(e != NN_OK) {
@@ -861,10 +1166,11 @@ cleanup:;
 	nn_destroyComponentType(keytype);
 	nn_destroyComponentType(gputype);
 	for(size_t i = 0; i < 5; i++) nn_destroyComponentType(fstype[i]);
-	ne_dropScreenBuf(scrbuf);
+	ne_dropScreenBuf(&ctx, scrbuf);
 	// rip the universe
 	nn_destroyUniverse(u);
 	UnloadFont(font);
 	CloseWindow();
+	free(sand.buf);
 	return 0;
 }
