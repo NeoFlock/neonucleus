@@ -48,7 +48,7 @@ local function getBootCode(addr)
 	if firstSector:sub(-2, -1) == "\x55\xAA" then
 		local codeEnd = sectorSize - 66
 		local codeSec = string.sub(firstSector, 1, codeEnd)
-		local term = string.find(codeSec, "\0", 5, true)
+		local term = string.find(codeSec, "\0", nil, true)
 		return load(string.sub(codeSec, 1, term and (term - 1) or -1))
 	end
 	-- TODO: whatever else NC might be testing
