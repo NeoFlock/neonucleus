@@ -641,7 +641,8 @@ typedef struct nn_Computer {
 	size_t deviceInfoLen;
 	nn_DeviceInfo *deviceInfo;
 	double totalEnergy;
-	double energy;
+	void *energyState;
+	nn_EnergyHandler *energyHandler;
 	size_t totalMemory;
 	double creationTimestamp;
 	size_t stackSize;
@@ -727,6 +728,12 @@ void nn_destroyComponentType(nn_ComponentType *ctype) {
 	nn_free(ctx, ctype, sizeof(nn_ComponentType));
 }
 
+double nn_default_energyHandler(void *state, nn_Computer *computer, double amount) {
+	(void)state;
+	(void)amount;
+	return nn_getTotalEnergy(computer);
+}
+
 nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char *address, size_t totalMemory, size_t maxComponents, size_t maxDevices) {
 	nn_Context *ctx = &universe->ctx;
 
@@ -771,7 +778,8 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 		return NULL;
 	}
 	c->totalEnergy = 500;
-	c->energy = 500;
+	c->energyState = NULL;
+	c->energyHandler = nn_default_energyHandler;
 	c->totalMemory = totalMemory;
 	c->creationTimestamp = nn_currentTime(ctx);
 	c->stackSize = 0;
@@ -952,18 +960,19 @@ double nn_getTotalEnergy(nn_Computer *computer) {
 	return computer->totalEnergy;
 }
 
-void nn_setEnergy(nn_Computer *computer, double energy) {
-	computer->energy = energy;
-}
-
 double nn_getEnergy(nn_Computer *computer) {
-	return computer->energy;
+	double newEnergy = computer->energyHandler(computer->energyState, computer, 0);
+	if(newEnergy <= 0) {
+		newEnergy = 0;
+		computer->state = NN_BLACKOUT;
+	}
+	return newEnergy;
 }
 
 bool nn_removeEnergy(nn_Computer *computer, double energy) {
-	computer->energy -= energy;
-	if(computer->energy < 0) computer->energy = 0;
-	if(computer->energy <= 0) {
+	double newEnergy = computer->energyHandler(computer->energyState, computer, energy);
+	if(newEnergy <= 0) {
+		newEnergy = 0;
 		computer->state = NN_BLACKOUT;
 		return true;
 	}

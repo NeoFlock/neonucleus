@@ -375,14 +375,26 @@ nn_Architecture nn_findSupportedArchitecture(nn_Computer *computer, const char *
 void nn_setTotalEnergy(nn_Computer *computer, double maxEnergy);
 // gets the energy capacity of the computer
 double nn_getTotalEnergy(nn_Computer *computer);
-// sets the current amount of energy
-void nn_setEnergy(nn_Computer *computer, double energy);
 // gets the current amount of energy
 double nn_getEnergy(nn_Computer *computer);
 // Returns true if there is no more energy left, and a blackout has occured.
 bool nn_removeEnergy(nn_Computer *computer, double energy);
 
+// the handler of energy costs.
+// The default handler just returns the total energy.
+// Computers do not keep track of their current energy, they just call this function.
+// getEnergy() calls this with amountToRemove set to 0. It is recommended to handle this as a fastpath.
+// This should return the new amount of energy after the removal.
+// A negative amount can be returned, it will be clamped to 0.
+// If an error occurs, it is recommended to just return 0 and trigger a blackout.
+// TODO: evaluate if API should be reworked to handle errors in energy handler.
+typedef double nn_EnergyHandler(void *energyState, nn_Computer *computer, double amountToRemove);
+
+void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHandler *handler);
+
+// Returns the memory usage limit of the computer.
 size_t nn_getTotalMemory(nn_Computer *computer);
+// Gets the total amount of free memory the computer has available. The total memory - this is the amount of memory used.
 size_t nn_getFreeMemory(nn_Computer *computer);
 // gets the current uptime of a computer. When the computer is not running, this value can be anything and loses all meaning.
 double nn_getUptime(nn_Computer *computer);

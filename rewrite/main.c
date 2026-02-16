@@ -1096,7 +1096,7 @@ int main() {
 				Color bgColor = ne_processColor(p.truebg);
 
 				DrawRectangle(x * pixelWidth + offX, y * pixelHeight + offY, pixelWidth, pixelHeight, bgColor);
-				DrawTextCodepoint(font, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight - 5, fgColor);
+				DrawTextCodepoint(font, p.codepoint, (Vector2) {x * pixelWidth + offX, y * pixelHeight + offY}, pixelHeight, fgColor);
 			}
 		}
 
