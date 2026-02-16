@@ -47,8 +47,9 @@ local function getBootCode(addr)
 	-- Generic MBR bootcode
 	if firstSector:sub(-2, -1) == "\x55\xAA" then
 		local codeEnd = sectorSize - 66
-		local term = string.find(firstSector, "\0", 5, true)
-		return load(string.sub(firstSector, 5, term and (term - 1) or codeEnd))
+		local codeSec = string.sub(firstSector, 1, codeEnd)
+		local term = string.find(codeSec, "\0", 5, true)
+		return load(string.sub(codeSec, 0, term and (term - 1) or -1))
 	end
 	-- TODO: whatever else NC might be testing
 	local sectorsIn32K = math.ceil(32768 / sectorSize)
