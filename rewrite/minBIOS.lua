@@ -49,7 +49,7 @@ local function getBootCode(addr)
 		local codeEnd = sectorSize - 66
 		local codeSec = string.sub(firstSector, 1, codeEnd)
 		local term = string.find(codeSec, "\0", 5, true)
-		return load(string.sub(codeSec, 0, term and (term - 1) or -1))
+		return load(string.sub(codeSec, 1, term and (term - 1) or -1))
 	end
 	-- TODO: whatever else NC might be testing
 	local sectorsIn32K = math.ceil(32768 / sectorSize)
