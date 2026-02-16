@@ -979,6 +979,11 @@ bool nn_removeEnergy(nn_Computer *computer, double energy) {
 	return false;
 }
 
+void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHandler *handler) {
+	computer->energyState = energyState;
+	computer->energyHandler = handler;
+}
+
 size_t nn_getTotalMemory(nn_Computer *computer) {
 	return computer->totalMemory;
 }
@@ -1878,9 +1883,11 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		return NN_OK;
 	case NN_COMP_CALL:
 		if(nn_strcmp(method, "getSize") == 0) {
+			req->returnCount = 1;
 			return nn_pushnumber(computer, state->eeprom.size);
 		}
 		if(nn_strcmp(method, "getDataSize") == 0) {
+			req->returnCount = 1;
 			return nn_pushnumber(computer, state->eeprom.dataSize);
 		}
 		if(nn_strcmp(method, "isReadOnly") == 0) {
@@ -1891,7 +1898,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushbool(computer, ereq.buflen != 0);
 		}
 		if(nn_strcmp(method, "getChecksum") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
 			char buf[state->eeprom.size];
@@ -1907,7 +1914,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, encoded, 8);
 		}
 		if(nn_strcmp(method, "makeReadonly") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
 			// 1st argument is a string, which is the checksum we're meant to have
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
@@ -1940,7 +1947,6 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushbool(computer, true);
 		}
 		if(nn_strcmp(method, "getLabel") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
 			char buf[NN_MAX_LABEL];
 			ereq.action = NN_EEPROM_GETLABEL;
 			ereq.buf = buf;
@@ -1952,7 +1958,6 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "setLabel") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
@@ -1968,7 +1973,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "get") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
 			char buf[state->eeprom.size];
@@ -1981,7 +1986,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "getData") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.readDataEnergyCost);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
 			char buf[state->eeprom.dataSize];
@@ -1994,7 +1999,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "getArchitecture") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.readDataEnergyCost);
 			char buf[NN_MAX_ARCHNAME];
 			ereq.action = NN_EEPROM_GETARCH;
 			ereq.buf = buf;
@@ -2002,10 +2007,11 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
+			if(ereq.buflen == 0) return nn_pushnull(computer);
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
 		if(nn_strcmp(method, "set") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.writeEnergyCost);
 			if(nn_getstacksize(computer) < 1) {
 				nn_setError(computer, "bad argument #1 (string expected)");
 				return NN_EBADCALL;
@@ -2027,7 +2033,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return state->handler(&ereq);
 		}
 		if(nn_strcmp(method, "setData") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.writeDataEnergyCost);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
@@ -2042,7 +2048,9 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			return state->handler(&ereq);
 		}
 		if(nn_strcmp(method, "setArchitecture") == 0) {
-			nn_costComponent(computer, req->compAddress, 1);
+			nn_removeEnergy(computer, state->eeprom.writeDataEnergyCost);
+			nn_Exit err = nn_defaultstring(computer, 0, "");
+			if(err) return err;
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
@@ -2064,10 +2072,45 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 nn_EEPROM nn_defaultEEPROM = (nn_EEPROM) {
 	.size = 4 * NN_KiB,
 	.dataSize = 256,
-	.readEnergyCost = 10,
+	.readEnergyCost = 1,
 	.writeEnergyCost = 100,
-	.readDataEnergyCost = 10,
-	.writeDataEnergyCost = 50,
+	.readDataEnergyCost = 0.1,
+	.writeDataEnergyCost = 5,
+};
+
+nn_EEPROM nn_defaultEEPROMs[4] = {
+	(nn_EEPROM) {
+		.size = 4 * NN_KiB,
+		.dataSize = 256,
+		.readEnergyCost = 1,
+		.writeEnergyCost = 100,
+		.readDataEnergyCost = 0.1,
+		.writeDataEnergyCost = 5,
+	},
+	(nn_EEPROM) {
+		.size = 8 * NN_KiB,
+		.dataSize = 1 * NN_KiB,
+		.readEnergyCost = 2,
+		.writeEnergyCost = 200,
+		.readDataEnergyCost = 0.2,
+		.writeDataEnergyCost = 10,
+	},
+	(nn_EEPROM) {
+		.size = 16 * NN_KiB,
+		.dataSize = 2 * NN_KiB,
+		.readEnergyCost = 4,
+		.writeEnergyCost = 400,
+		.readDataEnergyCost = 0.4,
+		.writeDataEnergyCost = 20,
+	},
+	(nn_EEPROM) {
+		.size = 32 * NN_KiB,
+		.dataSize = 4 * NN_KiB,
+		.readEnergyCost = 8,
+		.writeEnergyCost = 800,
+		.readDataEnergyCost = 0.8,
+		.writeDataEnergyCost = 40,
+	},
 };
 
 nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata) {
@@ -2089,7 +2132,7 @@ nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom
 		{"setData", "function(data: string) - Set the current EEPROM data contents.", NN_INDIRECT},
 		{"getArchitecture", "function(): string - Get the current EEPROM architecture intended.", NN_INDIRECT},
 		{"setArchitecture", "function(data: string) - Set the current EEPROM architecture intended.", NN_INDIRECT},
-		{"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_INDIRECT},
+		{"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT},
 		{"makeReadonly", "function(checksum: string) - Makes the EEPROM read-only, this cannot be undone.", NN_INDIRECT},
 		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_INDIRECT},
 		{NULL, NULL, NN_INDIRECT},
@@ -2309,6 +2352,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
 		}
 		if(nn_strcmp(method, "open") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.writesPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			err = nn_defaultstring(computer, 1, "r");
 			if(err) return err;
@@ -2341,7 +2385,8 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return state->handler(&fsreq);
 		}
 		if(nn_strcmp(method, "read") == 0) {
-			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
+	 		if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultinteger(computer, 1, NN_MAX_READ);
 			if(err) return err;
 			if(nn_checknumber(computer, 1, "bad argument #2 (number expected)")) return NN_EBADCALL;
@@ -2358,9 +2403,11 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			req->returnCount = 1;
 			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
+			nn_removeEnergy(computer, state->fs.dataEnergyCost * fsreq.strarg1len);
 			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
 		}
 		if(nn_strcmp(method, "write") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.writesPerTick);
 			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
 			fsreq.action = NN_FS_WRITE;
@@ -2369,9 +2416,11 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			err = state->handler(&fsreq);
 			if(err) return err;
 			req->returnCount = 1;
+			nn_removeEnergy(computer, state->fs.dataEnergyCost * fsreq.strarg1len);
 			return nn_pushbool(computer, true);
 		}
 		if(nn_strcmp(method, "seek") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultstring(computer, 1, "cur");
 			if(err) return err;
@@ -2398,6 +2447,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.off);
 		}
 		if(nn_strcmp(method, "list") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2449,6 +2499,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return err;
 		}
 		if(nn_strcmp(method, "exists") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2468,6 +2519,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushbool(computer, fsreq.size != 0);
 		}
 		if(nn_strcmp(method, "size") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2487,6 +2539,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.size);
 		}
 		if(nn_strcmp(method, "lastModified") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2506,6 +2559,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.size * 1000);
 		}
 		if(nn_strcmp(method, "isDirectory") == 0) {
+			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2685,8 +2739,8 @@ nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 4,
 		.setForegroundPerTick = 2,
 		.setBackgroundPerTick = 2,
-		.energyPerWrite = 0.02,
-		.energyPerClear = 0.01,
+		.energyPerWrite = 0.0002,
+		.energyPerClear = 0.0001,
 	},
 	(nn_GPU) {
 		.maxWidth = 80,
@@ -2698,8 +2752,8 @@ nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 8,
 		.setForegroundPerTick = 4,
 		.setBackgroundPerTick = 4,
-		.energyPerWrite = 0.1,
-		.energyPerClear = 0.05,
+		.energyPerWrite = 0.001,
+		.energyPerClear = 0.0005,
 	},
 	(nn_GPU) {
 		.maxWidth = 160,
@@ -2711,8 +2765,8 @@ nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 16,
 		.setForegroundPerTick = 8,
 		.setBackgroundPerTick = 8,
-		.energyPerWrite = 0.2,
-		.energyPerClear = 0.1,
+		.energyPerWrite = 0.002,
+		.energyPerClear = 0.001,
 	},
 	(nn_GPU) {
 		.maxWidth = 240,
@@ -2724,8 +2778,8 @@ nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 32,
 		.setForegroundPerTick = 16,
 		.setBackgroundPerTick = 16,
-		.energyPerWrite = 0.25,
-		.energyPerClear = 0.12,
+		.energyPerWrite = 0.0025,
+		.energyPerClear = 0.0012,
 	},
 };
 
@@ -2816,6 +2870,8 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			size_t len;
 			greq.text = (char *)nn_tolstring(C, 2, &len);
 			if(len > conf.maxWidth) len = conf.maxWidth;
+			// assumes no spaces
+			nn_removeEnergy(C, conf.energyPerWrite * len);
 			greq.width = len;
 			greq.x = nn_tointeger(C, 0);
 			greq.y = nn_tointeger(C, 1);
@@ -2869,6 +2925,14 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			greq.y = nn_tointeger(C, 1);
 			greq.width = nn_tointeger(C, 2);
 			greq.height = nn_tointeger(C, 3);
+			if(greq.width > conf.maxWidth) greq.width = conf.maxWidth;
+			if(greq.height > conf.maxHeight) greq.height = conf.maxHeight;
+			// no free energy for you
+			if(greq.width < 0) greq.width = 0;
+			if(greq.height < 0) greq.height = 0;
+
+			// assumes no spaces
+			nn_removeEnergy(C, conf.energyPerClear * greq.width * greq.height);
 			err = state->handler(&greq);
 			if(err) return err;
 			req->returnCount = 1;
@@ -2889,6 +2953,14 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			greq.height = nn_tointeger(C, 3);
 			greq.tx = nn_tointeger(C, 4);
 			greq.ty = nn_tointeger(C, 5);
+			if(greq.width > conf.maxWidth) greq.width = conf.maxWidth;
+			if(greq.height > conf.maxHeight) greq.height = conf.maxHeight;
+			// no free energy for you
+			if(greq.width < 0) greq.width = 0;
+			if(greq.height < 0) greq.height = 0;
+
+			if(greq.codepoint == ' ') nn_removeEnergy(C, conf.energyPerWrite * greq.width * greq.height);
+			else nn_removeEnergy(C, conf.energyPerClear * greq.width * greq.height);
 			err = state->handler(&greq);
 			if(err) return err;
 			req->returnCount = 1;

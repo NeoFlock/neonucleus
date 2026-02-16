@@ -983,11 +983,21 @@ void *ne_sandbox_alloc(void *state, void *memory, size_t oldSize, size_t newSize
 	return mem;
 }
 
+double accumulatedEnergyCost = 0;
+double totalEnergyLoss = 0;
+
+double ne_energy_accumulator(void *state, nn_Computer *c, double n) {
+	accumulatedEnergyCost += n;
+	totalEnergyLoss += n;
+	return nn_getTotalEnergy(c);
+}
+
 int main() {
 	const char *player = getenv("USER");
 	if(player == NULL) player = "me";
 
 	bool sandboxMem = getenv("NN_MEMSAND") != NULL;
+	bool showStats = getenv("NN_STAT") != NULL;
 
 	nn_Context ctx;
 	nn_initContext(&ctx);
@@ -1032,7 +1042,7 @@ int main() {
 		.isReadonly = false,
 	};
 
-	nn_ComponentType *etype = nn_createVEEPROM(u, &nn_defaultEEPROM, &veeprom);
+	nn_ComponentType *etype = nn_createVEEPROM(u, &nn_defaultEEPROMs[3], &veeprom);
 	nn_ComponentType *fstype[5];
 	fstype[0] = nn_createFilesystem(u, &nn_defaultFloppy, ne_fsState_handler, NULL);
 	for(size_t i = 1; i < 5; i++) {
@@ -1043,6 +1053,10 @@ int main() {
 	nn_ComponentType *gputype = nn_createGPU(u, &nn_defaultGPUs[3], ne_gpu_handler, NULL);
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", 8 * NN_MiB, 256, 256);
+	if(showStats) {
+		// collects stats
+		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
+	}
 	
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);
@@ -1051,7 +1065,7 @@ int main() {
 	nn_addComponent(c, etype, "eeprom", 0, etype);
 
 	ne_FsState *mainFS = ne_newFS("OpenOS", true);
-	nn_addComponent(c, fstype[0], "mainFS", 2, mainFS);
+	nn_addComponent(c, fstype[4], "mainFS", 2, mainFS);
 
 	nn_addComponent(c, keytype, "mainKB", 4, NULL);
 	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(&ctx, nn_defaultScreens[2], "mainKB");
@@ -1065,6 +1079,10 @@ int main() {
 	Font font = LoadFont("unscii-16-full.ttf");
 	double tickDelay = 0.05;
 	double tickClock = 0;
+
+	if(getenv("NN_TICKDELAY") != NULL) {
+		tickDelay = atof(getenv("NN_TICKDELAY"));
+	}
 
 	struct {int key; nn_codepoint unicode;} keybuf[512];
 	memset(keybuf, 0, sizeof(keybuf));
@@ -1100,7 +1118,19 @@ int main() {
 			}
 		}
 
-		if(sand.buf != NULL) DrawText(TextFormat("mem used: %.2f%%", (double)sand.used / sand.cap * 100), 10, 10, 20, WHITE);
+		int statY = 10;
+		if(sand.buf != NULL) {
+			DrawText(TextFormat("mem used: %.2f%%", (double)sand.used / sand.cap * 100), 10, statY, 20, WHITE);
+			statY += 20;
+		}
+		if(showStats) {
+			double wattage = accumulatedEnergyCost;
+			if(tickDelay > 0) wattage /= tickDelay;
+			DrawText(TextFormat("power usage: %.2f W", wattage), 10, statY, 20, WHITE);
+			statY += 20;
+			DrawText(TextFormat("energy loss: %.2f J", totalEnergyLoss), 10, statY, 20, WHITE);
+			statY += 20;
+		}
 
 		EndDrawing();
 
@@ -1142,6 +1172,7 @@ int main() {
 		tickClock -= GetFrameTime();
 
 		if(tickClock <= 0) {
+			accumulatedEnergyCost = 0;
 			tickClock = tickDelay;
 			nn_clearstack(c);
 

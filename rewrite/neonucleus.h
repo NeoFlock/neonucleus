@@ -795,7 +795,11 @@ typedef struct nn_EEPROM {
 	double writeDataEnergyCost;
 } nn_EEPROM;
 
-extern nn_EEPROM nn_defaultEEPROM;
+// Tier 1 - The normal EEPROM equivalent
+// Tier 2 - A better EEPROM
+// Tier 3 - An even better EEPROM
+// Tier 4- The best EEPROM
+extern nn_EEPROM nn_defaultEEPROMs[4];
 
 typedef struct nn_VEEPROM {
 	const char *code;
@@ -951,7 +955,7 @@ typedef struct nn_Filesystem {
 	// the maximum capacity of the filesystem
 	size_t spaceTotal;
 	// how many read calls can be done per tick
-	// list, exists, isDirectory, seek also count as reads.
+	// list, exists, size, lastModified, isDirectory, seek also count as reads.
 	double readsPerTick;
 	// how many write calls can be done per tick
 	// makeDirectory, open, remove and rename also count as writes.

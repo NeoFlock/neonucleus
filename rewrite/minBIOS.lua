@@ -46,11 +46,20 @@ local function getBootCode(addr)
 
 	-- Generic MBR bootcode
 	if firstSector:sub(-2, -1) == "\x55\xAA" then
-		local codeEnd = sectorSize - 67 -- no laughing!!!!
+		local codeEnd = sectorSize - 66
 		local term = string.find(firstSector, "\0", 5, true)
 		return load(string.sub(firstSector, 5, term and (term - 1) or codeEnd))
 	end
 	-- TODO: whatever else NC might be testing
+	local sectorsIn32K = math.ceil(32768 / sectorSize)
+	local bootCode = {firstSector}
+	for i=2,sectorsIn32K do
+		table.insert(bootCode, drive.readSector(i))
+	end
+	local rawCode = table.concat(bootCode)
+	local term = string.find(rawCode, "\0")
+	rawCode = string.sub(rawCode, 1, term and (term - 1) or -1)
+	return load(rawCode)
 end
 
 local paths = {

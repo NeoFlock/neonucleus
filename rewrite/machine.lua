@@ -21,6 +21,17 @@ function coroutine.resume(co, ...)
 	end
 end
 
+function coroutine.wrap(f)
+	local co = coroutine.create(f)
+	return function(...)
+		local t = {coroutine.resume(co, ...)}
+		if t[1] then
+			return table.unpack(t, 2)
+		end
+		error(t[2], 2)
+	end
+end
+
 local clist, cinvoke, computer, component, print, unicode = component.list, component.invoke, computer, component, print, unicode
 debug.print = print
 debug.sysyield = sysyield
@@ -231,6 +242,9 @@ collectgarbage("stop")
 
 local eeprom = component.list("eeprom", true)()
 assert(eeprom, "missing firmware")
+
+local arch = component.invoke(eeprom, "getArchitecture")
+if arch then computer.setArchitecture(arch) end
 
 local code = assert(component.invoke(eeprom, "get"))
 local f = assert(load(code, "=bios"))

@@ -59,7 +59,10 @@ static nn_Exit luaArch_luaToNN(luaArch *arch, lua_State *L, int luaIdx) {
 	if(lua_isnoneornil(L, luaIdx)) {
 		return nn_pushnull(C);
 	}
-	if(lua_isnumber(L, luaIdx)) {
+	// lua_isnumber() automatically casts
+	// because the Lua C API designers
+	// were high
+	if(lua_type(L, luaIdx) == LUA_TNUMBER) {
 		return nn_pushnumber(C, lua_tonumber(L, luaIdx));
 	}
 	if(lua_isstring(L, luaIdx)) {
