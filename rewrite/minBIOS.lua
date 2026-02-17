@@ -52,14 +52,21 @@ local function getBootCode(addr)
 		return load(string.sub(codeSec, 1, term and (term - 1) or -1))
 	end
 	-- TODO: whatever else NC might be testing
+
+	-- Read first 32K, which is a standard convention
 	local sectorsIn32K = math.ceil(32768 / sectorSize)
 	local bootCode = {firstSector}
-	for i=2,sectorsIn32K do
-		table.insert(bootCode, drive.readSector(i))
+	if not firstSector:find("\0") then
+		for i=2,sectorsIn32K do
+			local sec = drive.readSector(i)
+			table.insert(bootCode, sec)
+			if sec:find("\0") then break end
+		end
 	end
 	local rawCode = table.concat(bootCode)
 	local term = string.find(rawCode, "\0")
 	rawCode = string.sub(rawCode, 1, term and (term - 1) or -1)
+	if rawCode == "" then return end
 	return load(rawCode)
 end
 
