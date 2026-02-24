@@ -649,6 +649,7 @@ typedef struct nn_Computer {
 	size_t archCount;
 	size_t signalCount;
 	size_t userCount;
+	double idleTimestamp;
 	nn_Value callstack[NN_MAX_STACK];
 	char errorBuffer[NN_MAX_ERROR_SIZE];
 	nn_Architecture archs[NN_MAX_ARCHITECTURES];
@@ -734,6 +735,17 @@ double nn_default_energyHandler(void *state, nn_Computer *computer, double amoun
 	return nn_getTotalEnergy(computer);
 }
 
+size_t nn_ramSizes[8] = {
+	192 * NN_KiB,
+	256 * NN_KiB,
+	384 * NN_KiB,
+	512 * NN_KiB,
+	768 * NN_KiB,
+	NN_MiB,
+	NN_MiB + 512 * NN_KiB,
+	2 * NN_MiB,
+};
+
 nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char *address, size_t totalMemory, size_t maxComponents, size_t maxDevices) {
 	nn_Context *ctx = &universe->ctx;
 
@@ -786,6 +798,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->archCount = 0;
 	c->signalCount = 0;
 	c->userCount = 0;
+	c->idleTimestamp = 0;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
 	return c;
@@ -1000,6 +1013,10 @@ size_t nn_getFreeMemory(nn_Computer *computer) {
 	return req.freeMemory;
 }
 
+size_t nn_getUsedMemory(nn_Computer *computer) {
+	return nn_getTotalMemory(computer) - nn_getFreeMemory(computer);
+}
+
 double nn_getUptime(nn_Computer *computer) {
 	return nn_currentTime(&computer->universe->ctx) - computer->creationTimestamp;
 }
@@ -1056,11 +1073,22 @@ void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit) {
 	}
 }
 
+bool nn_isComputerIdle(nn_Computer *computer) {
+	return nn_getUptime(computer) < computer->idleTimestamp;
+}
+
+void nn_addIdleTime(nn_Computer *computer, double time) {
+	computer->idleTimestamp += time;
+}
+
 nn_Exit nn_tick(nn_Computer *computer) {
 	nn_resetCallBudget(computer);
 	nn_resetComponentBudgets(computer);
 	nn_clearstack(computer);
 	nn_Exit err;
+	// idling pootr
+	if(nn_isComputerIdle(computer)) return NN_OK;
+	computer->idleTimestamp = nn_getUptime(computer);
 	if(computer->state == NN_BOOTUP) {
 		// init state
 		nn_ArchitectureRequest req;
@@ -1871,6 +1899,8 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 
 	switch(req->action) {
 	case NN_COMP_FREETYPE:
+		ereq.action = NN_EEPROM_FREE;
+		state->handler(&ereq);
 		nn_free(&ctx, state, sizeof(*state));
 		break;
 	case NN_COMP_INIT:
@@ -2012,6 +2042,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		}
 		if(nn_strcmp(method, "set") == 0) {
 			nn_removeEnergy(computer, state->eeprom.writeEnergyCost);
+			nn_addIdleTime(computer, state->eeprom.writeDelay);
 			if(nn_getstacksize(computer) < 1) {
 				nn_setError(computer, "bad argument #1 (string expected)");
 				return NN_EBADCALL;
@@ -2034,6 +2065,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		}
 		if(nn_strcmp(method, "setData") == 0) {
 			nn_removeEnergy(computer, state->eeprom.writeDataEnergyCost);
+			nn_addIdleTime(computer, state->eeprom.writeDataDelay);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
@@ -2076,6 +2108,8 @@ nn_EEPROM nn_defaultEEPROM = (nn_EEPROM) {
 	.writeEnergyCost = 100,
 	.readDataEnergyCost = 0.1,
 	.writeDataEnergyCost = 5,
+	.writeDelay = 2,
+	.writeDataDelay = 1,
 };
 
 nn_EEPROM nn_defaultEEPROMs[4] = {
@@ -2086,6 +2120,8 @@ nn_EEPROM nn_defaultEEPROMs[4] = {
 		.writeEnergyCost = 100,
 		.readDataEnergyCost = 0.1,
 		.writeDataEnergyCost = 5,
+		.writeDelay = 2,
+		.writeDataDelay = 1,
 	},
 	(nn_EEPROM) {
 		.size = 8 * NN_KiB,
@@ -2094,6 +2130,8 @@ nn_EEPROM nn_defaultEEPROMs[4] = {
 		.writeEnergyCost = 200,
 		.readDataEnergyCost = 0.2,
 		.writeDataEnergyCost = 10,
+		.writeDelay = 2,
+		.writeDataDelay = 1,
 	},
 	(nn_EEPROM) {
 		.size = 16 * NN_KiB,
@@ -2102,6 +2140,8 @@ nn_EEPROM nn_defaultEEPROMs[4] = {
 		.writeEnergyCost = 400,
 		.readDataEnergyCost = 0.4,
 		.writeDataEnergyCost = 20,
+		.writeDelay = 1,
+		.writeDataDelay = 0.5,
 	},
 	(nn_EEPROM) {
 		.size = 32 * NN_KiB,
@@ -2110,6 +2150,8 @@ nn_EEPROM nn_defaultEEPROMs[4] = {
 		.writeEnergyCost = 800,
 		.readDataEnergyCost = 0.8,
 		.writeDataEnergyCost = 40,
+		.writeDelay = 1,
+		.writeDataDelay = 0.5,
 	},
 };
 
@@ -2151,6 +2193,8 @@ static nn_Exit nn_veeprom_handler(nn_EEPROMRequest *req) {
 	nn_Context ctx = state->universe->ctx;
 	switch(req->action) {
 	case NN_EEPROM_DROP:
+		return NN_OK;
+	case NN_EEPROM_FREE:
 		nn_free(&ctx, state->code, sizeof(char) * conf->size);
 		nn_free(&ctx, state->data, sizeof(char) * conf->dataSize);
 		nn_free(&ctx, state, sizeof(*state));
@@ -2282,6 +2326,13 @@ nn_Filesystem nn_defaultFloppy = (nn_Filesystem) {
 	.dataEnergyCost = 8.0 / NN_MiB,
 };
 
+nn_Filesystem nn_defaultTmpFS = (nn_Filesystem) {
+	.spaceTotal = 64 * NN_KiB,
+	.readsPerTick = 1024,
+	.writesPerTick = 512,
+	.dataEnergyCost = 512.0 / NN_MiB,
+};
+
 nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 	nn_Filesystem_state *state = req->typeUserdata;
 	void *instance = req->compUserdata;
@@ -2300,6 +2351,8 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 
 	switch(req->action) {
 	case NN_COMP_FREETYPE:
+		fsreq.action = NN_FS_FREE;
+		state->handler(&fsreq);
 		nn_free(&ctx, state, sizeof(*state));
 		break;
 	case NN_COMP_INIT:
@@ -2619,6 +2672,309 @@ nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesyste
 	return t;
 }
 
+nn_Drive nn_defaultDrives[4] = {
+	(nn_Drive) {
+		.capacity = 1 * NN_MiB,
+		.sectorSize = 512,
+		.platterCount = 2,
+		.readsPerTick = 10,
+		.writesPerTick = 5,
+		.rpm = 1800,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 256.0 / NN_MiB,
+	},
+	(nn_Drive) {
+		.capacity = 2 * NN_MiB,
+		.sectorSize = 512,
+		.platterCount = 4,
+		.readsPerTick = 20,
+		.writesPerTick = 10,
+		.rpm = 1800,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 512.0 / NN_MiB,
+	},
+	(nn_Drive) {
+		.capacity = 4 * NN_MiB,
+		.sectorSize = 512,
+		.platterCount = 8,
+		.readsPerTick = 30,
+		.writesPerTick = 15,
+		.rpm = 1800,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 1024.0 / NN_MiB,
+	},
+	(nn_Drive) {
+		.capacity = 8 * NN_MiB,
+		.sectorSize = 512,
+		.platterCount = 16,
+		.readsPerTick = 40,
+		.writesPerTick = 20,
+		.rpm = 1800,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 2048.0 / NN_MiB,
+	},
+};
+
+typedef struct nn_DriveState {
+	nn_Universe *universe;
+	void *userdata;
+	nn_DriveHandler *handler;
+	nn_Drive drive;
+} nn_DriveState;
+
+void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, const nn_Drive *drive) {
+	size_t maxSectors = drive->capacity / drive->sectorSize;
+	size_t sectorsPerPlatter = maxSectors / drive->platterCount;
+	// RPM over the number of sectors, over 60 seconds.
+	double latencyPerSector = (double)drive->rpm / maxSectors / 60;
+
+	// magic
+	lastSector %= sectorsPerPlatter;
+	newSector %= sectorsPerPlatter;
+
+	size_t sectorDelta;
+	if(newSector >= lastSector) {
+		sectorDelta = newSector - lastSector;
+	} else if(drive->onlySpinForwards) {
+		sectorDelta	= sectorsPerPlatter - (lastSector - newSector);
+	} else {
+		sectorDelta = lastSector - newSector;
+	}
+
+	nn_addIdleTime(C, sectorDelta * latencyPerSector);
+}
+
+nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
+	nn_DriveState *state = req->typeUserdata;
+	void *instance = req->compUserdata;
+	// NULL for FREETYPE
+	nn_Computer *C = req->computer;
+	nn_Context ctx = state->universe->ctx;
+
+	nn_DriveRequest dreq;
+	dreq.userdata = state->userdata;
+	dreq.instance = instance;
+	dreq.computer = C;
+	dreq.driveConf = &state->drive;
+	nn_Drive conf = state->drive;
+
+	const char *method = req->methodCalled;
+	nn_Exit e;
+
+	size_t maxSectors = conf.capacity / conf.sectorSize;
+
+	switch(req->action) {
+	case NN_COMP_FREETYPE:
+		dreq.action = NN_DRIVE_FREE;
+		state->handler(&dreq);
+		nn_free(&ctx, state, sizeof(*state));
+		return NN_OK;
+	case NN_COMP_INIT:
+		return NN_OK;
+	case NN_COMP_DEINIT:
+		dreq.action = NN_DRIVE_DROP;
+		return state->handler(&dreq);
+	case NN_COMP_ENABLED:
+		req->methodEnabled = true;
+		return NN_OK;
+	case NN_COMP_CALL:
+		if(nn_strcmp(method, "getCapacity") == 0) {
+			req->returnCount = 1;
+			return nn_pushinteger(C, conf.capacity);
+		}
+		if(nn_strcmp(method, "getSectorSize") == 0) {
+			req->returnCount = 1;
+			return nn_pushinteger(C, conf.sectorSize);
+		}
+		if(nn_strcmp(method, "getPlatterCount") == 0) {
+			req->returnCount = 1;
+			return nn_pushinteger(C, conf.platterCount);
+		}
+		if(nn_strcmp(method, "readSector") == 0) {
+			nn_costComponent(C, req->compAddress, conf.readsPerTick);
+			nn_removeEnergy(C, conf.dataEnergyCost * conf.sectorSize);
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			intptr_t sec = nn_tointeger(C, 0);
+			if(sec < 1 || sec > maxSectors) {
+				nn_setError(C, "sector out of bounds");
+				return NN_EBADCALL;
+			}
+
+			dreq.action = NN_DRIVE_GETCURSECTOR;
+			e = state->handler(&dreq);
+			if(e) return e;
+
+			size_t lastSec = dreq.index;
+
+			nn_drive_seekPenalty(C, lastSec, sec, &conf);
+			
+			// stack allocated! May be a problem for big sectors!
+			char buf[conf.sectorSize];
+
+			dreq.action = NN_DRIVE_READSECTOR;
+			dreq.buf = buf;
+			dreq.index = sec;
+			e = state->handler(&dreq);
+			if(e) return e;
+
+			req->returnCount = 1;
+			return nn_pushlstring(C, buf, conf.sectorSize);
+		}
+		if(nn_strcmp(method, "writeSector") == 0) {
+			nn_costComponent(C, req->compAddress, conf.writesPerTick);
+			nn_removeEnergy(C, conf.dataEnergyCost * conf.sectorSize);
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
+			intptr_t sec = nn_tointeger(C, 0);
+			if(sec < 1 || sec > maxSectors) {
+				nn_setError(C, "sector out of bounds");
+				return NN_EBADCALL;
+			}
+
+			dreq.action = NN_DRIVE_GETCURSECTOR;
+			e = state->handler(&dreq);
+			if(e) return e;
+
+			size_t lastSec = dreq.index;
+
+			nn_drive_seekPenalty(C, lastSec, sec, &conf);
+			
+			// stack allocated! May be a problem for big sectors!
+			size_t buflen;
+			const char *buf = nn_tolstring(C, 1, &buflen);
+			if(buflen != conf.sectorSize) {
+				nn_setError(C, "bad sector size");
+				return NN_EBADCALL;
+			}
+
+			dreq.action = NN_DRIVE_WRITESECTOR;
+			dreq.buf = (char *)buf;
+			dreq.index = sec;
+			e = state->handler(&dreq);
+			if(e) return e;
+
+			req->returnCount = 1;
+			return nn_pushbool(C, true);
+		}
+		nn_setError(C, "unknown method");
+		return NN_EBADCALL;
+	}
+
+	return NN_OK;
+}
+
+nn_ComponentState *nn_createDrive(nn_Universe *universe, const nn_Drive *drive, nn_DriveHandler *handler, void *userdata) {
+	nn_Context ctx = universe->ctx;
+	nn_DriveState *state = nn_alloc(&ctx, sizeof(*state));
+	if(state == NULL) return NULL;
+	state->universe = universe;
+	state->userdata = userdata;
+	state->handler = handler;
+	state->drive = *drive;
+	const nn_Method methods[] = {
+		{"getLabel", "function(): string - Get the drive label.", NN_INDIRECT},
+		{"setLabel", "function(label: string): string - Set the drive label. Returns the new label.", NN_INDIRECT},
+		{"getCapacity", "function(): integer - Get the drive capacity, in bytes.", NN_DIRECT},
+		{"getPlatterCount", "function(): integer - Get the platter count", NN_DIRECT},
+		{"getSectorSize", "function(): integer - Get the sector size, in bytes.", NN_DIRECT},
+		{"readSector", "function(index: integer): string - Returns the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT},
+		{"writeSector", "function(index: integer, data: string): boolean - Changes the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT},
+		{"readByte", "function(index: integer): integer - Reads a single signed byte and returns it. Bytes are 1-indexed.", NN_DIRECT},
+		{"readUByte", "function(index: integer): integer - Reads a single unsigned byte and returns it. Bytes are 1-indexed.", NN_DIRECT},
+		{"writeByte", "function(index: integer, value: integer): boolean - Changes a single byte, can be signed or unsigned. Bytes are 1-indexed.", NN_DIRECT},
+		{NULL, NULL, NN_INDIRECT},
+	};
+	nn_ComponentState *t = nn_createComponentState(universe, "drive", state, methods, nn_drive_handler);
+	if(t == NULL) {
+		nn_free(&ctx, state, sizeof(*state));
+		return NULL;
+	}
+	return t;
+}
+
+typedef struct nn_VDriveState {
+	nn_Universe *universe;
+	char *data;
+	size_t lastUsedSector;
+	char label[NN_MAX_LABEL];
+	size_t labellen;
+} nn_VDriveState;
+
+static nn_Exit nn_vdrive_handler(nn_DriveRequest *req) {
+	nn_Computer *c = req->computer;
+	nn_VDriveState *state = req->userdata;
+	nn_Context *ctx = &state->universe->ctx;
+	nn_Drive conf = *req->driveConf;
+
+	size_t sectorOff = (req->index - 1) * conf.sectorSize;
+	size_t labelLen = req->index;
+
+	switch(req->action) {
+	case NN_DRIVE_DROP:
+		// no per-state info anyways
+		return NN_OK;
+	case NN_DRIVE_FREE:
+		nn_free(ctx, state->data, conf.capacity);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	case NN_DRIVE_GETLABEL:
+		if(labelLen > state->labellen) labelLen = state->labellen;
+		req->index = labelLen;
+		nn_memcpy(req->buf, state->label, labelLen);
+		return NN_OK;
+	case NN_DRIVE_SETLABEL:
+		if(labelLen > NN_MAX_LABEL) labelLen = NN_MAX_LABEL;
+		state->labellen = labelLen;
+		nn_memcpy(state->label, req->buf, labelLen);
+		return NN_OK;
+	case NN_DRIVE_GETCURSECTOR:
+		req->index = state->lastUsedSector;
+		return NN_OK;
+	case NN_DRIVE_READBYTE:
+		req->byte = state->data[req->index - 1];
+		return NN_OK;
+	case NN_DRIVE_WRITEBYTE:
+		state->data[req->index - 1] = req->byte;
+		return NN_OK;
+	case NN_DRIVE_READSECTOR:
+		state->lastUsedSector = req->index;
+		nn_memcpy(req->buf, state->data + sectorOff, conf.sectorSize);
+		return NN_OK;
+	case NN_DRIVE_WRITESECTOR:
+		state->lastUsedSector = req->index;
+		nn_memcpy(state->data + sectorOff, req->buf, conf.sectorSize);
+		return NN_OK;
+	}
+	return NN_OK;
+}
+
+nn_ComponentState *nn_createVDrive(nn_Universe *universe, const nn_Drive *drive, const nn_VDrive *vdrive) {
+	nn_Context ctx = universe->ctx;
+
+	char *data = NULL;
+	nn_VDriveState *state = NULL;
+
+	data = nn_alloc(&ctx, drive->capacity);
+	if(data == NULL) goto cleanup;
+
+	state = nn_alloc(&ctx, sizeof(*state));
+	if(state == NULL) goto cleanup;
+
+	state->data = data;
+	state->lastUsedSector = 1;
+	state->universe = universe;
+	state->labellen = vdrive->labellen;
+	nn_memcpy(state->label, vdrive->label, vdrive->labellen);
+	nn_memcpy(state->data, vdrive->data, vdrive->datalen);
+	nn_memset(state->data + vdrive->datalen, 0, drive->capacity - vdrive->datalen);
+
+	return nn_createDrive(universe, drive, nn_vdrive_handler, state);
+cleanup:
+	nn_free(&ctx, data, drive->capacity);
+	nn_free(&ctx, state, sizeof(*state));
+	return NULL;
+}
+
 nn_ScreenConfig nn_defaultScreens[4] = {
 	(nn_ScreenConfig) {
 		.maxWidth = 50,
@@ -2671,6 +3027,8 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 	
 	switch(req->action) {
 	case NN_COMP_FREETYPE:
+		scrreq.action = NN_SCR_FREE;
+		state->handler(&scrreq);
 		nn_free(&ctx, state, sizeof(*state));
 		return NN_OK;
 	case NN_COMP_DEINIT:
@@ -2807,6 +3165,8 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 
 	switch(req->action) {
 	case NN_COMP_FREETYPE:
+		greq.action = NN_GPU_FREE;
+		state->handler(&greq);
 		nn_free(&ctx, state, sizeof(*state));
 		return NN_OK;
 	case NN_COMP_INIT:
@@ -3112,6 +3472,16 @@ nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPU
 		{"copy", "function(x: integer, y: integer, width: integer, height: integer, dx: integer, dy: integer) - Copies a rectangle on the screen buffer to a new position. The new position is x + dx, y + dy, thus dx and dy determine the translation of the copy.", NN_DIRECT},
 		{"fill", "function(x: integer, y: integer, width: integer, height: integer, char: string): boolean - Fills a rectangle on the screen buffer. Returns true on success, false otherwise.", NN_DIRECT},
 		// TODO: vram buffers
+		{"freeMemory", "function(): integer - Returns the amount of free VRAM remaining.", NN_DIRECT},
+		{"totalMemory", "function(): integer - Returns the total amount of VRAM usable.", NN_DIRECT},
+		{"getActiveBuffer", "function(): integer - Returns the current buffer. 0 means the screen.", NN_DIRECT},
+		{"setActiveBuffer", "function(buf: integer): integer - Switches to another buffer. 0 means the screen.", NN_DIRECT},
+		{"buffers", "function(): integer[] - Returns a list of all allocated buffers, except 0, which is reserved for the screen.", NN_DIRECT},
+		{"getBufferSize", "function(buf?: integer): integer, integer - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT},
+		{"allocateBuffer", "function(width?: integer, height?: integer): integer - Allocates a new buffer of a specific size, defaulting to the GPU's maximum resolution.", NN_DIRECT},
+		{"freeBuffer", "function(buffer?: integer): boolean - Frees a buffer, defaulting to the current one. If the current one is freed, it will switch to the screen.", NN_DIRECT},
+		{"freeAllBuffers", "function() - Frees every buffer and switches to the screen. This cannot fail.", NN_DIRECT},
+		{"bitblt", "function(dest?: integer, col?: integer, row?: integer, width?: integer, height?: integer, src?: integer, fromCol?: integer, fromRow?: integer): boolean - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentState *t = nn_createComponentState(universe, "gpu", state, methods, nn_gpu_handler);

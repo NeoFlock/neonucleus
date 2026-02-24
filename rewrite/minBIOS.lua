@@ -15,7 +15,7 @@ end
 if gpu and screen then
 	component.invoke(gpu, "bind", screen)
 	local w, h = component.invoke(gpu, "maxResolution")
-	component.invoke(gpu, "maxResolution")
+	component.invoke(gpu, "setResolution", w, h)
 	component.invoke(gpu, "setForeground", 0xFFFFFF)
 	component.invoke(gpu, "setBackground", 0x000000)
 	component.invoke(gpu, "fill", 1, 1, w, h, " ")
@@ -56,6 +56,7 @@ local function getBootCode(addr)
 	-- Read first 32K, which is a standard convention
 	local sectorsIn32K = math.ceil(32768 / sectorSize)
 	local bootCode = {firstSector}
+	-- since its null terminated, this is an optimization
 	if not firstSector:find("\0") then
 		for i=2,sectorsIn32K do
 			local sec = drive.readSector(i)
@@ -76,33 +77,13 @@ local paths = {
 	"boot/pipes/kernel",
 }
 
-local prevboot = computer.getBootAddress()
-if prevboot then
-	if component.type(prevboot) == "filesystem" then
-		for _, path in ipairs(paths) do
-			local code = romRead(prevboot, path)
-			if code then
-				assert(load(code))(prevboot)
-				error("halted")
-			end
-		end
-	end
-	if component.type(prevboot) == "drive" then
-		local f = getBootCode(prevboot)
-		if f then
-			f(prevboot)
-			error("halted")
-		end
-	end
-end
+local bootables = {}
 
 for addr in component.list("filesystem", true) do
 	for _, path in ipairs(paths) do
 		local code = romRead(addr, path)
 		if code then
-			computer.setBootAddress(addr)
-			assert(load(code))(addr)
-			error("halted")
+			table.insert(bootables, {addr = addr, code = load(code)})
 		end
 	end
 end
@@ -110,10 +91,62 @@ end
 for addr in component.list("drive", true) do
 	local f = getBootCode(addr)
 	if f then
-		computer.setBootAddress(addr)
-		f(addr)
-		error("halted")
+		table.insert(bootables, {code = f, addr = addr})
 	end
+end
+
+local function boot(bootable)
+	local w, h = component.invoke(gpu, "maxResolution")
+	component.invoke(gpu, "setResolution", w, h)
+	component.invoke(gpu, "setForeground", 0xFFFFFF)
+	component.invoke(gpu, "setBackground", 0x000000)
+	component.invoke(gpu, "fill", 1, 1, w, h, " ")
+	computer.setBootAddress(bootable.addr)
+	bootable.code(bootable.addr)
+	error("halted")
+end
+
+if #bootables == 1 then
+	boot(bootables[1])
+elseif #bootables > 1 then
+	local sel = 1
+	local function showBootable(bootable, i)
+		local w = component.invoke(gpu, "getResolution")
+		component.invoke(gpu, "fill", 1, i, w, 1, " ")
+		local text = component.invoke(bootable.addr, "getLabel") or bootable.addr
+		component.invoke(gpu, "set", 1, i, text)
+	end
+	for i=1,#bootables do
+		if i == 1 then
+			component.invoke(gpu, "setForeground", 0x000000)
+			component.invoke(gpu, "setBackground", 0xFFFFFF)
+		else
+			component.invoke(gpu, "setForeground", 0xFFFFFF)
+			component.invoke(gpu, "setBackground", 0x000000)
+		end
+		showBootable(bootables[i], i)
+	end
+	while true do
+		local e = {computer.pullSignal()}
+		if e[1] == "key_down" then
+			local keycode = e[4]
+			component.invoke(gpu, "setForeground", 0xFFFFFF)
+			component.invoke(gpu, "setBackground", 0x000000)
+			showBootable(bootables[sel], sel)
+			if keycode == 0x1C then
+				break
+			elseif keycode == 0xC8 then
+				sel = math.max(sel - 1, 1)
+			elseif keycode == 0xD0 then
+				sel = math.min(sel + 1, #bootables)
+			end
+			component.invoke(gpu, "setForeground", 0x000000)
+			component.invoke(gpu, "setBackground", 0xFFFFFF)
+			showBootable(bootables[sel], sel)
+		end
+	end
+
+	boot(bootables[sel])
 end
 
 error("no bootable medium found")

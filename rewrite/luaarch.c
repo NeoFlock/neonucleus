@@ -31,13 +31,13 @@ void *luaArch_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
 		return NULL;
 	}
 	if(ptr == NULL) {
-		//if(arch->freeMem < nsize) return NULL;
+		if(arch->freeMem < nsize) return NULL;
 		void *mem = malloc(nsize);
 		if(mem == NULL) return NULL;
 		arch->freeMem -= nsize;
 		return mem;
 	}
-	//if(arch->freeMem + osize < nsize) return NULL;
+	if(arch->freeMem + osize < nsize) return NULL;
 	void *mem = realloc(ptr, nsize);
 	if(mem == NULL) return NULL;
 	arch->freeMem += osize;
@@ -228,6 +228,12 @@ static int luaArch_computer_shutdown(lua_State *L) {
 static int luaArch_computer_isOverused(lua_State *L) {
 	nn_Computer *c = luaArch_from(L)->computer;
 	lua_pushboolean(L, nn_componentsOverused(c));
+	return 1;
+}
+
+static int luaArch_computer_isIdle(lua_State *L) {
+	nn_Computer *c = luaArch_from(L)->computer;
+	lua_pushboolean(L, nn_isComputerIdle(c));
 	return 1;
 }
 
@@ -538,6 +544,8 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_setfield(L, computer, "shutdown");
 	lua_pushcfunction(L, luaArch_computer_isOverused);
 	lua_setfield(L, computer, "isOverused");
+	lua_pushcfunction(L, luaArch_computer_isIdle);
+	lua_setfield(L, computer, "isIdle");
 	lua_pushcfunction(L, luaArch_computer_pushSignal);
 	lua_setfield(L, computer, "pushSignal");
 	lua_pushcfunction(L, luaArch_computer_popSignal);
@@ -589,7 +597,7 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 			arch = nn_alloc(ctx, sizeof(*arch));
 			arch->freeMem = nn_getTotalMemory(computer);
 			arch->computer = computer;
-			lua_State *L = luaL_newstate();
+			lua_State *L = lua_newstate(luaArch_alloc, arch);
 			arch->L = L;
 			req->localState = arch;
 			luaL_openlibs(L);

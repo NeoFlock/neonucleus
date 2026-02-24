@@ -114,6 +114,8 @@ nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 	char truepath[NN_MAX_PATH];
 
 	switch(req->action) {
+	case NN_FS_FREE:
+		return NN_OK;
 	case NN_FS_DROP:
 		for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
 			if(state->files[i] != NULL) fclose(state->files[i]);
@@ -333,8 +335,8 @@ void ne_remapScreen(ne_ScreenBuffer *buf) {
 	}
 }
 
-ne_ScreenBuffer *ne_newScreenBuf(nn_Context *ctx, nn_ScreenConfig conf, const char *keyboard) {
-	ne_ScreenBuffer *buf = nn_alloc(ctx, sizeof(*buf));
+ne_ScreenBuffer *ne_newScreenBuf(nn_ScreenConfig conf, const char *keyboard) {
+	ne_ScreenBuffer *buf = malloc(sizeof(*buf));
 	buf->maxWidth = conf.maxWidth;
 	buf->maxHeight = conf.maxHeight;
 	buf->width = buf->maxWidth;
@@ -342,10 +344,10 @@ ne_ScreenBuffer *ne_newScreenBuf(nn_Context *ctx, nn_ScreenConfig conf, const ch
 	buf->maxDepth = conf.maxDepth;
 	buf->depth = buf->maxDepth;
 	buf->maxPalette = conf.paletteColors;
-	buf->pixels = nn_alloc(ctx, sizeof(ne_Pixel) * conf.maxWidth * conf.maxHeight);
-	buf->virtualPalette = nn_alloc(ctx, sizeof(int) * conf.paletteColors);
+	buf->pixels = malloc(sizeof(ne_Pixel) * conf.maxWidth * conf.maxHeight);
+	buf->virtualPalette = malloc(sizeof(int) * conf.paletteColors);
 	memset(buf->virtualPalette, 0, sizeof(int) * buf->maxPalette);
-	buf->mappedPalette = nn_alloc(ctx, sizeof(int) * conf.paletteColors);
+	buf->mappedPalette = malloc(sizeof(int) * conf.paletteColors);
 	buf->keyboard = keyboard;
 
 	int *palette = NULL;
@@ -374,11 +376,11 @@ ne_ScreenBuffer *ne_newScreenBuf(nn_Context *ctx, nn_ScreenConfig conf, const ch
 	return buf;
 }
 
-void ne_dropScreenBuf(nn_Context *ctx, ne_ScreenBuffer *buf) {
-	nn_free(ctx, buf->pixels, sizeof(ne_Pixel) * buf->maxWidth * buf->maxHeight);
-	nn_free(ctx, buf->mappedPalette, sizeof(int) * buf->maxPalette);
-	nn_free(ctx, buf->virtualPalette, sizeof(int) * buf->maxPalette);
-	nn_free(ctx, buf, sizeof(*buf));
+void ne_dropScreenBuf(ne_ScreenBuffer *buf) {
+	free(buf->pixels);
+	free(buf->mappedPalette);
+	free(buf->virtualPalette);
+	free(buf);
 }
 
 ne_Pixel defaultPixel = {
@@ -413,6 +415,8 @@ nn_Exit ne_screen_handler(nn_ScreenRequest *req) {
 	ne_ScreenBuffer *buf = req->instance;
 	switch(req->action) {
 	case NN_SCR_DROP:
+		return NN_OK;
+	case NN_SCR_FREE:
 		return NN_OK;
 	case NN_SCR_GETASPECTRATIO:
 		req->w = 1;
@@ -493,15 +497,14 @@ ne_ScreenBuffer *ne_gpu_currentBuffer(ne_GPUState *state) {
 nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 	nn_Computer *C = req->computer;
 	ne_GPUState *state = req->instance;
-	nn_Context *ctx = nn_getComputerContext(C);
 
 	int maxWidth = req->gpuConf->maxWidth;
 	int maxHeight = req->gpuConf->maxHeight;
 	int maxDepth = req->gpuConf->maxDepth;
 
-	ne_ScreenBuffer *activeBuf = ne_gpu_currentBuffer(state);
+	ne_ScreenBuffer *activeBuf = state == NULL ? NULL : ne_gpu_currentBuffer(state);
 
-	if(state->screenBuf != NULL) {
+	if(state != NULL && state->screenBuf != NULL) {
 		ne_ScreenBuffer *buf = state->screenBuf;
 		if(maxWidth > buf->maxWidth) maxWidth = buf->maxWidth;
 		if(maxHeight > buf->maxHeight) maxHeight = buf->maxHeight;
@@ -515,9 +518,11 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 	case NN_GPU_DROP:
 		for(int i = 0; i < NE_MAX_VRAMBUF; i++) {
 			ne_ScreenBuffer *buf = state->vramBufs[i];
-			if(buf != NULL) ne_dropScreenBuf(ctx, buf);
+			if(buf != NULL) ne_dropScreenBuf(buf);
 		}
 		free(state);
+		return NN_OK;
+	case NN_GPU_FREE:
 		return NN_OK;
 	case NN_GPU_BIND:
 		state->screenBuf = nn_getComponentUserdata(C, req->text);
@@ -625,7 +630,7 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 		if(w >= activeBuf->width) w = activeBuf->width - 1;
 		if(h >= activeBuf->height) h = activeBuf->height - 1;
 
-		ne_Pixel *buf = nn_alloc(ctx, sizeof(*buf) * w * h);
+		ne_Pixel *buf = malloc(sizeof(*buf) * w * h);
 		if(buf == NULL) return NN_ENOMEM;
 		
 		for(int oy = 0; oy < h; oy++) {
@@ -640,7 +645,7 @@ nn_Exit ne_gpu_handler(nn_GPURequest *req) {
 				ne_setPixel(activeBuf, x + ox + req->tx, y + oy + req->ty, p);
 			}
 		}
-		nn_free(ctx, buf, sizeof(*buf) * w * h);
+		free(buf);
 		ne_remapScreen(activeBuf);
 		return NN_OK;
 	case NN_GPU_GETDEPTH:
@@ -992,12 +997,15 @@ double ne_energy_accumulator(void *state, nn_Computer *c, double n) {
 	return nn_getTotalEnergy(c);
 }
 
-int main() {
+int main(int argc, char **argv) {
 	const char *player = getenv("USER");
 	if(player == NULL) player = "me";
 
 	bool sandboxMem = getenv("NN_MEMSAND") != NULL;
 	bool showStats = getenv("NN_STAT") != NULL;
+
+	const char *mainDir = "OpenOS";
+	if(argc > 1) mainDir = argv[1];
 
 	nn_Context ctx;
 	nn_initContext(&ctx);
@@ -1029,7 +1037,7 @@ int main() {
 		{"log", "log(msg: string) - Log to stdout", true},
 		{NULL},
 	};
-	nn_ComponentState *sandstate = nn_createComponentState(u, "sandbox", NULL, sandboxMethods, sandbox_handler);
+	nn_ComponentState *sandstate = nn_createComponentState(u, "ocelot", NULL, sandboxMethods, sandbox_handler);
 
 	nn_VEEPROM veeprom = {
 		.code = minBIOS,
@@ -1052,7 +1060,11 @@ int main() {
 	nn_ComponentState *keytype = nn_createKeyboard(u);
 	nn_ComponentState *gputype = nn_createGPU(u, &nn_defaultGPUs[3], ne_gpu_handler, NULL);
 
-	nn_Computer *c = nn_createComputer(u, NULL, "computer0", 8 * NN_MiB, 256, 256);
+	size_t ramTotal = 0;
+	ramTotal += nn_ramSizes[1];
+	ramTotal += nn_ramSizes[1];
+
+	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
 	if(showStats) {
 		// collects stats
 		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
@@ -1064,15 +1076,25 @@ int main() {
 	nn_addComponent(c, sandstate, "sandbox", -1, NULL);
 	nn_addComponent(c, etype, "eeprom", 0, etype);
 
-	ne_FsState *mainFS = ne_newFS("OpenOS", false);
-	nn_addComponent(c, fstype[4], "mainFS", 2, mainFS);
-
+	nn_addComponent(c, fstype[4], "mainFS", 2, ne_newFS(mainDir, false));
+	
 	nn_addComponent(c, keytype, "mainKB", 4, NULL);
-	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(&ctx, nn_defaultScreens[2], "mainKB");
+	ne_ScreenBuffer *scrbuf = ne_newScreenBuf(nn_defaultScreens[2], "mainKB");
 	nn_addComponent(c, scrtype, "mainScreen", -1, scrbuf);
 
 	ne_GPUState *gpu = ne_newGPU();
 	nn_addComponent(c, gputype, "mainGPU", 3, gpu);
+
+	const char *driveData = "error('unmanaged drive')";
+	nn_VDrive vdrive = {
+		.data = driveData,
+		.datalen = strlen(driveData),
+		.label = "",
+		.labellen = 0,
+	};
+
+	nn_ComponentState *vdriveState = nn_createVDrive(u, &nn_defaultDrives[3], &vdrive);
+	nn_addComponent(c, vdriveState, "mainDrive", 4, NULL);
 
 	SetExitKey(KEY_NULL);
 
@@ -1120,15 +1142,18 @@ int main() {
 
 		int statY = 10;
 		if(sand.buf != NULL) {
-			DrawText(TextFormat("mem used: %.2f%%", (double)sand.used / sand.cap * 100), 10, statY, 20, WHITE);
+			DrawText(TextFormat("mem used: %.2f%%", (double)sand.used / sand.cap * 100), 10, statY, 20, YELLOW);
 			statY += 20;
 		}
 		if(showStats) {
 			double wattage = accumulatedEnergyCost;
 			if(tickDelay > 0) wattage /= tickDelay;
-			DrawText(TextFormat("power usage: %.2f W", wattage), 10, statY, 20, WHITE);
+			double memUsagePercent = (double)nn_getUsedMemory(c) * 100 / nn_getTotalMemory(c);
+			DrawText(TextFormat("power usage: %.2f W", wattage), 10, statY, 20, GREEN);
 			statY += 20;
-			DrawText(TextFormat("energy loss: %.2f J", totalEnergyLoss), 10, statY, 20, WHITE);
+			DrawText(TextFormat("energy loss: %.2f J", totalEnergyLoss), 10, statY, 20, GREEN);
+			statY += 20;
+			DrawText(TextFormat("VM mem usage: %.2f%%", memUsagePercent), 10, statY, 20, GREEN);
 			statY += 20;
 		}
 
@@ -1212,8 +1237,9 @@ cleanup:;
 	nn_destroyComponentState(scrtype);
 	nn_destroyComponentState(keytype);
 	nn_destroyComponentState(gputype);
+	nn_destroyComponentState(vdriveState);
 	for(size_t i = 0; i < 5; i++) nn_destroyComponentState(fstype[i]);
-	ne_dropScreenBuf(&ctx, scrbuf);
+	ne_dropScreenBuf(scrbuf);
 	// rip the universe
 	nn_destroyUniverse(u);
 	UnloadFont(font);

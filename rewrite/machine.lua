@@ -13,11 +13,13 @@ end
 local resume = coroutine.resume
 
 function coroutine.resume(co, ...)
-	local t = {resume(co, ...)}
-	if t[1] and rawequal(t[2], sysyieldobj) then
-		coroutine.yield(sysyieldobj)
-	else
-		return table.unpack(t)
+	while true do
+		local t = {resume(co, ...)}
+		if t[1] and rawequal(t[2], sysyieldobj) then
+			coroutine.yield(sysyieldobj)
+		else
+			return table.unpack(t)
+		end
 	end
 end
 
@@ -65,6 +67,7 @@ function component.invoke(address, method, ...)
 	local t = {pcall(cinvoke, address, method, ...)}
 	if computer.energy() <= 0 then sysyield() end -- out of power
 	if computer.isOverused() then sysyield() end -- overused
+	if computer.isIdle() then sysyield() end -- machine idle
 
 	if t[1] then
 		return table.unpack(t, 2)
@@ -189,24 +192,17 @@ unicode.sub = function(str, a, b)
 	if not b then b = utf8.len(str) end
 	if not a then a = 1 end
 	-- a = math.max(a,1)
-	
 	if a < 0 then
 		-- negative
-		
 		a = utf8.len(str) + a + 1
 	end
-	
 	if b < 0 then
 		b = utf8.len(str) + b + 1
 	end
-	
 	if a > b then return "" end
-	
 	if b >= utf8.len(str) then b = #str else b = utf8.offset(str,b+1)-1 end
-	
 	if a > utf8.len(str) then return "" end
 	a = utf8.offset(str,a)
-	
 	return str:sub(a,b)
 	-- return str:sub(a, b)
 end
@@ -238,11 +234,14 @@ if os.getenv("NN_REPL") == "1" then
 	print("exiting repl")
 end
 
-collectgarbage("stop")
+-- Save on just a tiny smudgeon of RAM
+io = nil
+package = nil
 
 local eeprom = component.list("eeprom", true)()
 assert(eeprom, "missing firmware")
 
+-- this would automatically reboot us if it needs to be a different architecture
 local arch = component.invoke(eeprom, "getArchitecture")
 if arch then computer.setArchitecture(arch) end
 

@@ -306,6 +306,11 @@ typedef struct nn_Architecture {
 	nn_ArchitectureHandler *handler;
 } nn_Architecture;
 
+// Standard RAM sizes.
+// Standard OC goes from tier 1 to tier 6,
+// NN adds 2 more tiers.
+extern size_t nn_ramSizes[8];
+
 // The state of a *RUNNING* computer.
 // Powered off computers shall not have a state, and as far as NeoNucleus is aware,
 // not exist.
@@ -396,6 +401,10 @@ void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHand
 size_t nn_getTotalMemory(nn_Computer *computer);
 // Gets the total amount of free memory the computer has available. The total memory - this is the amount of memory used.
 size_t nn_getFreeMemory(nn_Computer *computer);
+// Gets the total amount of used memory the computer has allocated.
+// This is just the total minus the free, and does not take into
+// account the overhead of storing the computer instance.
+size_t nn_getUsedMemory(nn_Computer *computer);
 // gets the current uptime of a computer. When the computer is not running, this value can be anything and loses all meaning.
 double nn_getUptime(nn_Computer *computer);
 
@@ -417,8 +426,13 @@ void nn_setComputerState(nn_Computer *computer, nn_ComputerState state);
 // gets the current computer state
 nn_ComputerState nn_getComputerState(nn_Computer *computer);
 
+// Checks if the uptime is below the idle timestamp.
+bool nn_isComputerIdle(nn_Computer *computer);
+// Shifts over the idle timestamp.
+void nn_addIdleTime(nn_Computer *computer, double time);
 // runs a tick of the computer. Make sure to check the state as well!
 // This automatically resets the component budgets and call budget.
+// It also sets the idle timestamp to the current uptime.
 nn_Exit nn_tick(nn_Computer *computer);
 
 typedef struct nn_DeviceInfoEntry {
@@ -750,6 +764,8 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 typedef enum nn_EEPROMAction {
 	// the eeprom instance has been dropped
 	NN_EEPROM_DROP,
+	// the eeprom state has been dropped
+	NN_EEPROM_FREE,
 	NN_EEPROM_GET,
 	NN_EEPROM_SET,
 	NN_EEPROM_GETDATA,
@@ -793,6 +809,10 @@ typedef struct nn_EEPROM {
 	double writeEnergyCost;
 	// the energy cost of writing to an EEPROM's associated data
 	double writeDataEnergyCost;
+	// idle time added when writing code
+	double writeDelay;
+	// idle time added when writing data
+	double writeDataDelay;
 } nn_EEPROM;
 
 // Tier 1 - The normal EEPROM equivalent
@@ -828,8 +848,11 @@ nn_ComponentState *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eepr
 // - For rename, it automatically checks if the destination exists and if so, errors out.
 typedef enum nn_FilesystemAction {
 	// the filesystem instance has been dropped.
-	// Make sure to close all file descriptors which are still open.
+	// This is just for computer-local state, make sure to free it.
 	NN_FS_DROP,
+	// the filesystem state has been dropped.
+	// Make sure to close all file descriptors which are still open.
+	NN_FS_FREE,
 	// open a file. strarg1 stores the path, and strarg2 stores the mode.
 	// strarg1len and strarg2len are their respective lengths.
 	// The output should be in fd.
@@ -973,14 +996,160 @@ typedef struct nn_Filesystem {
 extern nn_Filesystem nn_defaultFilesystems[4];
 // a basic floppy
 extern nn_Filesystem nn_defaultFloppy;
+// a generic tmpfs
+extern nn_Filesystem nn_defaultTmpFS;
 
 typedef nn_Exit nn_FilesystemHandler(nn_FilesystemRequest *request);
 
+typedef struct nn_VFileNode {
+	// the name of the node.
+	// This is the raw name, do not append / to directories.
+	const char *name;
+	// if NULL, the node is a directory.
+	const char *data;
+	union {
+		// for files, how much of data to read.
+		size_t dataLen;
+		// for directories, the amount of entries encoded afterwards.
+		// Do note that entry encoding is recursive, so for example
+		// a(1) b(2) c("hi") d("there"), means directory a/ has a directory b/ which has 2 files, c and d,
+		// even though a's entry count is 1.
+		size_t entryCount;
+	};
+} nn_VFileNode;
+
+typedef struct nn_VFilesystem {
+	const char *label;
+	size_t labellen;
+	bool isReadOnly;
+	// The maximum amount of directory entries. This is used to pre-allocate an array.
+	// It also helps against memory hogging attacks.
+	size_t maxDirEntries;
+	// the maximum amount of nodes the filesystem can have. This is also used to pre-allocate an array.
+	size_t maxNodeCount;
+	// used to compute lastModified. This, together with the context's time procedure, is used to compute the timestamp.
+	// It must be a UNIX timestamp, else you'll get weird results.
+	size_t creationTime;
+	size_t rootNodeCount;
+	// the flat array of the filesystem. See nn_VFileNode for details.
+	nn_VFileNode *image;
+} nn_VFilesystem;
+
 nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata);
+nn_ComponentState *nn_createVFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, const nn_VFilesystem *vfs);
+
+typedef enum nn_DriveAction {
+	// instance dropped
+	NN_DRIVE_DROP,
+	// free screen state
+	NN_DRIVE_FREE,
+	// Gets the current label.
+	// [index] is set to the capacity of [buf].
+	// You must write the label into [buf], then set [index] to the length of the label.
+	// Empty label means no label.
+	NN_DRIVE_GETLABEL,
+	// Sets the current label.
+	// [index] is set to the length of [buf].
+	// Empty label means no label.
+	// Set [index] to the new length of the label, if it has been truncated.
+	NN_DRIVE_SETLABEL,
+	// gets the current read head, or more accurately, the last sector used
+	// in order to compute seeking penalties.
+	// You must output the current read head in [index].
+	NN_DRIVE_GETCURSECTOR,
+	// Reads a sector.
+	// The sector index is in [index], and the contents are in [buf].
+	NN_DRIVE_READSECTOR,
+	// Writes a sector.
+	// The sector index is in [index].
+	// Output the contents of that sector in [buf].
+	NN_DRIVE_WRITESECTOR,
+	// Reads a byte
+	// The byte index is in [index].
+	// You must output the byte in [byte].
+	NN_DRIVE_READBYTE,
+	// Writes a byte.
+	// The byte index is in [index], the byte is in [byte].
+	NN_DRIVE_WRITEBYTE,
+} nn_DriveAction;
+
+// Note that sectors and bytes are 1-indexed.
+// Bounds checking is done automatically by the interface.
+typedef struct nn_DriveRequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	struct nn_Drive *driveConf;
+	nn_DriveAction action;
+	size_t index;
+	union {
+		char *buf;
+		// OC explicitly uses *signed* chars.
+		// Helper methods for reading unsigned bytes cast it to an unsigned byte first.
+		// Just, do not ask.
+		signed char byte;
+	};
+} nn_DriveRequest;
+
+typedef nn_Exit nn_DriveHandler(nn_DriveRequest *req);
+
+typedef struct nn_Drive {
+	// The capacity of the drive.
+	// It is in bytes, but it MUST be a multiple of the sector size.
+	// The total amount of sectors, as in capacity / sectorSize, must also be divisible by the platter count.
+	// If it is not, it is UB.
+	size_t capacity;
+	// the sector size, typically 512
+	size_t sectorSize;
+	// the amount of platters the drive has. This contributes to how many "rotations" are needed.
+	// A drive with 8 sectors but 1 platter, when seeking from sector 1 to 8, would mean 7 rotations.
+	// However, if it has 2 platters, it'd be seen as 1 to 4 being at the same angle as 5 to 8, which
+	// would mean only 3 rotations.
+	size_t platterCount;
+	// how many reads can be issued per tick.
+	// Reading either a sector or a byte counts as 1 read.
+	size_t readsPerTick;
+	// how many writes can be issued per tick.
+	// Writing a sector counts as 1 write.
+	// Writing a byte counts as 1 read and 1 write,
+	// you can imagine it as reading the sector, editing the byte,
+	// then writing the sector back.
+	size_t writesPerTick;
+	// Set to 0 for *infinite*, effectively an SSD.
+	// This would mean there is 0 penalty for seeking (technically unreliastic even for an SSD).
+	// This is simply used to compute idle time. It is in literal full rotations per minute.
+	size_t rpm;
+	// If false, it behaves like a normal OC drive, where the drive can spin backwards to seek.
+	// However, this is unrealistic, as doing so may crack the sensitive platter and make the
+	// reader lose lift.
+	// For fans of physics, this option only allows the seeks to go forwards.
+	// This is super punishing at a slow RPM, so it is recommended to bump up
+	// the RPM to something like 7200 RPM.
+	bool onlySpinForwards;
+	// The energy cost of an actual read/write.
+	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
+	double dataEnergyCost;
+} nn_Drive;
+
+typedef struct nn_VDrive {
+	// initial label
+	const char *label;
+	size_t labellen;
+	// initial data
+	const char *data;
+	size_t datalen;
+} nn_VDrive;
+
+extern nn_Drive nn_defaultDrives[4];
+
+nn_ComponentState *nn_createDrive(nn_Universe *universe, const nn_Drive *drive, nn_DriveHandler *handler, void *userdata);
+nn_ComponentState *nn_createVDrive(nn_Universe *universe, const nn_Drive *drive, const nn_VDrive *vdrive);
 
 typedef enum nn_ScreenAction {
 	// instance dropped
 	NN_SCR_DROP,
+	// free screen state
+	NN_SCR_FREE,
 
 	// set w to 1 if it is on, or 0 if it is off.
 	NN_SCR_ISON,
@@ -1075,6 +1244,8 @@ nn_ComponentState *nn_createKeyboard(nn_Universe *universe);
 typedef enum nn_GPUAction {
 	// instance dropped
 	NN_GPU_DROP,
+	// component state dropped
+	NN_GPU_FREE,
 
 	// Conventional GPU functions
 
