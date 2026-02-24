@@ -546,7 +546,7 @@ void nn_initContext(nn_Context *ctx) {
 	ctx->lock = nn_defaultLock;
 }
 
-typedef struct nn_ComponentType {
+typedef struct nn_ComponentState {
 	nn_Universe *universe;
 	void *userdata;
 	nn_Arena arena;
@@ -555,7 +555,7 @@ typedef struct nn_ComponentType {
 	// NULL-terminated
 	nn_Method *methods;
 	size_t methodCount;
-} nn_ComponentType;
+} nn_ComponentState;
 
 // currently just a wrapper around a context
 // but will be way more in the future
@@ -565,7 +565,7 @@ typedef struct nn_Universe {
 
 typedef struct nn_Component {
 	char *address;
-	nn_ComponentType *ctype;
+	nn_ComponentState *cstate;
 	int slot;
 	float budgetUsed;
 	void *userdata;
@@ -668,10 +668,10 @@ void nn_destroyUniverse(nn_Universe *universe) {
 	nn_free(&ctx, universe, sizeof(nn_Universe));
 }
 
-nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler) {
+nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler) {
 	nn_Context *ctx = &universe->ctx;
 	
-	nn_ComponentType *ctype = nn_alloc(ctx, sizeof(nn_ComponentType));
+	nn_ComponentState *ctype = nn_alloc(ctx, sizeof(nn_ComponentState));
 	if(ctype == NULL) return NULL;
 	ctype->universe = universe;
 	ctype->userdata = userdata;
@@ -706,11 +706,11 @@ nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name
 	return ctype;
 fail:;
 	 // yes, because of arenas, we support freeing a "partially initialized state"
-	 nn_destroyComponentType(ctype);
+	 nn_destroyComponentState(ctype);
 	 return NULL;
 }
 
-void nn_destroyComponentType(nn_ComponentType *ctype) {
+void nn_destroyComponentState(nn_ComponentState *ctype) {
 	if(ctype == NULL) return;
 	nn_Context *ctx = &ctype->universe->ctx;
 
@@ -725,7 +725,7 @@ void nn_destroyComponentType(nn_ComponentType *ctype) {
 	ctype->handler(&req);
 
 	nn_ardestroy(&ctype->arena);
-	nn_free(ctx, ctype, sizeof(nn_ComponentType));
+	nn_free(ctx, ctype, sizeof(nn_ComponentState));
 }
 
 double nn_default_energyHandler(void *state, nn_Computer *computer, double amount) {
@@ -1094,13 +1094,13 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	return NN_OK;
 }
 
-nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const char *address, int slot, void *userdata) {
+nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *ctype, const char *address, int slot, void *userdata) {
 	if(computer->componentLen == computer->componentCap) return NN_ELIMIT;
 
 	nn_Component c;
 	c.address = nn_strdup(&computer->universe->ctx, address);
 	if(c.address == NULL) return NN_ENOMEM;
-	c.ctype = ctype;
+	c.cstate = ctype;
 	c.slot = slot;
 	c.userdata = userdata;
 	c.state = NULL;
@@ -1154,15 +1154,15 @@ bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method
 		if(nn_strcmp(c->address, address) != 0) continue;
 
 		bool found = false;
-		for(size_t j = 0; j < c->ctype->methodCount; j++) {
-			if(nn_strcmp(c->ctype->methods[j].name, method) != 0) continue;
+		for(size_t j = 0; j < c->cstate->methodCount; j++) {
+			if(nn_strcmp(c->cstate->methods[j].name, method) != 0) continue;
 			found = true;
 			break;
 		}
 		if(!found) return false;
 		
 		nn_ComponentRequest req;
-		req.typeUserdata = c->ctype->userdata;
+		req.typeUserdata = c->cstate->userdata;
 		req.compUserdata = c->userdata;
 		req.state = c->state;
 		req.computer = computer;
@@ -1172,7 +1172,7 @@ bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method
 		// default response in case it is not implemented
 		req.methodEnabled = true;
 		// should never error
-		c->ctype->handler(&req);
+		c->cstate->handler(&req);
 
 		return req.methodEnabled;
 	}
@@ -1181,7 +1181,7 @@ bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method
 
 static void nn_dropComponent(nn_Computer *computer, nn_Component c) {
 	nn_ComponentRequest req;
-	req.typeUserdata = c.ctype->userdata;
+	req.typeUserdata = c.cstate->userdata;
 	req.compUserdata = c.userdata;
 	req.state = c.state;
 	req.computer = computer;
@@ -1189,7 +1189,7 @@ static void nn_dropComponent(nn_Computer *computer, nn_Component c) {
 	req.action = NN_COMP_DEINIT;
 	req.methodCalled = NULL;
 
-	c.ctype->handler(&req);
+	c.cstate->handler(&req);
 	
 	nn_strfree(&computer->universe->ctx, c.address);
 }
@@ -1218,7 +1218,7 @@ nn_Exit nn_removeComponent(nn_Computer *computer, const char *address) {
 		err = nn_pushstring(computer, address);
 		if(err) return err;
 		// not a UAF because c is on-stack
-		err = nn_pushstring(computer, c.ctype->name);
+		err = nn_pushstring(computer, c.cstate->name);
 		if(err) return err;
 		err = nn_pushSignal(computer, 3);
 		if(err) return err;
@@ -1230,7 +1230,7 @@ const char *nn_getComponentType(nn_Computer *computer, const char *address) {
 	for(size_t i = 0; i < computer->componentLen; i++) {
 		nn_Component *c = &computer->components[i];
 		if(nn_strcmp(c->address, address) == 0) {
-			return c->ctype->name;
+			return c->cstate->name;
 		}
 	}
 	return NULL;
@@ -1250,8 +1250,8 @@ const nn_Method *nn_getComponentMethods(nn_Computer *computer, const char *addre
 	for(size_t i = 0; i < computer->componentLen; i++) {
 		nn_Component *c = &computer->components[i];
 		if(nn_strcmp(c->address, address) == 0) {
-			if(len != NULL) *len = c->ctype->methodCount;
-			return c->ctype->methods;
+			if(len != NULL) *len = c->cstate->methodCount;
+			return c->cstate->methods;
 		}
 	}
 	if(len != NULL) *len = 0;
@@ -1274,8 +1274,8 @@ const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const
 		nn_Component c = computer->components[i];
 		if(nn_strcmp(c.address, address) != 0) continue;
 
-		for(size_t j = 0; j < c.ctype->methodCount; j++) {
-			if(nn_strcmp(c.ctype->methods[j].name, method) == 0) return c.ctype->methods[j].docString;
+		for(size_t j = 0; j < c.cstate->methodCount; j++) {
+			if(nn_strcmp(c.cstate->methods[j].name, method) == 0) return c.cstate->methods[j].docString;
 		}
 		return NULL;
 	}
@@ -1349,15 +1349,15 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 
 		// minimum cost of a component call
 		if(computer->callBudget > 0) computer->callBudget--;
-		for(size_t j = 0; j < c.ctype->methodCount; j++) {
-			nn_Method m = c.ctype->methods[j];
+		for(size_t j = 0; j < c.cstate->methodCount; j++) {
+			nn_Method m = c.cstate->methods[j];
 			if(nn_strcmp(m.name, method) != 0) continue;
 			// indirect calls consume the entire call budget
 			if((m.flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
 		}
 		
 		nn_ComponentRequest req;
-		req.typeUserdata = c.ctype->userdata;
+		req.typeUserdata = c.cstate->userdata;
 		req.compUserdata = c.userdata;
 		req.state = c.state;
 		req.computer = computer;
@@ -1367,7 +1367,7 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 		// default is to return nothing
 		req.returnCount = 0;
 
-		nn_Exit err = c.ctype->handler(&req);
+		nn_Exit err = c.cstate->handler(&req);
 		if(err) {
 			if(err != NN_EBADCALL) nn_setErrorFromExit(computer, err);
 			// clear junk
@@ -2113,7 +2113,7 @@ nn_EEPROM nn_defaultEEPROMs[4] = {
 	},
 };
 
-nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata) {
+nn_ComponentState *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata) {
 	nn_Context ctx = universe->ctx;
 	nn_EEPROM_state *state = nn_alloc(&ctx, sizeof(*state));
 	if(state == NULL) return NULL;
@@ -2137,7 +2137,7 @@ nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom
 		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_INDIRECT},
 		{NULL, NULL, NN_INDIRECT},
 	};
-	nn_ComponentType *t = nn_createComponentType(universe, "eeprom", state, methods, nn_eeprom_handler);
+	nn_ComponentState *t = nn_createComponentState(universe, "eeprom", state, methods, nn_eeprom_handler);
 	if(t == NULL) {
 		nn_free(&ctx, state, sizeof(*state));
 		return NULL;
@@ -2197,7 +2197,7 @@ static nn_Exit nn_veeprom_handler(nn_EEPROMRequest *req) {
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem) {
+nn_ComponentState *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem) {
 	nn_Context ctx = universe->ctx;
 	char *code = NULL;
 	char *data = NULL;
@@ -2229,7 +2229,7 @@ nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eepro
 	state->archlen = archlen;
 	nn_memcpy(state->arch, vmem->arch, sizeof(char) * archlen);
 
-	nn_ComponentType *ty = nn_createEEPROM(universe, eeprom, nn_veeprom_handler, state);
+	nn_ComponentState *ty = nn_createEEPROM(universe, eeprom, nn_veeprom_handler, state);
 	if(ty == NULL) goto fail;
 	return ty;
 fail:;
@@ -2582,7 +2582,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata) {
+nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata) {
 	nn_Context ctx = universe->ctx;
 	nn_Filesystem_state *state = nn_alloc(&ctx, sizeof(*state));
 	if(state == NULL) return NULL;
@@ -2611,7 +2611,7 @@ nn_ComponentType *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem
 		{"makeDirectory", "function(path: string): boolean - Creates a directory. Creates parent directories if necessary.", NN_DIRECT},
 		{NULL, NULL, NN_INDIRECT},
 	};
-	nn_ComponentType *t = nn_createComponentType(universe, "filesystem", state, methods, nn_filesystem_handler);
+	nn_ComponentState *t = nn_createComponentState(universe, "filesystem", state, methods, nn_filesystem_handler);
 	if(t == NULL) {
 		nn_free(&ctx, state, sizeof(*state));
 		return NULL;
@@ -2688,7 +2688,7 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata) {
+nn_ComponentState *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata) {
 	nn_Context ctx = universe->ctx;
 	nn_Screen_state *state = nn_alloc(&ctx, sizeof(*state));
 	if(state == NULL) return NULL;
@@ -2708,7 +2708,7 @@ nn_ComponentType *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handl
 		{"isTouchModeInverted", "function(): boolean - Checks if inverted touch mode is enabled.", NN_DIRECT},
 		{NULL, NULL, NN_INDIRECT},
 	};
-	nn_ComponentType *t = nn_createComponentType(universe, "screen", state, methods, nn_screen_handler);
+	nn_ComponentState *t = nn_createComponentState(universe, "screen", state, methods, nn_screen_handler);
 	if(t == NULL) {
 		nn_free(&ctx, state, sizeof(*state));
 		return NULL;
@@ -2721,11 +2721,11 @@ static nn_Exit nn_keyboard_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createKeyboard(nn_Universe *universe) {
+nn_ComponentState *nn_createKeyboard(nn_Universe *universe) {
 	const nn_Method methods[] = {
 		{NULL, NULL, NN_INDIRECT},
 	};
-	return nn_createComponentType(universe, "keyboard", NULL, methods, nn_keyboard_handler);
+	return nn_createComponentState(universe, "keyboard", NULL, methods, nn_keyboard_handler);
 }
 
 nn_GPU nn_defaultGPUs[4] = {
@@ -3080,7 +3080,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
-nn_ComponentType *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata) {
+nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata) {
 	nn_Context ctx = universe->ctx;
 	nn_GPU_state *state = nn_alloc(&ctx, sizeof(*state));
 	if(state == NULL) return NULL;
@@ -3114,7 +3114,7 @@ nn_ComponentType *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUH
 		// TODO: vram buffers
 		{NULL, NULL, NN_INDIRECT},
 	};
-	nn_ComponentType *t = nn_createComponentType(universe, "gpu", state, methods, nn_gpu_handler);
+	nn_ComponentState *t = nn_createComponentState(universe, "gpu", state, methods, nn_gpu_handler);
 	if(t == NULL) {
 		nn_free(&ctx, state, sizeof(*state));
 		return NULL;

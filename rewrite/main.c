@@ -1029,7 +1029,7 @@ int main() {
 		{"log", "log(msg: string) - Log to stdout", true},
 		{NULL},
 	};
-	nn_ComponentType *ctype = nn_createComponentType(u, "sandbox", NULL, sandboxMethods, sandbox_handler);
+	nn_ComponentState *sandstate = nn_createComponentState(u, "sandbox", NULL, sandboxMethods, sandbox_handler);
 
 	nn_VEEPROM veeprom = {
 		.code = minBIOS,
@@ -1042,15 +1042,15 @@ int main() {
 		.isReadonly = false,
 	};
 
-	nn_ComponentType *etype = nn_createVEEPROM(u, &nn_defaultEEPROMs[3], &veeprom);
-	nn_ComponentType *fstype[5];
+	nn_ComponentState *etype = nn_createVEEPROM(u, &nn_defaultEEPROMs[3], &veeprom);
+	nn_ComponentState *fstype[5];
 	fstype[0] = nn_createFilesystem(u, &nn_defaultFloppy, ne_fsState_handler, NULL);
 	for(size_t i = 1; i < 5; i++) {
 		fstype[i] = nn_createFilesystem(u, &nn_defaultFilesystems[i-1], ne_fsState_handler, NULL);
 	}
-	nn_ComponentType *scrtype = nn_createScreen(u, ne_screen_handler, NULL);
-	nn_ComponentType *keytype = nn_createKeyboard(u);
-	nn_ComponentType *gputype = nn_createGPU(u, &nn_defaultGPUs[3], ne_gpu_handler, NULL);
+	nn_ComponentState *scrtype = nn_createScreen(u, ne_screen_handler, NULL);
+	nn_ComponentState *keytype = nn_createKeyboard(u);
+	nn_ComponentState *gputype = nn_createGPU(u, &nn_defaultGPUs[3], ne_gpu_handler, NULL);
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", 8 * NN_MiB, 256, 256);
 	if(showStats) {
@@ -1061,10 +1061,10 @@ int main() {
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);
 
-	nn_addComponent(c, ctype, "sandbox", -1, NULL);
+	nn_addComponent(c, sandstate, "sandbox", -1, NULL);
 	nn_addComponent(c, etype, "eeprom", 0, etype);
 
-	ne_FsState *mainFS = ne_newFS("OpenOS", true);
+	ne_FsState *mainFS = ne_newFS("OpenOS", false);
 	nn_addComponent(c, fstype[4], "mainFS", 2, mainFS);
 
 	nn_addComponent(c, keytype, "mainKB", 4, NULL);
@@ -1207,12 +1207,12 @@ int main() {
 
 cleanup:;
 	nn_destroyComputer(c);
-	nn_destroyComponentType(ctype);
-	nn_destroyComponentType(etype);
-	nn_destroyComponentType(scrtype);
-	nn_destroyComponentType(keytype);
-	nn_destroyComponentType(gputype);
-	for(size_t i = 0; i < 5; i++) nn_destroyComponentType(fstype[i]);
+	nn_destroyComponentState(sandstate);
+	nn_destroyComponentState(etype);
+	nn_destroyComponentState(scrtype);
+	nn_destroyComponentState(keytype);
+	nn_destroyComponentState(gputype);
+	for(size_t i = 0; i < 5; i++) nn_destroyComponentState(fstype[i]);
 	ne_dropScreenBuf(&ctx, scrbuf);
 	// rip the universe
 	nn_destroyUniverse(u);

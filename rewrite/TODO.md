@@ -7,8 +7,6 @@
 
 # To re-evaluate
 
-- The current system has the computer store the components and the component *types* store the state. Perhaps the ComponentType struct should be renamed
-to ComponentState.
 - More stack manipulation functions to allow libraries to have more APIs.
 - Having a copy of the context stored directly in requests instead of having to use getComputerContext, as it simplifies the APIs and allows them
 to be made more portable.

@@ -461,7 +461,7 @@ typedef struct nn_Method {
 	nn_MethodFlags flags;
 } nn_Method;
 
-typedef struct nn_ComponentType nn_ComponentType;
+typedef struct nn_ComponentState nn_ComponentState;
 
 typedef enum nn_ComponentAction {
 	// create the local state
@@ -502,15 +502,15 @@ typedef struct nn_ComponentRequest {
 typedef nn_Exit nn_ComponentHandler(nn_ComponentRequest *req);
 
 // Creates a new component type. It is safe to free name and methods afterwards.
-nn_ComponentType *nn_createComponentType(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler);
+nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler);
 // NOTE: do not destroy this before destroying any components using it, or any computers with components using it.
 // The component type is still used one last time for the destructor of the components.
-void nn_destroyComponentType(nn_ComponentType *ctype);
+void nn_destroyComponentState(nn_ComponentState *cstate);
 
 // adds a component. Outside of the initialization state (aka after the first tick), it also emits the signal for component added.
 // You MUST NOT destroy the component type while a component using that type still exists.
 // You can free the address after the call just fine.
-nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentType *ctype, const char *address, int slot, void *userdata);
+nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *cstate, const char *address, int slot, void *userdata);
 // Checks if a component of that address exists.
 bool nn_hasComponent(nn_Computer *computer, const char *address);
 // Checks if the component has that method.
@@ -816,8 +816,8 @@ typedef nn_Exit nn_EEPROMHandler(nn_EEPROMRequest *request);
 
 // the userdata passed to the component is the userdata
 // in the handler
-nn_ComponentType *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata);
-nn_ComponentType *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem);
+nn_ComponentState *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata);
+nn_ComponentState *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem);
 
 // Note on paths:
 // - Paths given always have their length stored, but also have a NULL terminator.
@@ -976,7 +976,7 @@ extern nn_Filesystem nn_defaultFloppy;
 
 typedef nn_Exit nn_FilesystemHandler(nn_FilesystemRequest *request);
 
-nn_ComponentType *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata);
+nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata);
 
 typedef enum nn_ScreenAction {
 	// instance dropped
@@ -1063,9 +1063,9 @@ extern nn_ScreenConfig nn_defaultScreens[4];
 
 typedef nn_Exit nn_ScreenHandler(nn_ScreenRequest *req);
 
-nn_ComponentType *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata);
+nn_ComponentState *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata);
 // a useless component which does nothing
-nn_ComponentType *nn_createKeyboard(nn_Universe *universe);
+nn_ComponentState *nn_createKeyboard(nn_Universe *universe);
 
 // Remember:
 // - Colors are in 0xRRGGBB format.
@@ -1269,7 +1269,7 @@ typedef nn_Exit nn_GPUHandler(nn_GPURequest *req);
 // 1 GPU tier for every screen.
 extern nn_GPU nn_defaultGPUs[4];
 
-nn_ComponentType *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata);
+nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata);
 
 // Colors and palettes.
 // Do note that the 
