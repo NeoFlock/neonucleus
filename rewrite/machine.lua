@@ -247,8 +247,14 @@ if arch then computer.setArchitecture(arch) end
 
 local code = assert(component.invoke(eeprom, "get"))
 local f = assert(load(code, "=bios"))
+local thread = coroutine.create(f)
 
-local ok, err = xpcall(f, debug.traceback)
-if not ok then
-	print(err)
+while true do
+	collectgarbage("collect")
+	local ok, err = resume(thread)
+	if not ok then
+		print(debug.traceback(thread, err))
+	end
+	if coroutine.status(thread) == "dead" then break end
+	coroutine.yield()
 end

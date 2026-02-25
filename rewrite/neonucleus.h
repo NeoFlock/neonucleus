@@ -329,6 +329,29 @@ const char *nn_getComputerAddress(nn_Computer *computer);
 nn_Universe *nn_getComputerUniverse(nn_Computer *computer);
 nn_Context *nn_getUniverseContext(nn_Universe *universe);
 nn_Context *nn_getComputerContext(nn_Computer *computer);
+// Sets the memory scale, which defaults to 1.
+// For context, OC will set the memory scale to 1.8 on 64-bit systems by default.
+// This scale affects how much real-world memory an amount of VM actually takes up.
+// This means if the total memory is 4 MiB, and the scale is set to 2, the computer can take up to 8MiB of actual RAM.
+// However, nn_getTotalMemory() will still return 4 MiB.
+// The architecture is meant to ensure that the reported free memory is also scaled. As in, the real-world free memory
+// is divided by this scale to ensure it is within the correct range.
+// It is undefined behavior to change the memory scale *after* the first call to nn_tick().
+// Some architectures may ignore this, if they are very low-level and thus
+// do not have any implicit changes of sizes between 32-bit and 64-bit.
+void nn_setMemoryScale(nn_Computer *computer, double scale);
+double nn_getMemoryScale(nn_Computer *computer);
+
+// Returns the memory usage limit of the computer.
+size_t nn_getTotalMemory(nn_Computer *computer);
+// Gets the total amount of free memory the computer has available. The total memory - this is the amount of memory used.
+size_t nn_getFreeMemory(nn_Computer *computer);
+// Gets the total amount of used memory the computer has allocated.
+// This is just the total minus the free, and does not take into
+// account the overhead of storing the computer instance.
+size_t nn_getUsedMemory(nn_Computer *computer);
+// gets the current uptime of a computer. When the computer is not running, this value can be anything and loses all meaning.
+double nn_getUptime(nn_Computer *computer);
 
 // address is copied.
 // It can be NULL if you wish to have no tmp address.
@@ -396,17 +419,6 @@ bool nn_removeEnergy(nn_Computer *computer, double energy);
 typedef double nn_EnergyHandler(void *energyState, nn_Computer *computer, double amountToRemove);
 
 void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHandler *handler);
-
-// Returns the memory usage limit of the computer.
-size_t nn_getTotalMemory(nn_Computer *computer);
-// Gets the total amount of free memory the computer has available. The total memory - this is the amount of memory used.
-size_t nn_getFreeMemory(nn_Computer *computer);
-// Gets the total amount of used memory the computer has allocated.
-// This is just the total minus the free, and does not take into
-// account the overhead of storing the computer instance.
-size_t nn_getUsedMemory(nn_Computer *computer);
-// gets the current uptime of a computer. When the computer is not running, this value can be anything and loses all meaning.
-double nn_getUptime(nn_Computer *computer);
 
 // copies the string into the local error buffer. The error is NULL terminated, but also capped by NN_MAX_ERROR_SIZE
 void nn_setError(nn_Computer *computer, const char *s);

@@ -1061,14 +1061,16 @@ int main(int argc, char **argv) {
 	nn_ComponentState *gputype = nn_createGPU(u, &nn_defaultGPUs[3], ne_gpu_handler, NULL);
 
 	size_t ramTotal = 0;
-	ramTotal += nn_ramSizes[1];
-	ramTotal += nn_ramSizes[1];
+	ramTotal += nn_ramSizes[0];
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
 	if(showStats) {
 		// collects stats
 		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
 	}
+
+	// default for 64-bit, we just assume we're 64-bit.
+	nn_setMemoryScale(c, 1.8);
 	
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);

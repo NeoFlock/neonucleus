@@ -117,7 +117,8 @@ static void luaArch_nnToLua(luaArch *arch, lua_State *L, size_t nnIdx) {
 }
 
 static int luaArch_computer_freeMemory(lua_State *L) {
-	lua_pushinteger(L, luaArch_from(L)->freeMem);
+	size_t freeMem = luaArch_from(L)->freeMem;
+	lua_pushinteger(L, freeMem);
 	return 1;
 }
 
@@ -589,13 +590,13 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 	nn_Context *ctx = nn_getComputerContext(computer);
 	switch(req->action) {
 	case NN_ARCH_FREEMEM:
-		req->freeMemory = arch->freeMem;
+		req->freeMemory = arch->freeMem / nn_getMemoryScale(computer);
 		return NN_OK;
 	case NN_ARCH_INIT:
 		// wrapped in a block to prevent L from leaking, because L is common in Lua code so it may be used by mistake
 		{
 			arch = nn_alloc(ctx, sizeof(*arch));
-			arch->freeMem = nn_getTotalMemory(computer);
+			arch->freeMem = nn_getTotalMemory(computer) * nn_getMemoryScale(computer);
 			arch->computer = computer;
 			lua_State *L = lua_newstate(luaArch_alloc, arch);
 			arch->L = L;
