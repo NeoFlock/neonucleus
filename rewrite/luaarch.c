@@ -117,8 +117,7 @@ static void luaArch_nnToLua(luaArch *arch, lua_State *L, size_t nnIdx) {
 }
 
 static int luaArch_computer_freeMemory(lua_State *L) {
-	size_t freeMem = luaArch_from(L)->freeMem;
-	lua_pushinteger(L, freeMem);
+	lua_pushinteger(L, nn_getFreeMemory(luaArch_from(L)->computer));
 	return 1;
 }
 
