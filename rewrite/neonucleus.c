@@ -2800,6 +2800,27 @@ nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushinteger(C, conf.platterCount);
 		}
+		if(nn_strcmp(method, "getLabel") == 0) {
+			dreq.action = NN_DRIVE_GETLABEL;
+			dreq.index = NN_MAX_LABEL;
+			char buf[NN_MAX_LABEL];
+			dreq.buf = buf;
+			e = state->handler(&dreq);
+			if(e) return e;
+			req->returnCount = 1;
+			if(dreq.index == 0) return nn_pushnull(C);
+			return nn_pushlstring(C, buf, dreq.index);
+		}
+		if(nn_strcmp(method, "setLabel") == 0) {
+			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+			dreq.action = NN_DRIVE_SETLABEL;
+			dreq.buf = (char *)nn_tolstring(C, 0, &dreq.index);
+			e = state->handler(&dreq);
+			if(e) return e;
+			req->returnCount = 1;
+			if(dreq.index == 0) return nn_pushnull(C);
+			return nn_pushlstring(C, dreq.buf, dreq.index);
+		}
 		if(nn_strcmp(method, "readSector") == 0) {
 			nn_costComponent(C, req->compAddress, conf.readsPerTick);
 			nn_removeEnergy(C, conf.dataEnergyCost * conf.sectorSize);
