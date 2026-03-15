@@ -1,8 +1,6 @@
 # For MVP functionality
 
-- `drive` component
 - volatile filesystem
-- volatile drive
 - device info
 
 # To re-evaluate
