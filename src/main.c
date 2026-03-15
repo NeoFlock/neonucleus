@@ -281,6 +281,7 @@ ne_FsState *ne_newFS(const char *path, bool readonly) {
 	}
 	sprintf(fs->path, "data%c%s", NE_PATHSEP, path);
 	fs->isReadonly = readonly;
+	fs->dir = NULL;
 	return fs;
 }
 
@@ -1236,9 +1237,9 @@ cleanup:;
 	nn_destroyComputer(c);
 	nn_destroyComponentState(sandstate);
 	nn_destroyComponentState(etype);
+	nn_destroyComponentState(gputype);
 	nn_destroyComponentState(scrtype);
 	nn_destroyComponentState(keytype);
-	nn_destroyComponentState(gputype);
 	nn_destroyComponentState(vdriveState);
 	for(size_t i = 0; i < 5; i++) nn_destroyComponentState(fstype[i]);
 	ne_dropScreenBuf(scrbuf);

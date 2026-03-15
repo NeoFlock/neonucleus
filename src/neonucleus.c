@@ -1012,7 +1012,7 @@ size_t nn_getTotalMemory(nn_Computer *computer) {
 }
 
 size_t nn_getFreeMemory(nn_Computer *computer) {
-	if(computer->state == NN_BOOTUP) return 0;
+	if(computer->state == NN_BOOTUP) return computer->totalMemory;
 	nn_ArchitectureRequest req;
 	req.computer = computer;
 	req.action = NN_ARCH_FREEMEM;
@@ -1031,6 +1031,45 @@ double nn_getUptime(nn_Computer *computer) {
 	return nn_currentTime(&computer->universe->ctx) - computer->creationTimestamp;
 }
 
+nn_Exit nn_deserializeComputer(nn_Computer *computer, const char *buf, size_t buflen) {
+	nn_ArchitectureRequest req;
+	req.computer = computer;
+	req.action = NN_ARCH_DESERIALIZE;
+	req.globalState = computer->arch.state;
+	req.localState = computer->archState;
+	req.memIn = buf;
+	req.memLen = buflen;
+	
+	return computer->arch.handler(&req);
+}
+
+nn_Exit nn_serializeComputer(nn_Computer *computer, char **buf, size_t *buflen) {
+	nn_ArchitectureRequest req;
+	req.computer = computer;
+	req.action = NN_ARCH_SERIALIZE;
+	req.globalState = computer->arch.state;
+	req.localState = computer->archState;
+	
+	nn_Exit e = computer->arch.handler(&req);
+	if(e) return e;
+
+	*buf = req.memOut;
+	*buflen = req.memLen;
+
+	return NN_OK;
+}
+
+nn_Exit nn_freeSerializedComputer(nn_Computer *computer, char *buf, size_t buflen) {
+	nn_ArchitectureRequest req;
+	req.computer = computer;
+	req.action = NN_ARCH_DROPSERIALIZED;
+	req.globalState = computer->arch.state;
+	req.localState = computer->archState;
+	req.memOut = buf;
+	req.memLen = buflen;
+	
+	return computer->arch.handler(&req);
+}
 
 void nn_setError(nn_Computer *computer, const char *s) {
 	nn_setLError(computer, s, nn_strlen(s));

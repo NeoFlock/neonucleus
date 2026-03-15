@@ -1,85 +1,18 @@
 #ifndef NEONUCLEUS_H
 #define NEONUCLEUS_H
 
-#ifndef NULL
 #ifdef __cplusplus
-#define NULL nullptr
-#else
-#define NULL ((void *)0)
-#endif
+extern "C" {
 #endif
 
-#ifdef NN_BAREMETAL
-#ifdef NN_BIT32
-    typedef int nn_intptr_t;
-    typedef unsigned int nn_size_t;
-#else
-    typedef __INTPTR_TYPE__ nn_intptr_t;
-    typedef __SIZE_TYPE__ nn_size_t;
-#endif
-#else
-#include <stdbool.h>
-
-#include <stddef.h>
-#include <stdint.h>
-
-typedef intptr_t nn_intptr_t;
-typedef size_t nn_size_t;
-#endif
-
-#ifdef bool
-typedef bool nn_bool_t;
-#else
-typedef unsigned char nn_bool_t;
-#define bool nn_bool_t
-#endif
-
-#ifdef true
-
-#define NN_TRUE true
-
-#else
-
-#define NN_TRUE 1
-#define true NN_TRUE
-
-#endif
-
-#ifdef false
-#define NN_FALSE false
-#else
-
-#define NN_FALSE 0
-#define false NN_FALSE
-
-#endif
-
-typedef long long nn_integer_t;
-
+// Platform checking support, to help out users.
+// Used internally as well.
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
    //define something for Windows (32-bit and 64-bit, this part is common)
-   #ifdef _WIN64
-        #define NN_WINDOWS
-   #else
-        #error "Windows 32-bit is not supported"
-   #endif
+	#define NN_WINDOWS
 #elif __APPLE__
-    #include <TargetConditionals.h>
-    #if TARGET_IPHONE_SIMULATOR
-        #error "iPhone Emulators are not supported"
-    #elif TARGET_OS_MACCATALYST
-        // I guess?
-        #define NN_MACOS
-    #elif TARGET_OS_IPHONE
-        #error "iPhone are not supported"
-    #elif TARGET_OS_MAC
-        #define NN_MACOS
-    #else
-        #error "Unknown Apple platform"
-    #endif
-#elif __ANDROID__
-    #error "Android is not supported"
+    #define NN_MACOS
 #elif __linux__
     #define NN_LINUX
 #endif
@@ -93,1069 +26,1680 @@ typedef long long nn_integer_t;
     #define NN_POSIX
 #endif
 
+// every C standard header we depend on, conveniently put here
+#include <stddef.h> // for NULL,
+#include <stdint.h> // for intptr_t
+#include <stdbool.h> // for true, false and bool
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// Internally we need stdatomic.h and, if NN_BAREMETAL is not defined, stdlib.h and time.h
 
-// The entire C API, in one header
+// The entire NeoNucleus API, in one header file
 
-// Magic limits
-// If your component needs more than these, redesign your API.
+// Internal limits or constants
 
-#define NN_MAX_ARGS 32
-#define NN_MAX_RETS 32
-#define NN_MAX_METHODS 32
-#define NN_MAX_USERS 128
-#define NN_MAX_ARCHITECTURES 16
-#define NN_MAX_SIGNALS 128
-#define NN_MAX_SIGNAL_VALS 32
-#define NN_MAX_USERDATA 1024
-#define NN_MAX_USER_SIZE 128
-#define NN_MAX_SIGNAL_SIZE 8192
-#define NN_MAX_OPEN_FILES 128
-#define NN_MAX_SCREEN_KEYBOARDS 64
+#define NN_KiB (1024)
+#define NN_MiB (1024 * NN_KiB)
+#define NN_GiB (1024 * NN_MiB)
+#define NN_TiB (1024 * NN_TiB)
+
+// the alignment an allocation should have
+#define NN_ALLOC_ALIGN 16
+// the maximum amount of items the callstack can have.
+#define NN_MAX_STACK 256
+// the maximum size a path is allowed to have, including the NULL terminator!
 #define NN_MAX_PATH 256
-#define NN_PORT_MAX 65535
+// the maximum amount of bytes which can be read from a file.
+// You are given a buffer you are meant to fill at least partially, this is simply the limit of that buffer's size.
+#define NN_MAX_READ 65536
+// the maximum size of a label
+#define NN_MAX_LABEL 256
+// maximum size of a wakeup message
 #define NN_MAX_WAKEUPMSG 2048
-#define NN_MAX_CHANNEL_SIZE 256
+// the maximum amount of file descriptors that can be open simultaneously
+#define NN_MAX_OPENFILES 128
+// the maximum amount of userdata that can be sent simultaneously.
+#define NN_MAX_USERDATA 64
+// maximum size of a signal, computed the same as modem packet costs.
+#define NN_MAX_SIGNALSIZE 8192
+// maximum amount of signals.
+#define NN_MAX_SIGNALS 128
+// the maximum value of a port. Ports start at 1.
+#define NN_MAX_PORT 65535
+// the magic port number to close all ports
+#define NN_CLOSEPORTS 0
+// maximum amount of architectures one machine can support.
+#define NN_MAX_ARCHITECTURES 32
+// maximum size of the architecture name EEPROMs can store
+#define NN_MAX_ARCHNAME 64
+// maximum size of an address.
+// This only matters in places where an address is returned through a component, as it is the amount of space to allocate for the response.
+// Past this there would be a truncation which would invalidate the address.
+// However, 256 is unrealistically long, as UUIDv4 only needs 36.
+// Please, do not go above this.
+#define NN_MAX_ADDRESS 256
+// the port used by tunnel cards. This port is invalid for modems.
 #define NN_TUNNEL_PORT 0
-#define NN_PORT_CLOSEALL 0
-#define NN_MAX_CONCURRENT_RESOURCES 64
-#define NN_NULL_RESOURCE 0
+// maximum amount of users a computer can have
+#define NN_MAX_USERS 64
+// maximum length of a username
+#define NN_MAX_USERNAME 128
 
-#define NN_OVERHEAT_MIN 100
-#define NN_CALL_HEAT 0.05
-#define NN_CALL_COST 1
-#define NN_LABEL_SIZE 128
+// the maximum size of a UTF-8 character
+#define NN_MAX_UNICODE_BUFFER 4
 
-#define NN_MAXIMUM_UNICODE_BUFFER 4
-#define NN_MAX_ERROR_BUFFER 128
+// the maximum size of a component error message. If the error is bigger than this,
+// it is truncated.
+#define NN_MAX_ERROR_SIZE 1024
 
-typedef struct nn_guard nn_guard;
-#ifdef __STDC_NO_ATOMICS__
-typedef size_t nn_refc;
-#else
-typedef _Atomic(nn_size_t) nn_refc;
-#endif
-typedef struct nn_universe nn_universe;
-typedef struct nn_computer nn_computer;
-typedef struct nn_component nn_component;
-typedef struct nn_componentTable nn_componentTable;
+// unicode (UTF-8) support library
 
-typedef unsigned long long nn_timestamp_t;
+typedef unsigned int nn_codepoint;
 
-// A non-zero malloc is a null ptr, with a 0 oldSize, but a non-0 newSize.
-// A zero malloc is never called, the proc address itself is returned, which is ignored when freeing.
-// A free is a non-null ptr, with a non-zero oldSize, but a newSize of 0.
-// A realloc is a non-null ptr, with a non-zero oldSize, and a non-zero newSize.
-typedef void *nn_AllocProc(void *userdata, void *ptr, nn_size_t oldSize, nn_size_t newSize, void *extra);
+bool nn_unicode_validate(const char *s, size_t len);
+// validates only the *first* codepoint in the NULL-terminated string.
+// This returns the length in bytes of the codepoint, with 0 meaning
+// invalid.
+size_t nn_unicode_validateFirstChar(const char *s, size_t len);
 
-typedef struct nn_Alloc {
-    void *userdata;
-    nn_AllocProc *proc;
-} nn_Alloc;
+// returns the amount of unicode codepoints in the UTF-8 string.
+// Undefined behavior for invalid UTF-8, make sure to validate it if needed.
+size_t nn_unicode_len(const char *s, size_t len);
+// returns the amount of unicode codepoints in the UTF-8 string.
+// If s is invalid UTF-8, all invalid bytes are considered a 1-byte codepoint.
+size_t nn_unicode_lenPermissive(const char *s, size_t len);
 
-typedef struct nn_architecture {
-    void *userdata;
-    const char *archName;
-    void *(*setup)(nn_computer *computer, void *userdata);
-    void (*teardown)(nn_computer *computer, void *state, void *userdata);
-    nn_size_t (*getMemoryUsage)(nn_computer *computer, void *state, void *userdata);
-    void (*tick)(nn_computer *computer, void *state, void *userdata);
-    /* Pointer returned should be allocated with nn_malloc or nn_realloc, so it can be freed with nn_free */
-    char *(*serialize)(nn_computer *computer, nn_Alloc *alloc, void *state, void *userdata, nn_size_t *len);
-    void (*deserialize)(nn_computer *computer, const char *data, nn_size_t len, void *state, void *userdata);
-} nn_architecture;
-typedef char *nn_address;
+// Writes the codepoints of s into codepoints.
+// Undefined behavior for invalid UTF-8, make sure to validate it if needed.
+// The codepoints buffer must be big enough to store the string, use nn_unicode_len()
+// to get the required buffer length.
+void nn_unicode_codepoints(const char *s, size_t len, nn_codepoint *codepoints);
+// Writes the codepoints of s into codepoints.
+// If s is invalid UTF-8, all invalid bytes are considered a 1-byte codepoint.
+// The codepoints buffer must be big enough to store the string, use nn_unicode_lenPermissive()
+// to get the required buffer length.
+void nn_unicode_codepointsPermissive(const char *s, size_t len, nn_codepoint *codepoints);
 
-#define NN_LOCK_DEFAULT 0
-#define NN_LOCK_IMMEDIATE 1
+// Returns the first codepoint from a UTF-8 string.
+// If s is invalid UTF-8, the behavior is undefined.
+nn_codepoint nn_unicode_firstCodepoint(const char *s);
+// Returns the size, in bytes, required by UTF-8 for a codepoint.
+size_t nn_unicode_codepointSize(nn_codepoint codepoint);
+// Writes the UTF-8 bytes for a given codepoint into buffer.
+// It does NOT write a NULL terminator, but it does return the length.
+size_t nn_unicode_codepointToChar(char buffer[NN_MAX_UNICODE_BUFFER], nn_codepoint codepoint);
+// the width, on a screen, for a codepoint.
+// This matters for emojies.
+size_t nn_unicode_charWidth(nn_codepoint codepoint);
+// The width, on a screen, for an entire string.
+// The behavior is undefined for 
+size_t nn_unicode_wlen(const char *s, size_t len);
+size_t nn_unicode_wlenPermissive(const char *s, size_t len);
 
-#define NN_LOCK_INIT 0
-#define NN_LOCK_DEINIT 1
-#define NN_LOCK_RETAIN 2
-#define NN_LOCK_RELEASE 3
+// Returns the amount of bytes needed to store the UTF-8 encoded text.
+// The behavior on invalid codepoints is undefined.
+size_t nn_unicode_countBytes(nn_codepoint *codepoints, size_t len);
+// Writes the UTF-8 encoded text.
+// DOES NOT WRITE A NULL TERMINATOR.
+// s must be big enough to store the string, use nn_unicode_bytelen()
+// to allocate the correct amount of space.
+// The behavior on invalid codepoints is undefined.
+void nn_unicode_writeBytes(char *s, nn_codepoint *codepoints, size_t len);
 
-typedef nn_bool_t nn_LockProc(void *userdata, void *lock, int action, int flags);
+// Returns the uppercase version of the codepoint
+nn_codepoint nn_unicode_upper(nn_codepoint codepoint);
+// Returns the lowercase version of the codepoint
+nn_codepoint nn_unicode_lower(nn_codepoint codepoint);
 
-typedef struct nn_LockManager {
-    void *userdata;
-    nn_size_t lockSize;
-    nn_LockProc *proc;
-} nn_LockManager;
+// The type of a the function used as the allocator.
+// The expected behavior is as follows:
+// alloc(state, NULL, 0, newSize) -> malloc(newSize)
+// alloc(state, memory, oldSize, 0) -> free(memory)
+// alloc(state, memory, oldSize, newSize) -> realloc(memory, newSize)
+// 
+// NeoNucleus will ensure oldSize is what the application requested on the last allocation.
+// This is useful for allocators which may not do extensive bookkeeping.
+// In the case of Out Of Memory, you are expected to return NULL.
+typedef void *nn_AllocProc(void *state, void *memory, size_t oldSize, size_t newSize);
 
-typedef double nn_ClockProc(void *userdata);
+// Meant to return the time, in seconds, since some epoch.
+typedef double nn_TimeProc(void *state);
 
-typedef struct nn_Clock {
-    void *userdata;
-    nn_ClockProc *proc;
-} nn_Clock;
+typedef size_t nn_RngProc(void *state);
 
-typedef nn_size_t nn_RngProc(void *userdata);
+typedef enum nn_LockAction {
+	// create the mutex 
+	NN_LOCK_CREATE,
+	// destroy the mutex
+	NN_LOCK_DESTROY,
+	// lock the mutex
+	NN_LOCK_LOCK,
+	// unlock the mutex
+	NN_LOCK_UNLOCK,
+} nn_LockAction;
 
-typedef struct nn_Rng {
-    void *userdata;
-    nn_size_t maximum;
-    nn_RngProc *proc;
-} nn_Rng;
+typedef struct nn_LockRequest {
+	// mutate it for NN_LOCK_INIT
+	void *lock;
+	nn_LockAction action;
+} nn_LockRequest;
 
-nn_size_t nn_rand(nn_Rng *rng);
-// returns from 0 to 1 (inclusive)
-double nn_randf(nn_Rng *rng);
-// returns from 0 to 1 (exclusive)
-double nn_randfe(nn_Rng *rng);
+// Intended for a plain mutex.
+// This is used for synchronization. OpenComputers achieves synchronization
+// between the worker threads by sending them as requests to a central thread (indirect methods).
+// In NeoNucleus, the function pointer is invoked on the calling thead. This technically makes all methods direct,
+// however methods which are meant to be slow may become indirect, as indirect methods consume the entire call budget.
+// Do note that locks are only used in "full" component implementations, such as the volatile storage devices.
+// The interfaces do not do any automatic synchronization via locks, all synchronization is assumed
+// to be handled in the implementer of the interface, because only you know how to best synchronize
+// it with the outside world.
+typedef void nn_LockProc(void *state, nn_LockRequest *req);
 
+// The *context* NeoNucleus is operating in.
+// This determines:
+// - How memory is allocated
+// - How random numbers are generated and what the range is
+// - What the current time is
+// - How locks work
 typedef struct nn_Context {
-    nn_Alloc allocator;
-    nn_LockManager lockManager;
-    nn_Clock clock;
-    nn_Rng rng;
+	void *state;
+	nn_AllocProc *alloc;
+	nn_TimeProc *time;
+	// the maximum value the RNG can produce.
+	// The RNG is assumed to generate [0, rngMaximum]. INCLUSIVE.
+	// When a [0, 1) range is needed, the value is divided by (rngMaximum+1),
+	// so rngMaximum+1 MUST NOT OVERFLOW.
+	size_t rngMaximum;
+	nn_RngProc *rng;
+	nn_LockProc *lock;
 } nn_Context;
 
-// libc-like utils
-
-void nn_memset(void *buf, unsigned char byte, nn_size_t len);
-void nn_memcpy(void *dest, const void *src, nn_size_t len);
-char *nn_strcpy(char *dest, const char *src);
-const char *nn_strchr(const char *str, int ch);
-int nn_strcmp(const char *a, const char *b);
-nn_size_t nn_strlen(const char *a);
-nn_bool_t nn_strbegin(const char *s, const char *prefix);
-
-#ifndef NN_BAREMETAL
-nn_Alloc nn_libcAllocator(void);
-nn_Clock nn_libcRealTime(void);
-nn_LockManager nn_libcMutex(void);
-nn_Rng nn_libcRng(void);
-nn_Context nn_libcContext(void);
-#endif
-
-nn_LockManager nn_noMutex(void);
-
-// Error buffers!!!
-typedef char nn_errorbuf_t[NN_MAX_ERROR_BUFFER];
-
-nn_bool_t nn_error_isEmpty(nn_errorbuf_t buf);
-void nn_error_write(nn_errorbuf_t buf, const char *s);
-void nn_error_clear(nn_errorbuf_t buf);
-
-// Values for architectures
-
-#define NN_VALUE_INT 0
-#define NN_VALUE_NUMBER 1
-#define NN_VALUE_BOOL 2
-#define NN_VALUE_CSTR 3
-#define NN_VALUE_STR 4
-#define NN_VALUE_ARRAY 5
-#define NN_VALUE_TABLE 6
-#define NN_VALUE_NIL 7
-#define NN_VALUE_RESOURCE 8
-
-typedef struct nn_string {
-    char *data;
-    nn_size_t len;
-    nn_size_t refc;
-    nn_Alloc alloc;
-} nn_string;
-
-typedef struct nn_array {
-    struct nn_value *values;
-    nn_size_t len;
-    nn_size_t refc;
-    nn_Alloc alloc;
-} nn_array;
-
-typedef struct nn_object {
-    struct nn_pair *pairs;
-    nn_size_t len;
-    nn_size_t refc;
-    nn_Alloc alloc;
-} nn_table;
-
-typedef struct nn_value {
-    nn_size_t tag;
-    union {
-        nn_integer_t integer;
-        double number;
-        nn_bool_t boolean;
-        const char *cstring;
-        nn_string *string;
-        nn_array *array;
-        nn_table *table;
-		nn_size_t resourceID;
-    };
-} nn_value;
-
-typedef struct nn_pair {
-    nn_value key;
-    nn_value val;
-} nn_pair;
-
-// we expose the allocator because of some utilities
-void *nn_alloc(nn_Alloc *alloc, nn_size_t size);
-void *nn_resize(nn_Alloc *alloc, void *memory, nn_size_t oldSize, nn_size_t newSize);
-void nn_dealloc(nn_Alloc *alloc, void *memory, nn_size_t size);
-
-// Utilities, both internal and external
-char *nn_strdup(nn_Alloc *alloc, const char *s);
-void *nn_memdup(nn_Alloc *alloc, const void *buf, nn_size_t len);
-void nn_deallocStr(nn_Alloc *alloc, char *s);
-nn_address nn_randomUUID(nn_Context *ctx);
-
-nn_bool_t nn_path_hasSlash(const char *path);
-nn_size_t nn_path_firstSlash(const char *path);
-nn_size_t nn_path_lastSlash(const char *path);
-// returns whether it is the last name
-nn_bool_t nn_path_firstName(const char path[NN_MAX_PATH], char firstDirectory[NN_MAX_PATH], char subpath[NN_MAX_PATH]);
-// returns whether it is the only name
-nn_bool_t nn_path_lastName(const char path[NN_MAX_PATH], char name[NN_MAX_PATH], char parent[NN_MAX_PATH]);
-
-// returns whether the path is valid
-nn_bool_t nn_path_isValid(const char *path);
-// writes to canonical the standard form of the path
-// returns whether the path is so horribly bad it cannot be converted in canonical form.
-nn_bool_t nn_path_canonical(const char path[NN_MAX_PATH], char canonical[NN_MAX_PATH]);
-
-nn_guard *nn_newGuard(nn_Context *context);
-void nn_lock(nn_Context *context, nn_guard *guard);
-nn_bool_t nn_tryLock(nn_Context *context, nn_guard *guard);
-void nn_unlock(nn_Context *context, nn_guard *guard);
-void nn_deleteGuard(nn_Context *context, nn_guard *guard);
-
-void nn_addRef(nn_refc *refc, nn_size_t count);
-void nn_incRef(nn_refc *refc);
-/* Returns true if the object should be freed */
-nn_bool_t nn_removeRef(nn_refc *refc, nn_size_t count);
-/* Returns true if the object should be freed */
-nn_bool_t nn_decRef(nn_refc *refc);
-
-// Unicode (more specifically, UTF-8) stuff
-
-nn_bool_t nn_unicode_validate(const char *s);
-// expects NULL terminator
-nn_bool_t nn_unicode_isValidCodepoint(const char *s);
-// returned string must be nn_deallocStr()'d
-char *nn_unicode_char(nn_Alloc *alloc, unsigned int *codepoints, nn_size_t codepointCount);
-// returned array must be nn_dealloc()'d
-unsigned int *nn_unicode_codepoints(nn_Alloc *alloc, const char *s, nn_size_t *len);
-nn_size_t nn_unicode_len(const char *s);
-unsigned int nn_unicode_codepointAt(const char *s, nn_size_t byteOffset);
-nn_size_t nn_unicode_codepointSize(unsigned int codepoint);
-void nn_unicode_codepointToChar(char buffer[NN_MAXIMUM_UNICODE_BUFFER], unsigned int codepoint, nn_size_t *len);
-nn_size_t nn_unicode_charWidth(unsigned int codepoint);
-nn_size_t nn_unicode_wlen(const char *s);
-unsigned int nn_unicode_upperCodepoint(unsigned int codepoint);
-// returned string must be nn_deallocStr()'d
-char *nn_unicode_upper(nn_Alloc *alloc, const char *s);
-unsigned int nn_unicode_lowerCodepoint(unsigned int codepoint);
-// returned string must be nn_deallocStr()'d
-char *nn_unicode_lower(nn_Alloc *alloc, const char *s);
-
-// permissive means it allows invalid UTF-8, in which case each byte is treated as a codepoint
-
-// it will return the codepoint starting at byte *index, but will also set *index to the byte afterward it
-// since it is permissive, it supports invalid UTF-8
-unsigned int nn_unicode_nextCodepointPermissive(const char *s, nn_size_t *index);
-nn_size_t nn_unicode_lenPermissive(const char *s);
-nn_size_t nn_unicode_wlenPermissive(const char *s);
-// if not found, it will return -1. This is why it is an nn_intptr_t
-nn_intptr_t nn_unicode_indexPermissive(const char *s, nn_size_t codepointIndex);
-
-// Data card stuff
-
-// Hashing
-void nn_data_crc32(const char *inBuf, nn_size_t buflen, char outBuf[4]);
-void nn_data_md5(const char *inBuf, nn_size_t buflen, char outBuf[16]);
-void nn_data_sha256(const char *inBuf, nn_size_t buflen, char outBuf[32]);
-
-// Base64
-
-// The initial value of *len is the size of buf, with the new value being the length of the returned buffer.
-char *nn_data_decode64(nn_Alloc *alloc, const char *buf, nn_size_t *len);
-char *nn_data_encode64(nn_Alloc *alloc, const char *buf, nn_size_t *len);
-
-// Deflate/inflate
-
-char *nn_data_deflate(nn_Alloc *alloc, const char *buf, nn_size_t *len);
-char *nn_data_inflate(nn_Alloc *alloc, const char *buf, nn_size_t *len);
-
-// AES
-char *nn_data_aes_encrypt(nn_Alloc *alloc, const char *buf, nn_size_t *len, const char key[16], const char iv[16]);
-char *nn_data_aes_decrypt(nn_Alloc *alloc, const char *buf, nn_size_t *len, const char key[16], const char iv[16]);
-
-// ECDH
-
-// if longKeys is on, instead of taking 32 bytes, the keys take up 48 bytes.
-nn_size_t nn_data_ecdh_keylen(nn_bool_t longKeys);
-// use nn_data_ecdh_keylen to figure out the expected length for the buffers
-void nn_data_ecdh_generateKeyPair(nn_Context *context, nn_bool_t longKeys, char *publicKey, char *privateKey);
-
-nn_bool_t nn_data_ecdsa_check(nn_bool_t longKeys, const char *buf, nn_size_t buflen, const char *sig, nn_size_t siglen);
-char *nn_data_ecdsa_sign(nn_Alloc *alloc, const char *buf, nn_size_t *buflen, const char *key, nn_bool_t longKeys);
-
-char *nn_data_ecdh_getSharedKey(nn_Alloc *alloc, nn_size_t *len, const char *privateKey, const char *publicKey, nn_bool_t longKeys);
-
-// ECC
-char *nn_data_hamming_encode(nn_Alloc *alloc, const char *buf, nn_size_t *len);
-char *nn_data_hamming_decode(nn_Alloc *alloc, const char *buf, nn_size_t *len);
-
-// Universe stuff
-
-nn_universe *nn_newUniverse(nn_Context context);
-nn_Context *nn_getContext(nn_universe *universe);
-nn_Alloc *nn_getAllocator(nn_universe *universe);
-nn_Clock *nn_getClock(nn_universe *universe);
-nn_LockManager *nn_getLockManager(nn_universe *universe);
-nn_Rng *nn_getRng(nn_universe *universe);
-void nn_unsafeDeleteUniverse(nn_universe *universe);
-void *nn_queryUserdata(nn_universe *universe, const char *name);
-void nn_storeUserdata(nn_universe *universe, const char *name, void *data);
-double nn_getTime(nn_universe *universe);
-
-// Device info
-
-typedef struct nn_deviceInfoList_t nn_deviceInfoList_t;
-typedef struct nn_deviceInfo_t nn_deviceInfo_t;
-
-// Common / standard keys
-#define NN_DEVICEINFO_KEY_CLASS "class"
-#define NN_DEVICEINFO_KEY_VENDOR "vendor"
-#define NN_DEVICEINFO_KEY_PRODUCT "product"
-#define NN_DEVICEINFO_KEY_CAPACITY "capacity"
-#define NN_DEVICEINFO_KEY_CLOCK "clock"
-#define NN_DEVICEINFO_KEY_DESCRIPTION "description"
-
-// Common / standard values
-#define NN_DEVICEINFO_CLASS_INPUT "input"
-#define NN_DEVICEINFO_CLASS_RAM "memory"
-#define NN_DEVICEINFO_CLASS_ROM "memory" // not a mistake, they both use memory
-#define NN_DEVICEINFO_CLASS_CPU "processor" // also used by data card
-#define NN_DEVICEINFO_CLASS_DATA "processor" // also used by data card
-#define NN_DEVICEINFO_CLASS_GPU "display" // not a mistake, it and screen have the same class
-#define NN_DEVICEINFO_CLASS_SCREEN "display"
-#define NN_DEVICEINFO_CLASS_COMPUTER "system"
-#define NN_DEVICEINFO_CLASS_STORAGE "volume"
-#define NN_DEVICEINFO_CLASS_INTERNET "communication"
-#define NN_DEVICEINFO_CLASS_REDSTONE "communication" // why do they use the same one? idfk
-#define NN_DEVICEINFO_CLASS_MODEM "network"
-#define NN_DEVICEINFO_CLASS_TUNNEL "network"
-#define NN_DEVICEINFO_CLASS_GENERIC "generic"
-
-nn_deviceInfoList_t *nn_newDeviceInfoList(nn_Context *ctx, nn_size_t preallocate);
-void nn_deleteDeviceInfoList(nn_deviceInfoList_t *deviceInfoList);
-nn_deviceInfo_t *nn_addDeviceInfo(nn_deviceInfoList_t *list, nn_address address, nn_size_t maxKeys);
-void nn_removeDeviceInfo(nn_deviceInfoList_t *list, const char *address);
-nn_bool_t nn_registerDeviceKey(nn_deviceInfo_t *deviceInfo, const char *key, const char *value);
-nn_deviceInfo_t *nn_getDeviceInfoAt(nn_deviceInfoList_t *list, nn_size_t idx);
-nn_size_t nn_getDeviceCount(nn_deviceInfoList_t *list);
-const char *nn_getDeviceInfoAddress(nn_deviceInfo_t *deviceInfo);
-const char *nn_iterateDeviceInfoKeys(nn_deviceInfo_t *deviceInfo, nn_size_t idx, const char **value);
-nn_size_t nn_getDeviceKeyCount(nn_deviceInfo_t *deviceInfo);
-
-// Computer running states
-
-nn_computer *nn_newComputer(nn_universe *universe, nn_address address, nn_architecture *arch, void *userdata, nn_size_t memoryLimit, nn_size_t componentLimit);
-nn_universe *nn_getUniverse(nn_computer *computer);
-int nn_tickComputer(nn_computer *computer);
-double nn_getUptime(nn_computer *computer);
-nn_size_t nn_getComputerMemoryUsed(nn_computer *computer);
-nn_size_t nn_getComputerMemoryTotal(nn_computer *computer);
-void *nn_getComputerUserData(nn_computer *computer);
-void nn_addSupportedArchitecture(nn_computer *computer, nn_architecture *arch);
-nn_architecture *nn_getSupportedArchitecture(nn_computer *computer, nn_size_t idx);
-nn_architecture *nn_getArchitecture(nn_computer *computer);
-nn_architecture *nn_getNextArchitecture(nn_computer *computer);
-void nn_setNextArchitecture(nn_computer *computer, nn_architecture *arch);
-void nn_deleteComputer(nn_computer *computer);
-const char *nn_pushSignal(nn_computer *computer, nn_value *values, nn_size_t len);
-nn_value nn_fetchSignalValue(nn_computer *computer, nn_size_t index);
-nn_size_t nn_signalSize(nn_computer *computer);
-void nn_popSignal(nn_computer *computer);
-const char *nn_addUser(nn_computer *computer, const char *name);
-void nn_deleteUser(nn_computer *computer, const char *name);
-const char *nn_indexUser(nn_computer *computer, nn_size_t idx);
-nn_bool_t nn_isUser(nn_computer *computer, const char *name);
-void nn_setCallBudget(nn_computer *computer, double callBudget);
-double nn_getCallBudget(nn_computer *computer);
-void nn_callCost(nn_computer *computer, double cost);
-double nn_getCallCost(nn_computer *computer);
-nn_bool_t nn_isOverworked(nn_computer *computer);
-void nn_triggerIndirect(nn_computer *computer);
-nn_deviceInfoList_t *nn_getComputerDeviceInfoList(nn_computer *computer);
-
-/* The memory returned can be freed with nn_dealloc() */
-char *nn_serializeProgram(nn_computer *computer, nn_Alloc *alloc, nn_size_t *len);
-void nn_deserializeProgram(nn_computer *computer, const char *memory, nn_size_t len);
-
-nn_Context *nn_getComputerContext(nn_computer *computer);
-nn_guard *nn_getComputerLock(nn_computer *computer);
-
-/// This means the computer has not yet started.
-#define NN_STATE_SETUP 0
-
-/// This means the computer is running. There is no matching off-state, as the computer is
-/// only off when it is deleted.
-#define NN_STATE_RUNNING 1
-
-/// This means a component's invocation could not be done due to a crucial resource being busy.
-/// The sandbox should yield, then *invoke the component method again.*
-#define NN_STATE_BUSY 2
-
-/// This state occurs when a call to removeEnergy has consumed all the energy left.
-/// The sandbox should yield, and the runner should shut down the computer.
-/// No error is set, the sandbox can set it if it wanted to.
-#define NN_STATE_BLACKOUT 3
-
-/// This state only indicates that the runner should turn off the computer, but not due to a blackout.
-/// The runner need not bring it back.
-#define NN_STATE_CLOSING 4
-
-/// This state indicates that the runner should turn off the computer, but not due to a blackout.
-/// The runner should bring it back.
-/// By "bring it back", we mean delete the computer, then recreate the entire state.
-#define NN_STATE_REPEAT 5
-
-/// This state indciates that the runner should turn off the computer, to switch architectures.
-/// The architecture is returned by getNextArchitecture.
-#define NN_STATE_SWITCH 6
-
-/// The machine is overworked.
-#define NN_STATE_OVERWORKED 7
-
-int nn_getState(nn_computer *computer);
-void nn_setState(nn_computer *computer, int state);
-
-void nn_computer_clearBeep(nn_computer *computer);
-void nn_computer_setBeep(nn_computer *computer, double frequency, double duration, double volume);
-nn_bool_t nn_computer_getBeep(nn_computer *computer, double *frequency, double *duration, double *volume);
-
-void nn_setEnergyInfo(nn_computer *computer, double energy, double capacity);
-double nn_getEnergy(nn_computer *computer);
-double nn_getMaxEnergy(nn_computer *computer);
-void nn_removeEnergy(nn_computer *computer, double energy);
-void nn_addEnergy(nn_computer *computer, double amount);
-
-double nn_getTemperature(nn_computer *computer);
-double nn_getThermalCoefficient(nn_computer *computer);
-double nn_getRoomTemperature(nn_computer *computer);
-void nn_setTemperature(nn_computer *computer, double temperature);
-void nn_setTemperatureCoefficient(nn_computer *computer, double coefficient);
-void nn_setRoomTemperature(nn_computer *computer, double roomTemperature);
-void nn_addHeat(nn_computer *computer, double heat);
-void nn_removeHeat(nn_computer *computer, double heat);
-/* Checks against NN_OVERHEAT_MIN */
-nn_bool_t nn_isOverheating(nn_computer *computer);
-
-// NULL if there is no error.
-const char *nn_getError(nn_computer *computer);
-void nn_clearError(nn_computer *computer);
-void nn_setError(nn_computer *computer, const char *err);
-// this version does NOT allocate a copy of err, thus err should come from the data
-// segment or memory with the same lifetime as the computer. This may not be possible
-// in garbage-collected languages using this API, and thus should be avoided.
-// This can be used by low-level implementations of architectures such that any
-// internal out-of-memory errors can be reported. The normal setError would report
-// no error if allocating the copy failed, and would clear any previous error.
-void nn_setCError(nn_computer *computer, const char *err);
-
-// Component stuff
-
-nn_component *nn_newComponent(nn_computer *computer, nn_address address, int slot, nn_componentTable *table, void *userdata);
-void nn_setTmpAddress(nn_computer *computer, nn_address tmp);
-nn_address nn_getComputerAddress(nn_computer *computer);
-nn_address nn_getTmpAddress(nn_computer *computer);
-void nn_removeComponent(nn_computer *computer, nn_address address);
-void nn_destroyComponent(nn_component *component);
-nn_computer *nn_getComputerOfComponent(nn_component *component);
-nn_address nn_getComponentAddress(nn_component *component);
-int nn_getComponentSlot(nn_component *component);
-nn_componentTable *nn_getComponentTable(nn_component *component);
-const char *nn_getComponentType(nn_componentTable *table);
-void *nn_getComponentUserdata(nn_component *component);
-nn_component *nn_findComponent(nn_computer *computer, nn_address address);
-// the internal index is not the array index, but rather an index into
-// an internal structure. YOU SHOULD NOT ADD OR REMOVE COMPONENTS WHILE ITERATING.
-// the internalIndex SHOULD BE INITIALIZED TO 0.
-// Returns NULL at the end
-nn_component *nn_iterComponent(nn_computer *computer, nn_size_t *internalIndex);
-
-// Component VTable stuff
-
-typedef void *nn_componentConstructor(void *tableUserdata, void *componentUserdata);
-typedef void *nn_componentDestructor(void *tableUserdata, nn_component *component, void *componentUserdata);
-typedef void nn_componentMethod(void *componentUserdata, void *methodUserdata, nn_component *component, nn_computer *computer);
-typedef nn_bool_t nn_componentMethodCondition_t(void *componentUserdata, void *methodUserdata);
-typedef struct nn_method_t nn_method_t;
-
-nn_componentTable *nn_newComponentTable(nn_Alloc *alloc, const char *typeName, void *userdata, nn_componentConstructor *constructor, nn_componentDestructor *destructor);
-void nn_destroyComponentTable(nn_componentTable *table);
-nn_method_t *nn_defineMethod(nn_componentTable *table, const char *methodName, nn_componentMethod *methodFunc, const char *methodDoc);
-void nn_method_setDirect(nn_method_t *method, nn_bool_t direct);
-void nn_method_setUserdata(nn_method_t *method, void *userdata);
-void nn_method_setCondition(nn_method_t *method, nn_componentMethodCondition_t *condition);
-const char *nn_getTableMethod(nn_componentTable *table, nn_size_t idx, nn_bool_t *outDirect);
-const char *nn_methodDoc(nn_componentTable *table, const char *methodName);
-nn_bool_t nn_isMethodEnabled(nn_component *component, const char *methodName);
-
-// Resource stuff
-
-typedef struct nn_resourceTable_t nn_resourceTable_t;
-typedef struct nn_resourceMethod_t nn_resourceMethod_t;
-
-typedef void nn_resourceDestructor_t(void *userdata);
-typedef void nn_resourceMethodCallback_t(void *userdata, void *methodUserdata, nn_computer *computer);
-typedef nn_bool_t nn_resourceMethodCondition_t(void *userdata, void *methodUserdata);
-
-nn_resourceTable_t *nn_resource_newTable(nn_Context *ctx, nn_resourceDestructor_t *dtor);
-nn_resourceMethod_t *nn_resource_addMethod(nn_resourceTable_t *table, const char *methodName, nn_resourceMethodCallback_t *method, const char *doc);
-void nn_resource_setUserdata(nn_resourceMethod_t *method, void *methodUserdata);
-void nn_resource_setCondition(nn_resourceMethod_t *method, nn_resourceMethodCondition_t *methodCondition);
-nn_bool_t nn_resource_invoke(nn_computer *computer, nn_size_t resourceID, const char *method);
-// returns the name, and NULL for out of bounds
-const char *nn_resource_nextMethodInfo(nn_computer *computer, nn_size_t id, const char **doc, nn_size_t *idx);
-
-nn_resourceTable_t *nn_resource_fetchTable(nn_computer *computer, nn_size_t resourceID);
-nn_size_t nn_resource_allocate(nn_computer *computer, void *userdata, nn_resourceTable_t *table);
-void nn_resource_release(nn_computer *computer, nn_size_t id);
-
-// Component calling
-
-/* Returns false if the method does not exist */
-nn_bool_t nn_invokeComponentMethod(nn_component *component, const char *name);
-void nn_simulateBufferedIndirect(nn_component *component, double amount, double amountPerTick);
-void nn_resetCall(nn_computer *computer);
-void nn_addArgument(nn_computer *computer, nn_value arg);
-void nn_return(nn_computer *computer, nn_value val);
-nn_value nn_getArgument(nn_computer *computer, nn_size_t idx);
-nn_value nn_getReturn(nn_computer *computer, nn_size_t idx);
-nn_size_t nn_getArgumentCount(nn_computer *computer);
-nn_size_t nn_getReturnCount(nn_computer *computer);
-
-// Value stuff
-
-nn_value nn_values_nil(void);
-nn_value nn_values_integer(nn_integer_t integer);
-nn_value nn_values_number(double num);
-nn_value nn_values_boolean(nn_bool_t boolean);
-nn_value nn_values_cstring(const char *string);
-nn_value nn_values_string(nn_Alloc *alloc, const char *string, nn_size_t len);
-nn_value nn_values_array(nn_Alloc *alloc, nn_size_t len);
-nn_value nn_values_table(nn_Alloc *alloc, nn_size_t pairCount);
-nn_value nn_values_resource(nn_size_t id);
-
-void nn_return_nil(nn_computer *computer);
-void nn_return_integer(nn_computer *computer, nn_integer_t integer);
-void nn_return_number(nn_computer *computer, double number);
-void nn_return_boolean(nn_computer *computer, nn_bool_t boolean);
-void nn_return_cstring(nn_computer *computer, const char *cstr);
-void nn_return_string(nn_computer *computer, const char *str, nn_size_t len);
-nn_value nn_return_array(nn_computer *computer, nn_size_t len);
-nn_value nn_return_table(nn_computer *computer, nn_size_t len);
-void nn_return_resource(nn_computer *computer, nn_size_t userdata);
-
-nn_size_t nn_values_getType(nn_value val);
-nn_value nn_values_retain(nn_value val);
-void nn_values_drop(nn_value val);
-void nn_values_dropAll(nn_value *values, nn_size_t len);
-
-void nn_values_set(nn_value arr, nn_size_t idx, nn_value val);
-nn_value nn_values_get(nn_value arr, nn_size_t idx);
-
-void nn_values_setPair(nn_value obj, nn_size_t idx, nn_value key, nn_value val);
-nn_pair nn_values_getPair(nn_value obj, nn_size_t idx);
-
-nn_integer_t nn_toInt(nn_value val);
-double nn_toNumber(nn_value val);
-nn_bool_t nn_toBoolean(nn_value val);
-const char *nn_toCString(nn_value val);
-const char *nn_toString(nn_value val, nn_size_t *len);
-
-nn_integer_t nn_toIntOr(nn_value val, nn_integer_t defaultVal);
-double nn_toNumberOr(nn_value val, double defaultVal);
-nn_bool_t nn_toBooleanOr(nn_value val, nn_bool_t defaultVal);
-
-/*
- * Computes the "packet size" of the values, using the same algorithm as OC.
- * This is used by pushSignal to check the size
- */
-nn_size_t nn_measurePacketSize(nn_value *vals, nn_size_t len);
-
-// COMPONENTS
-
-/* Loads the vtables for the default implementations of those components */
-void nn_loadCoreComponentTables(nn_universe *universe);
-
-// loading each component
-void nn_loadEepromTable(nn_universe *universe);
-void nn_loadFilesystemTable(nn_universe *universe);
-void nn_loadDriveTable(nn_universe *universe);
-void nn_loadScreenTable(nn_universe *universe);
-void nn_loadGraphicsCardTable(nn_universe *universe);
-void nn_loadKeyboardTable(nn_universe *universe);
-void nn_loadModemTable(nn_universe *universe);
-void nn_loadTunnelTable(nn_universe *universe);
-void nn_loadDiskDriveTable(nn_universe *universe);
-void nn_loadExternalComputerTable(nn_universe *universe);
-
-nn_component *nn_mountKeyboard(nn_computer *computer, nn_address address, int slot);
-
-// the helpers
-
-// EEPROM
-typedef struct nn_eepromControl {
-    double readHeatPerByte;
-    double writeHeatPerByte;
-
-    double readEnergyCostPerByte;
-    double writeEnergyCostPerByte;
-
-    double bytesReadPerTick;
-    double bytesWrittenPerTick;
-} nn_eepromControl;
-
-typedef struct nn_eepromTable {
-    void *userdata;
-    void (*deinit)(void *userdata);
-
-    // methods
-    nn_size_t size;
-    nn_size_t dataSize;
-    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen, nn_errorbuf_t error);
-    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen, nn_errorbuf_t error);
-    nn_size_t (*get)(void *userdata, char *buf, nn_errorbuf_t error);
-    nn_bool_t (*set)(void *userdata, const char *buf, nn_size_t len, nn_errorbuf_t error);
-    nn_size_t (*getData)(void *userdata, char *buf, nn_errorbuf_t error);
-    nn_bool_t (*setData)(void *userdata, const char *buf, nn_size_t len, nn_errorbuf_t error);
-    // allocate the string with alloc. We recommend using nn_strdup()
-    char *(*getArchitecture)(nn_Alloc *alloc, void *userdata, nn_errorbuf_t error);
-    void (*setArchitecture)(void *userdata, const char *buf, nn_errorbuf_t error);
-    nn_bool_t (*isReadonly)(void *userdata, nn_errorbuf_t error);
-    nn_bool_t (*makeReadonly)(void *userdata, nn_errorbuf_t error);
-} nn_eepromTable;
-
-typedef struct nn_eeprom nn_eeprom;
-
-typedef struct nn_veepromOptions {
-    const char *code;
-    nn_size_t len;
-    nn_size_t size;
-    const char *data;
-    nn_size_t dataLen;
-    nn_size_t dataSize;
-    char label[NN_LABEL_SIZE];
-    nn_size_t labelLen;
-    nn_bool_t isReadOnly;
-} nn_veepromOptions;
-
-nn_eeprom *nn_newEEPROM(nn_Context *context, nn_eepromTable table, nn_eepromControl control);
-nn_eeprom *nn_volatileEEPROM(nn_Context *context, nn_veepromOptions opts, nn_eepromControl control);
-nn_guard *nn_getEEPROMLock(nn_eeprom *eeprom);
-void nn_retainEEPROM(nn_eeprom *eeprom);
-nn_bool_t nn_destroyEEPROM(nn_eeprom *eeprom);
-nn_component *nn_addEEPROM(nn_computer *computer, nn_address address, int slot, nn_eeprom *eeprom);
-
-// FileSystem
-typedef struct nn_filesystemControl {
-    double readBytesPerTick;
-    double writeBytesPerTick;
-    double removeFilesPerTick;
-    double createFilesPerTick;
-
-    double readHeatPerByte;
-    double writeHeatPerByte;
-    double removeHeat;
-    double createHeat;
-
-    double readEnergyPerByte;
-    double writeEnergyPerByte;
-    double removeEnergy;
-    double createEnergy;
-} nn_filesystemControl;
-
-typedef struct nn_filesystemTable {
-    void *userdata;
-    void (*deinit)(void *userdata);
-
-    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen, nn_errorbuf_t err);
-    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen, nn_errorbuf_t err);
-
-    nn_size_t (*spaceUsed)(void *userdata);
-    nn_size_t spaceTotal;
-    nn_bool_t (*isReadOnly)(void *userdata, nn_errorbuf_t err);
-
-    // general operations
-    nn_size_t (*size)(void *userdata, const char *path, nn_errorbuf_t err);
-    nn_size_t (*remove)(void *userdata, const char *path, nn_errorbuf_t err);
-    nn_timestamp_t (*lastModified)(void *userdata, const char *path, nn_errorbuf_t err);
-    nn_size_t (*rename)(void *userdata, const char *from, const char *to, nn_errorbuf_t err);
-    nn_bool_t (*exists)(void *userdata, const char *path, nn_errorbuf_t err);
-
-    // directory operations
-    nn_bool_t (*isDirectory)(void *userdata, const char *path, nn_errorbuf_t err);
-    nn_bool_t (*makeDirectory)(void *userdata, const char *path, nn_errorbuf_t err);
-    // The returned array should be allocated with the supplied allocator.
-    // The strings should be null terminated. Use nn_strdup for the allocation to guarantee nn_deallocStr deallocates it correctly.
-    // For the array, the *exact* size of the allocation should be sizeof(char *) * (*len),
-    // If it is not, the behavior is undefined.
-    // We recommend first computing len then allocating, though if that is not doable or practical,
-    // consider nn_resize()ing it to the correct size to guarantee a correct deallocation.
-    char **(*list)(nn_Alloc *alloc, void *userdata, const char *path, nn_size_t *len, nn_errorbuf_t err);
-
-    // file operations
-    void *(*open)(void *userdata, const char *path, const char *mode, nn_errorbuf_t err);
-    nn_bool_t (*close)(void *userdata, void *fd, nn_errorbuf_t err);
-    nn_bool_t (*write)(void *userdata, void *fd, const char *buf, nn_size_t len, nn_errorbuf_t err);
-    nn_size_t (*read)(void *userdata, void *fd, char *buf, nn_size_t required, nn_errorbuf_t err);
-    nn_size_t (*seek)(void *userdata, void *fd, const char *whence, int off, nn_errorbuf_t err);
-} nn_filesystemTable;
-
-typedef struct nn_filesystem nn_filesystem;
-
-typedef struct nn_vfilesystemImageNode {
+// if NN_BAREMETAL is defined when NeoNucleus is compiled,
+// this function will fill in a bogus context that does nothing.
+// Otherwise, it fills in a context which uses the C standard library.
+// This function is only meant to be called once, to get the initial context.
+// It does seed the RNG when using the C standard library, so do not
+// call it in loops.
+void nn_initContext(nn_Context *ctx);
+
+// Memory allocation!!!
+
+void *nn_alloc(nn_Context *ctx, size_t size);
+void nn_free(nn_Context *ctx, void *memory, size_t size);
+void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize);
+
+typedef enum nn_Exit {
+	// no error
+	NN_OK = 0,
+	// out of memory.
+	NN_ENOMEM,
+	// over the limit. For example, adding too many architectures to a machine.
+	NN_ELIMIT,
+	// internal stack underflow when managing the stack.
+	NN_EBELOWSTACK,
+	// internal stack overflow when carrying values.
+	NN_ENOSTACK,
+	// bad invocation, error message stored in computer state
+	NN_EBADCALL,
+	// bad state, the function was called at the wrong time
+	NN_EBADSTATE,
+} nn_Exit;
+
+// This stores necessary data between computers
+typedef struct nn_Universe nn_Universe;
+
+nn_Universe *nn_createUniverse(nn_Context *ctx);
+void nn_destroyUniverse(nn_Universe *universe);
+
+// The actual computer
+typedef struct nn_Computer nn_Computer;
+
+typedef enum nn_ComputerState {
+	// the machine is running just fine
+	NN_RUNNING = 0,
+	// machine is initializing. This is the state after createComputer but before the first nn_tick.
+	// It is a required state of various initialization functions.
+	NN_BOOTUP,
+	// the machine has powered off.
+	NN_POWEROFF,
+	// the machine demands being restarted.
+	NN_RESTART,
+	// the machine has crashed. RIP
+	NN_CRASHED,
+	// the machine ran out of energy.
+	NN_BLACKOUT,
+	// change architecture.
+	NN_CHARCH,
+} nn_ComputerState;
+
+typedef enum nn_ArchitectureAction {
+	// create the local state
+	NN_ARCH_INIT,
+	// destroy the local state
+	NN_ARCH_DEINIT,
+	// run 1 tick
+	NN_ARCH_TICK,
+	// get the free memory
+	NN_ARCH_FREEMEM,
+	// deserialize from an encoded state
+	NN_ARCH_DESERIALIZE,
+	// serialize to an encoded state
+	NN_ARCH_SERIALIZE,
+	// drop the encoded buffer
+	NN_ARCH_DROPSERIALIZED,
+} nn_ArchitectureAction;
+
+typedef struct nn_ArchitectureRequest {
+	// the state pointer passed through
+	void *globalState;
+	// the computer which made the request
+	nn_Computer *computer;
+	// the local state bound to this computer.
+	// In NN_ARCH_INIT, this is NULL, and must be set to the new state, or an appropriate exit code returned.
+	void *localState;
+	// the action requested
+	nn_ArchitectureAction action;
+	union {
+		// in the case of NN_ARCH_FREEMEM, the free memory
+		size_t freeMemory;
+		// in the case of NN_ARCH_DESERIALIZE, NN_ARCH_SERIALIZE and NN_ARCH_DROPSERIALIZED, the buffer.
+		struct {
+			union {
+				char *memOut;
+				const char *memIn;
+			};
+			size_t memLen;
+		};
+	};
+} nn_ArchitectureRequest;
+
+typedef nn_Exit nn_ArchitectureHandler(nn_ArchitectureRequest *req);
+
+typedef struct nn_Architecture {
 	const char *name;
-	// if NULL, the node is a directory
+	void *state;
+	nn_ArchitectureHandler *handler;
+} nn_Architecture;
+
+// Standard RAM sizes.
+// Standard OC goes from tier 1 to tier 6,
+// NN adds 2 more tiers.
+extern size_t nn_ramSizes[8];
+
+// The state of a *RUNNING* computer.
+// Powered off computers shall not have a state, and as far as NeoNucleus is aware,
+// not exist.
+// The computer API *is not thread-safe*, so it is recommended that you use an external lock to manage it if you are running
+// it in a multi-threaded environment.
+// The userdata pointer is meant to store external data required by the environment.
+// totalMemory is a hint to the architecture as to how much memory to allow the runner to use. It is in bytes.
+// maxComponents and maxDevices determine how many components can be connected simultaneously to this computer, and how much device info can be
+// registered on this computer.
+nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char *address, size_t totalMemory, size_t maxComponents, size_t maxDevices);
+// Destroys the state, effectively shutting down the computer.
+void nn_destroyComputer(nn_Computer *computer);
+// get the userdata pointer
+void *nn_getComputerUserdata(nn_Computer *computer);
+const char *nn_getComputerAddress(nn_Computer *computer);
+nn_Universe *nn_getComputerUniverse(nn_Computer *computer);
+nn_Context *nn_getUniverseContext(nn_Universe *universe);
+nn_Context *nn_getComputerContext(nn_Computer *computer);
+// Sets the memory scale, which defaults to 1.
+// For context, OC will set the memory scale to 1.8 on 64-bit systems by default.
+// This scale affects how much real-world memory an amount of VM actually takes up.
+// This means if the total memory is 4 MiB, and the scale is set to 2, the computer can take up to 8MiB of actual RAM.
+// However, nn_getTotalMemory() will still return 4 MiB.
+// The architecture is meant to ensure that the reported free memory is also scaled. As in, the real-world free memory
+// is divided by this scale to ensure it is within the correct range.
+// It is undefined behavior to change the memory scale *after* the first call to nn_tick().
+// Some architectures may ignore this, if they are very low-level and thus
+// do not have any implicit changes of sizes between 32-bit and 64-bit.
+void nn_setMemoryScale(nn_Computer *computer, double scale);
+double nn_getMemoryScale(nn_Computer *computer);
+
+// Returns the memory usage limit of the computer.
+size_t nn_getTotalMemory(nn_Computer *computer);
+// Gets the total amount of free memory the computer has available. The total memory - this is the amount of memory used.
+size_t nn_getFreeMemory(nn_Computer *computer);
+// Gets the total amount of used memory the computer has allocated.
+// This is just the total minus the free, and does not take into
+// account the overhead of storing the computer instance.
+size_t nn_getUsedMemory(nn_Computer *computer);
+// gets the current uptime of a computer. When the computer is not running, this value can be anything and loses all meaning.
+double nn_getUptime(nn_Computer *computer);
+
+// Deserialize an encoded computer state.
+// Encoding depends on architecture.
+nn_Exit nn_deserializeComputer(nn_Computer *computer, const char *buf, size_t buflen);
+
+// Serialize the computer state.
+// Encoding depends on architecture.
+nn_Exit nn_serializeComputer(nn_Computer *computer, char **buf, size_t *buflen);
+
+// Free the serialized buffer.
+nn_Exit nn_freeSerializedComputer(nn_Computer *computer, char *buf, size_t buflen);
+
+// address is copied.
+// It can be NULL if you wish to have no tmp address.
+// It can fail due to out-of-memory errors.
+nn_Exit nn_setTmpAddress(nn_Computer *computer, const char *address);
+// can return NULL if none was set
+const char *nn_getTmpAddress(nn_Computer *computer);
+
+// Registers a user to the computer.
+nn_Exit nn_addUser(nn_Computer *computer, const char *user);
+// Unregisters a user from the computer.
+// If they were never there, nothing is removed and all is fine.
+// It returns if the user was originally there.
+bool nn_removeUser(nn_Computer *computer, const char *user);
+// NULL for out-of-bound users
+// Can be used to iterate all users.
+const char *nn_getUser(nn_Computer *computer, size_t idx);
+// Helper function.
+// Always returns true if 0 users are registered.
+// If users are registered, it will only return true if the specified
+// user is registered.
+// This can be used for checking signals.
+bool nn_hasUser(nn_Computer *computer, const char *user);
+
+// Sets the computer's architecture.
+// The architecture determines everything from how the computer runs, to how it turns off.
+// Everything is limited by the architecture.
+// The architecture is copied, it can be freed after this is called.
+void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch);
+// Gets the current architecture.
+nn_Architecture nn_getArchitecture(nn_Computer *computer);
+// Sets the computer's desired architecture.
+// The desired architecture indicates, when the computer state is CHARCH, what the new architecture should be.
+// This is set even if it is not in the supported architecture list, *you must check if it is in that list first.*
+// The architecture is copied, it can be freed after this is called.
+void nn_setDesiredArchitecture(nn_Computer *computer, const nn_Architecture *arch);
+// Gets the desired architecture. This is the architecture the computer should use after changing architectures.
+nn_Architecture nn_getDesiredArchitecture(nn_Computer *computer);
+// Adds a new supported architecture, which indicates to the code running on this computer that it is possible to switch to that architecture.
+// The architecture is copied, it can be freed after this is called.
+nn_Exit nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch);
+// Returns the array of supported architectures, as well as the length.
+const nn_Architecture *nn_getSupportedArchitectures(nn_Computer *computer, size_t *len);
+// Helper function for searching for an architecture using a computer which supports it and the architecture name.
+// If the architecture is not found, it returns one with a NULL name.
+nn_Architecture nn_findSupportedArchitecture(nn_Computer *computer, const char *name);
+
+// sets the energy capacity of the computer.
+void nn_setTotalEnergy(nn_Computer *computer, double maxEnergy);
+// gets the energy capacity of the computer
+double nn_getTotalEnergy(nn_Computer *computer);
+// gets the current amount of energy
+double nn_getEnergy(nn_Computer *computer);
+// Returns true if there is no more energy left, and a blackout has occured.
+bool nn_removeEnergy(nn_Computer *computer, double energy);
+
+// the handler of energy costs.
+// The default handler just returns the total energy.
+// Computers do not keep track of their current energy, they just call this function.
+// getEnergy() calls this with amountToRemove set to 0. It is recommended to handle this as a fastpath.
+// This should return the new amount of energy after the removal.
+// A negative amount can be returned, it will be clamped to 0.
+// If an error occurs, it is recommended to just return 0 and trigger a blackout.
+// TODO: evaluate if API should be reworked to handle errors in energy handler.
+typedef double nn_EnergyHandler(void *energyState, nn_Computer *computer, double amountToRemove);
+
+void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHandler *handler);
+
+// copies the string into the local error buffer. The error is NULL terminated, but also capped by NN_MAX_ERROR_SIZE
+void nn_setError(nn_Computer *computer, const char *s);
+// set a default error message from an exit.
+// Does nothing for EBADCALL.
+void nn_setErrorFromExit(nn_Computer *computer, nn_Exit exit);
+// copies the string into the local error buffer. The error is capped by NN_MAX_ERROR_SIZE-1. The -1 is there because the NULL terminator is still inserted at the end.
+// Do note that nn_getError() still returns a NULL-terminated string, thus NULL terminators in this error will lead to a shortened error.
+void nn_setLError(nn_Computer *computer, const char *s, size_t len);
+// Gets a pointer to the local error buffer. This is only meaningful when NN_EBADCALL is returned.
+const char *nn_getError(nn_Computer *computer);
+// clears the computer's error buffer, making nn_getError return a simple empty string.
+void nn_clearError(nn_Computer *computer);
+
+// sets the computer state to the desired state. This is meant for architectures to report things like reboots or shutdowns, DO NOT ABUSE THIS.
+void nn_setComputerState(nn_Computer *computer, nn_ComputerState state);
+// gets the current computer state
+nn_ComputerState nn_getComputerState(nn_Computer *computer);
+
+// Checks if the uptime is below the idle timestamp.
+bool nn_isComputerIdle(nn_Computer *computer);
+// Shifts over the idle timestamp.
+void nn_addIdleTime(nn_Computer *computer, double time);
+// runs a tick of the computer. Make sure to check the state as well!
+// This automatically resets the component budgets and call budget.
+// It also sets the idle timestamp to the current uptime.
+nn_Exit nn_tick(nn_Computer *computer);
+
+typedef struct nn_DeviceInfoEntry {
+	const char *name;
+	const char *value;
+} nn_DeviceInfoEntry;
+
+typedef struct nn_DeviceInfo {
+	const char *address;
+	const nn_DeviceInfoEntry *entries;
+} nn_DeviceInfo;
+
+// adds some device information to the computer. This can also be removed.
+// Entries is terminated by a NULL name, and preferrably also NULL value.
+// It is perfectly fine to free entries after the call, it is copied.
+nn_Exit nn_addDeviceInfo(nn_Computer *computer, const char *address, const nn_DeviceInfoEntry entries[]);
+// Removes info assicated with a device
+void nn_removeDeviceInfo(nn_Computer *computer, const char *address);
+// gets the device info array.
+const nn_DeviceInfo *nn_getDeviceInfo(nn_Computer *computer, size_t *len);
+
+typedef enum nn_MethodFlags {
+	// calling will consume the entire call budget
+	NN_INDIRECT = 0,
+	// calling will only consume 1 call from the call budget
+	NN_DIRECT = (1<<0),
+	// this indicates this method wraps a *field*
+	// getter means calling it with no arguments will return the current value,
+	NN_GETTER = (1<<1),
+	// this indicates this method wraps a *field*
+	// setter means calling it with 1 argument will try to set the value.
+	NN_SETTER = (1<<2),
+} nn_MethodFlags;
+
+#define NN_FIELD_MASK (NN_GETTER | NN_SETTER)
+
+typedef struct nn_Method {
+	const char *name;
+	const char *docString;
+	nn_MethodFlags flags;
+} nn_Method;
+
+typedef struct nn_ComponentState nn_ComponentState;
+
+typedef enum nn_ComponentAction {
+	// create the local state
+	NN_COMP_INIT,
+	// delete the local state
+	NN_COMP_DEINIT,
+	// perform a method call
+	NN_COMP_CALL,
+	// check if a method is enabled
+	NN_COMP_ENABLED,
+	// delete the type userdata
+	NN_COMP_FREETYPE,
+} nn_ComponentAction;
+
+typedef struct nn_ComponentRequest {
+	// the userdata of the component type. This may be an associated VM, for example.
+	void *typeUserdata;
+	// the userdata of the component, passed in addComponent. This may be an associated resource, for example.
+	void *compUserdata;
+	// the local state of the component. NN_COMP_INIT should initialize this pointer.
+	void *state;
+	nn_Computer *computer;
+	// address of the component
+	const char *compAddress;
+	// the action requested
+	nn_ComponentAction action;
+	// for NN_COMP_CALL, it is the method called.
+	// for NN_COMP_ENABLED, it is the method being checked.
+	const char *methodCalled;
+	union {
+		// for NN_COMP_CALL, it is the amount of return values.
+		size_t returnCount;
+		// for NN_COMP_ENABLED, it is whether the method is enabled.
+		bool methodEnabled;
+	};
+} nn_ComponentRequest;
+
+typedef nn_Exit nn_ComponentHandler(nn_ComponentRequest *req);
+
+// Creates a new component type. It is safe to free name and methods afterwards.
+nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler);
+// NOTE: do not destroy this before destroying any components using it, or any computers with components using it.
+// The component type is still used one last time for the destructor of the components.
+void nn_destroyComponentState(nn_ComponentState *cstate);
+
+// adds a component. Outside of the initialization state (aka after the first tick), it also emits the signal for component added.
+// You MUST NOT destroy the component type while a component using that type still exists.
+// You can free the address after the call just fine.
+nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *cstate, const char *address, int slot, void *userdata);
+// Checks if a component of that address exists.
+bool nn_hasComponent(nn_Computer *computer, const char *address);
+// Checks if the component has that method.
+// This not only checks if the method exists in the component type,
+// but also checks if the method is enabled for the component instance.
+bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method);
+// removes a component. Outside of the initialization state (aka after the first tick), it also emits the signal for component removed.
+nn_Exit nn_removeComponent(nn_Computer *computer, const char *address);
+// Gets the name of a type of a component.
+const char *nn_getComponentType(nn_Computer *computer, const char *address);
+// Gets the slot of a component.
+int nn_getComponentSlot(nn_Computer *computer, const char *address);
+// Returns the array of component methods. This can be used for doc strings or just listing methods.
+const nn_Method *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len);
+// get the address at a certain index.
+// It'll return NULL for out of bounds indexes.
+// This can be used to iterate over all components.
+const char *nn_getComponentAddress(nn_Computer *computer, size_t idx);
+// Returns the doc-string associated with a method.
+const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method);
+void *nn_getComponentUserdata(nn_Computer *computer, const char *address);
+
+// this uses the call stack.
+// Component calls must not call other components, it just doesn't work.
+// The lack of an argument count is because the entire call stack is assumed to be the arguments.
+// In the case of NN_EBUSY, you should call it again with the same arguments later.
+nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method);
+
+// Sets the call budget.
+// The default is 1,000.
+void nn_setCallBudget(nn_Computer *computer, size_t budget);
+
+// gets the total call budget
+size_t nn_getCallBudget(nn_Computer *computer);
+
+// returns the remaining call budget
+size_t nn_callBudgetRemaining(nn_Computer *computer);
+
+// automatically called by nn_tick()
+void nn_resetCallBudget(nn_Computer *computer);
+
+// returns whether there is no more call budget left.
+// At this point, the architecture should exit with a yield.
+bool nn_componentsOverused(nn_Computer *computer);
+
+void nn_resetComponentBudgets(nn_Computer *computer);
+
+// Uses 1/perTick to the component budget.
+// Upon a full component budget being used for that component, it returns true.
+// nn_componentsOverused() will also return true.
+// This indicates the architecture should yield, to throttle the computer for overuse.
+bool nn_costComponent(nn_Computer *computer, const char *address, double perTick);
+// Uses amount/perTick to the component budget.
+// Upon a full component budget being used for that component, it returns true.
+// nn_componentsOverused() will also return true.
+// This indicates the architecture should yield, to throttle the computer for overuse.
+bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick);
+
+// call stack operations.
+// The type system and API are inspired by Lua, as Lua remains the most popular architecture for OpenComputers.
+// This does support other languages, however it may make some APIs clunky due to the usage of tables and 1-based indexing.
+// Internally, reference counting is used to manage the memory automatically. The API is designed such that strong reference cycles
+// cannot occur.
+
+// returns if there is enough space for [amount] values
+bool nn_checkstack(nn_Computer *computer, size_t amount);
+
+// pushes a null on the call stack
+nn_Exit nn_pushnull(nn_Computer *computer);
+// pushes a boolean on the call stack
+nn_Exit nn_pushbool(nn_Computer *computer, bool truthy);
+// pushes a number on the call stack
+nn_Exit nn_pushnumber(nn_Computer *computer, double num);
+// casts [num] to a double and pushes it on the call stack
+nn_Exit nn_pushinteger(nn_Computer *computer, intptr_t num);
+// pushes a NULL-terminated string on the call stack. The string is copied, so you can free it afterwards without worry.
+nn_Exit nn_pushstring(nn_Computer *computer, const char *str);
+// pushes a string on the call stack. The string is copied, so you can free it afterwards without worry. The copy will have a NULL terminator inserted
+// at the end for APIs which need it, but the length is also stored.
+nn_Exit nn_pushlstring(nn_Computer *computer, const char *str, size_t len);
+// pushes a computer userdata to the stack. This is indicative of a resource, such as an HTTP request.
+nn_Exit nn_pushuserdata(nn_Computer *computer, size_t userdataIdx);
+// pushes a table meant to be an array. [len] is the length of the array. The keys are numbers and 1-indexed, just like in Lua.
+// The values are popped, then the array is pushed.
+nn_Exit nn_pusharraytable(nn_Computer *computer, size_t len);
+// pushes a table. [len] is the amount of pairs. Keys should not be duplicated, as they are not de-duplicated.
+// The stack should have a sequence of K1,V1,K2,V2,etc., len pairs long.
+// The pairs are popped, then the array is pushed.
+nn_Exit nn_pushtable(nn_Computer *computer, size_t len);
+
+// stack management
+
+// pops the top value off the stack
+nn_Exit nn_pop(nn_Computer *computer);
+// pops the top N values off the stack
+nn_Exit nn_popn(nn_Computer *computer, size_t n);
+// pushes the top value onto the stack, effectively duplicating the top value.
+nn_Exit nn_dupe(nn_Computer *computer);
+// pushes the top N values onto the stack, effectively duplicating the top N values.
+nn_Exit nn_dupen(nn_Computer *computer, size_t n);
+
+// pushes the value at idx.
+nn_Exit nn_dupeat(nn_Computer *computer, size_t idx);
+
+// get the current amount of values on the call stack.
+// For component calls, calling this at the start effectively gives you the argument count.
+size_t nn_getstacksize(nn_Computer *computer);
+// Removes all values from the stack.
+// It is recommended to do this when initiating a component call or
+// after returning from errors, as the call stack may have
+// random junk on it.
+void nn_clearstack(nn_Computer *computer);
+
+// type check! The API may misbehave if types do not match, so always type-check!
+
+// Returns whether the value at [idx] is a null.
+// [idx] starts at 0.
+bool nn_isnull(nn_Computer *computer, size_t idx);
+// Returns whether the value at [idx] is a boolean.
+// [idx] starts at 0.
+bool nn_isboolean(nn_Computer *computer, size_t idx);
+// Returns whether the value at [idx] is a number.
+// [idx] starts at 0.
+bool nn_isnumber(nn_Computer *computer, size_t idx);
+// Returns whether the value at [idx] is a number AND
+// the number can safely be cast to an intptr_t.
+bool nn_isinteger(nn_Computer *computer, size_t idx);
+// Returns whether the value at [idx] is a string.
+// [idx] starts at 0.
+bool nn_isstring(nn_Computer *computer, size_t idx);
+// Returns whether the value at [idx] is a userdata.
+// [idx] starts at 0.
+bool nn_isuserdata(nn_Computer *computer, size_t idx);
+// Returns whether the value at [idx] is a table.
+// [idx] starts at 0.
+bool nn_istable(nn_Computer *computer, size_t idx);
+// Returns the name of the type of the value at that index.
+// For out of bounds indexes, "none" is returned.
+const char *nn_typenameof(nn_Computer *computer, size_t idx);
+
+// Argument helpers
+
+// Returns true if the argument at that index is not null.
+bool nn_checknull(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not a boolean.
+bool nn_checkboolean(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not a number.
+bool nn_checknumber(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not an integer.
+bool nn_checkinteger(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not a string.
+bool nn_checkstring(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is not userdata.
+bool nn_checkuserdata(nn_Computer *computer, size_t idx, const char *errMsg);
+// Returns true if the argument at that index is a table.
+bool nn_checktable(nn_Computer *computer, size_t idx, const char *errMsg);
+
+// Checks if idx is equal to the stack size.
+// If it is, it will push a null.
+nn_Exit nn_defaultnull(nn_Computer *computer, size_t idx);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a boolean [value].
+nn_Exit nn_defaultboolean(nn_Computer *computer, size_t idx, bool value);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a number [num].
+nn_Exit nn_defaultnumber(nn_Computer *computer, size_t idx, double num);
+// Checks if idx is equal to the stack size.
+// If it is, it will push an integer [num].
+nn_Exit nn_defaultinteger(nn_Computer *computer, size_t idx, intptr_t num);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a string [str].
+nn_Exit nn_defaultstring(nn_Computer *computer, size_t idx, const char *str);
+// Checks if idx is equal to the stack size.
+// If it is, it will push a string [str].
+nn_Exit nn_defaultlstring(nn_Computer *computer, size_t idx, const char *str, size_t len);
+// Checks if idx is equal to the stack size.
+// If it is, it will push the userdata [userdataIdx].
+nn_Exit nn_defaultuserdata(nn_Computer *computer, size_t idx, size_t userdataIdx);
+// Checks if idx is equal to the stack size.
+// If it is, it will push an empty table.
+nn_Exit nn_defaulttable(nn_Computer *computer, size_t idx);
+
+// NOTE: behavior of the nn_to*() functions and nn_dumptable() when the values have the wrong types or at out of bounds indexes is undefined.
+
+// Returns the boolean value at [idx].
+bool nn_toboolean(nn_Computer *computer, size_t idx);
+// Returns the number value at [idx].
+double nn_tonumber(nn_Computer *computer, size_t idx);
+// Returns the number value at [idx] cast to an intptr_t.
+// NOTE: for numbers where nn_isinteger() returns false,
+// the cast is undefined.
+// This includes values such as infinity and NaN, where 
+// the behavior is platform, ABI and compiler-specific.
+intptr_t nn_tointeger(nn_Computer *computer, size_t idx);
+// Returns the string value at [idx].
+const char *nn_tostring(nn_Computer *computer, size_t idx);
+// Returns the string value and its length at [idx].
+const char *nn_tolstring(nn_Computer *computer, size_t idx, size_t *len);
+// Returns the userdata index at [idx].
+size_t nn_touserdata(nn_Computer *computer, size_t idx);
+// Takes a table value and pushes onto the stack the key-value pairs, as well as writes how many there were in [len].
+// It pushes them as K1,V1,K2,V2,K3,V3,etc., just like went in to pushtable. And yes, the keys are not de-duplicated.
+nn_Exit nn_dumptable(nn_Computer *computer, size_t idx, size_t *len);
+
+// computes the cost of the top [values] values using the same algorithm as
+// the modem.
+// It will return -1 if the values are invalid.
+// The algorithm is as mentioned in https://ocdoc.cil.li/component:modem
+// and is as follows:
+// - Every value adds a 2 byte overhead
+// - Numbers add another 8 bytes, true/false/null another 4 bytes, strings as
+// many bytes as they contain, except empty strings count as 1 byte.
+int nn_countValueCost(nn_Computer *computer, size_t values);
+
+// computes the signal cost.
+// This is a slightly modified version of value cost, except it allows
+// tables and userdata.
+// All values are always valid.
+// For userdata and tables:
+// - Userdata adds another 8 bytes overhead like numbers do.
+// - Tables add yet another 2 byte overhead for their terminator, and the sum of all of the size of the keys and values they contain as per this algorithm.
+size_t nn_countSignalCost(nn_Computer *computer, size_t values);
+
+// Returns the amount of signals stored
+size_t nn_countSignals(nn_Computer *computer);
+// Pops [valueCount] values from the call stack and pushes them as a signal.
+nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount);
+// Removes the first signal and pushes the values onto the call stack, while setting valueCount to the amount of values in the signal.
+// If there is no signal, it returns EBADSTATE
+nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
+
+// The high-level API of the built-in components.
+// These components still make no assumptions about the OS, and still require handlers to connect them to the outside work.
+
+// TODO: screen, gpu, filesystem, eeprom and the rest of the universe
+
+typedef enum nn_EEPROMAction {
+	// the eeprom instance has been dropped
+	NN_EEPROM_DROP,
+	// the eeprom state has been dropped
+	NN_EEPROM_FREE,
+	NN_EEPROM_GET,
+	NN_EEPROM_SET,
+	NN_EEPROM_GETDATA,
+	NN_EEPROM_SETDATA,
+	NN_EEPROM_GETLABEL,
+	NN_EEPROM_SETLABEL,
+	NN_EEPROM_GETARCH,
+	NN_EEPROM_SETARCH,
+	NN_EEPROM_ISREADONLY,
+	NN_EEPROM_MAKEREADONLY,
+} nn_EEPROMAction;
+
+typedef struct nn_EEPROMRequest {
+	// associated userdata
+	void *userdata;
+	// associated component userdata
+	void *instance;
+	// the computer making the request
+	nn_Computer *computer;
+	const struct nn_EEPROM *eepromConf;
+	nn_EEPROMAction action;
+	// all the get* options should set this to the length,
+	// and its initial value is the capacity of [buf].
+	// For ISREADONLY, this should be set to 0 if false and 1 if true.
+	unsigned int buflen;
+	// this may be the buffer length
+	char *buf;
+} nn_EEPROMRequest;
+
+// reads and writes are always 1/1
+typedef struct nn_EEPROM {
+	// the maximum capacity of the EEPROM
+	size_t size;
+	// the maximum capacity of the EEPROM's associated data
+	size_t dataSize;
+	// the energy cost of reading an EEPROM
+	double readEnergyCost;
+	// the energy cost of reading an EEPROM's associated data
+	double readDataEnergyCost;
+	// the energy cost of writing to an EEPROM
+	double writeEnergyCost;
+	// the energy cost of writing to an EEPROM's associated data
+	double writeDataEnergyCost;
+	// idle time added when writing code
+	double writeDelay;
+	// idle time added when writing data
+	double writeDataDelay;
+} nn_EEPROM;
+
+// Tier 1 - The normal EEPROM equivalent
+// Tier 2 - A better EEPROM
+// Tier 3 - An even better EEPROM
+// Tier 4- The best EEPROM
+extern nn_EEPROM nn_defaultEEPROMs[4];
+
+typedef struct nn_VEEPROM {
+	const char *code;
+	size_t codelen;
 	const char *data;
-	// if it is a directory, this is the amount of entries encoded afterwards
-	nn_size_t len;
-} nn_vfilesystemImageNode;
+	size_t datalen;
+	const char *label;
+	size_t labellen;
+	const char *arch;
+	bool isReadonly;
+} nn_VEEPROM;
 
-typedef struct nn_vfilesystemOptions {
-    // used to compute lastModified
-    nn_timestamp_t creationTime;
-    nn_size_t maxDirEntries;
-    nn_size_t capacity;
-    nn_bool_t isReadOnly;
-    char label[NN_LABEL_SIZE];
-    nn_size_t labelLen;
-	// loading the files into the tmpfs
-	nn_vfilesystemImageNode *image;
-	nn_size_t rootEntriesInImage;
-} nn_vfilesystemOptions;
+typedef nn_Exit nn_EEPROMHandler(nn_EEPROMRequest *request);
 
-nn_filesystem *nn_newFilesystem(nn_Context *context, nn_filesystemTable table, nn_filesystemControl control);
-nn_filesystem *nn_volatileFilesystem(nn_Context *context, nn_vfilesystemOptions opts, nn_filesystemControl control);
-nn_guard *nn_getFilesystemLock(nn_filesystem *fs);
-void nn_retainFilesystem(nn_filesystem *fs);
-nn_bool_t nn_destroyFilesystem(nn_filesystem *fs);
+// the userdata passed to the component is the userdata
+// in the handler
+nn_ComponentState *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata);
+nn_ComponentState *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem);
 
-nn_component *nn_addFileSystem(nn_computer *computer, nn_address address, int slot, nn_filesystem *filesystem);
+// Note on paths:
+// - Paths given always have their length stored, but also have a NULL terminator.
+// - Paths are validated. They check for illegal characters as per OC's definition.
+// - Logical paradoxes such as rename("a", "a/b") are automatically checked and handled.
+// - \ are automatically replaced with /
+// - .. and leading / is handled automatically. This also improves sandboxing, as ../a.txt would become just a.txt
+// - For rename, it automatically checks if the destination exists and if so, errors out.
+typedef enum nn_FilesystemAction {
+	// the filesystem instance has been dropped.
+	// This is just for computer-local state, make sure to free it.
+	NN_FS_DROP,
+	// the filesystem state has been dropped.
+	// Make sure to close all file descriptors which are still open.
+	NN_FS_FREE,
+	// open a file. strarg1 stores the path, and strarg2 stores the mode.
+	// strarg1len and strarg2len are their respective lengths.
+	// The output should be in fd.
+	NN_FS_OPEN,
+	// read a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	// strarg1len is the capacity of strarg1.
+	// Write the result of reading into strarg1.
+	// Update strarg1len to reflect the amount of data read.
+	// Set strarg1 to NULL to indicate EOF.
+	NN_FS_READ,
+	// write to a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	// strarg1len is the amount of data to write.
+	// strarg1 is the contents of the buffer to write.
+	NN_FS_WRITE,
+	// seek a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	// The offset is stored in off.
+	// The seek mode is stored in whence.
+	// It should set off to the new position.
+	NN_FS_SEEK,
+	// close a file.
+	// The file descriptor is stored in fd,
+	// make sure to ensure it is valid.
+	NN_FS_CLOSE,
+	// open a directory file descriptor.
+	// The result should be in fd.
+	NN_FS_OPENDIR,
+	// read a directory file descriptor, stored in fd.
+	// The entry should be stored in strarg2, and strarg2len is the capacity of the buffer.
+	// If the buffer is too short, truncate the result.
+	// Set strarg2len to the length of the entry.
+	// If there are no more entries, set strarg2 to NULL.
+	// Do note that directories should have / appended at the end of their entries.
+	// Directory file descriptors are not exposed to the architecture,
+	// thus they can only come from NN_FS_OPENDIR.
+	// This means you may not need to validate these file descriptors.
+	NN_FS_READDIR,
+	// close a directory file descriptor, stored in fd.
+	// Directory file descriptors are not exposed to the architecture,
+	// thus they can only come from NN_FS_OPENDIR.
+	// This means you may not need to validate these file descriptors.
+	NN_FS_CLOSEDIR,
+	// Create a directory at a given path stored in strarg1.
+	// strarg1len is the length of the path.
+	// It is meant to also create parent directories recursively
+	// as needed.
+	NN_FS_MKDIR,
+	// Return the lastmodified timestamp.
+	// This number is stored in seconds.
+	// The timestamp should be stored in size, it may not make
+	// sense but it is a field and it is there.
+	// Do note that the lastModified() method returns it in milliseconds,
+	// however it must be a multiple of 1000 due to OpenOS depending
+	// on that behavior.
+	NN_FS_LASTMODIFIED,
+	// Checks if a path, stored in strarg1, is a directory.
+	// If it is, size should be set to 1.
+	// If it is not, size should be set to 0.
+	NN_FS_ISDIRECTORY,
+	// Checks if the filesystem is read-only.
+	// If it is, size should be set to 1.
+	// If it is not, size should be set to 0.
+	NN_FS_ISREADONLY,
+	// Checks if a path, stored in strarg1, exists on the filesystem.
+	// If it is, size should be set to 1.
+	// If it is not, size should be set to 0.
+	NN_FS_EXISTS,
+	// Returns the label.
+	// The label should be written into strarg1, with strarg1len as the capacity.
+	// Set strarg1len to the label length.
+	NN_FS_GETLABEL,
+	// Sets the label.
+	// The label is stored in strarg1, with strarg1len as the length.
+	NN_FS_SETLABEL,
+	// Gets the space used, it should be stored in size.
+	NN_FS_SPACEUSED,
+	// Gets 2 paths, strarg1 and strarg2, with their lengths.
+	// It should try to rename strarg1 to strarg2, as in,
+	// it should move strarg1 to be at strarg2, potentially
+	// using recursive directory copies.
+	NN_FS_RENAME,
+	// Removes the path stored in strarg1.
+	NN_FS_REMOVE,
+	// Returns the size of the entry at strarg1.
+	// The size of a directory is typically 0.
+	// The size of a file is typically the amount of bytes in its contents.
+	// Using other measures of size will rarely break code,
+	// but may confuse users.
+	NN_FS_SIZE,
+} nn_FilesystemAction;
 
-// Drive
-typedef struct nn_driveControl {
-    double readSectorsPerTick;
-    double writeSectorsPerTick;
-    // Set it to 0 to disable seek latency.
-    double seekSectorsPerTick;
+typedef enum nn_FilesystemWhence {
+	// relative to start
+	NN_SEEK_SET,
+	// relative to the current position
+	NN_SEEK_CUR,
+	// relative to the EOF position.
+	NN_SEEK_END,
+} nn_FilesystemWhence;
 
-    double readHeatPerSector;
-    double writeHeatPerSector;
-    double motorHeatPerSector;
-    
-    double readEnergyPerSector;
-    double writeEnergyPerSector;
-    double motorEnergyPerSector;
+typedef struct nn_FilesystemRequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	struct nn_Filesystem *fsConf;
+	nn_FilesystemAction action;
+	int fd;
+	nn_FilesystemWhence whence;
+	int off;
+	char *strarg1;
+	size_t strarg1len;
+	char *strarg2;
+	size_t strarg2len;
+	size_t size;
+} nn_FilesystemRequest;
 
-    // if not, seeking *backwards* will cost as much as a full spin.
-    nn_bool_t reversable;
-} nn_driveControl;
+typedef struct nn_Filesystem {
+	// the maximum capacity of the filesystem
+	size_t spaceTotal;
+	// how many read calls can be done per tick
+	// list, exists, size, lastModified, isDirectory, seek also count as reads.
+	double readsPerTick;
+	// how many write calls can be done per tick
+	// makeDirectory, open, remove and rename also count as writes.
+	double writesPerTick;
+	// The energy cost of an actual read/write.
+	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
+	double dataEnergyCost;
+} nn_Filesystem;
 
-typedef struct nn_driveTable {
-    void *userdata;
-    void (*deinit)(void *userdata);
-    
-    void (*getLabel)(void *userdata, char *buf, nn_size_t *buflen);
-    nn_size_t (*setLabel)(void *userdata, const char *buf, nn_size_t buflen);
+// 4 Tiers.
+// 0 - Tier 1 equivalent
+// 1 - Tier 2 equivalent
+// 2 - Tier 3 equivalent
+// 3 - Tier 4, a better version of Tier 3.
+extern nn_Filesystem nn_defaultFilesystems[4];
+// a basic floppy
+extern nn_Filesystem nn_defaultFloppy;
+// a generic tmpfs
+extern nn_Filesystem nn_defaultTmpFS;
 
-    nn_size_t platterCount;
-    nn_size_t capacity;
-    nn_size_t sectorSize;
+typedef nn_Exit nn_FilesystemHandler(nn_FilesystemRequest *request);
 
-    // sectors start at 1 as per OC.
-    void (*readSector)(void *userdata, int sector, char *buf);
-    void (*writeSector)(void *userdata, int sector, const char *buf);
+typedef struct nn_VFileNode {
+	// the name of the node.
+	// This is the raw name, do not append / to directories.
+	const char *name;
+	// if NULL, the node is a directory.
+	const char *data;
+	union {
+		// for files, how much of data to read.
+		size_t dataLen;
+		// for directories, the amount of entries encoded afterwards.
+		// Do note that entry encoding is recursive, so for example
+		// a(1) b(2) c("hi") d("there"), means directory a/ has a directory b/ which has 2 files, c and d,
+		// even though a's entry count is 1.
+		size_t entryCount;
+	};
+} nn_VFileNode;
 
-    // readByte and writeByte will internally use readSector and writeSector. This is to ensure they are handled *consistently.*
-    // Also makes the interface less redundant
-} nn_driveTable;
+typedef struct nn_VFilesystem {
+	const char *label;
+	size_t labellen;
+	bool isReadOnly;
+	// The maximum amount of directory entries. This is used to pre-allocate an array.
+	// It also helps against memory hogging attacks.
+	size_t maxDirEntries;
+	// the maximum amount of nodes the filesystem can have. This is also used to pre-allocate an array.
+	size_t maxNodeCount;
+	// used to compute lastModified. This, together with the context's time procedure, is used to compute the timestamp.
+	// It must be a UNIX timestamp, else you'll get weird results.
+	size_t creationTime;
+	size_t rootNodeCount;
+	// the flat array of the filesystem. See nn_VFileNode for details.
+	nn_VFileNode *image;
+} nn_VFilesystem;
 
-typedef struct nn_vdriveOptions {
-    nn_size_t sectorSize;
-    nn_size_t platterCount;
-    nn_size_t capacity;
-    const char *data;
-    char label[NN_LABEL_SIZE];
-    nn_size_t labelLen;
-} nn_vdriveOptions;
+nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata);
+nn_ComponentState *nn_createVFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, const nn_VFilesystem *vfs);
 
-typedef struct nn_drive nn_drive;
+typedef enum nn_DriveAction {
+	// instance dropped
+	NN_DRIVE_DROP,
+	// free screen state
+	NN_DRIVE_FREE,
+	// Gets the current label.
+	// [index] is set to the capacity of [buf].
+	// You must write the label into [buf], then set [index] to the length of the label.
+	// Empty label means no label.
+	NN_DRIVE_GETLABEL,
+	// Sets the current label.
+	// [index] is set to the length of [buf].
+	// Empty label means no label.
+	// Set [index] to the new length of the label, if it has been truncated.
+	NN_DRIVE_SETLABEL,
+	// gets the current read head, or more accurately, the last sector used
+	// in order to compute seeking penalties.
+	// You must output the current read head in [index].
+	NN_DRIVE_GETCURSECTOR,
+	// Reads a sector.
+	// The sector index is in [index], and the contents are in [buf].
+	NN_DRIVE_READSECTOR,
+	// Writes a sector.
+	// The sector index is in [index].
+	// Output the contents of that sector in [buf].
+	NN_DRIVE_WRITESECTOR,
+	// Reads a byte
+	// The byte index is in [index].
+	// You must output the byte in [byte].
+	NN_DRIVE_READBYTE,
+	// Writes a byte.
+	// The byte index is in [index], the byte is in [byte].
+	NN_DRIVE_WRITEBYTE,
+} nn_DriveAction;
 
-nn_drive *nn_newDrive(nn_Context *context, nn_driveTable table, nn_driveControl control);
-nn_drive *nn_volatileDrive(nn_Context *context, nn_vdriveOptions opts, nn_driveControl control);
-nn_guard *nn_getDriveLock(nn_drive *drive);
-void nn_retainDrive(nn_drive *drive);
-nn_bool_t nn_destroyDrive(nn_drive *drive);
+// Note that sectors and bytes are 1-indexed.
+// Bounds checking is done automatically by the interface.
+typedef struct nn_DriveRequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	struct nn_Drive *driveConf;
+	nn_DriveAction action;
+	size_t index;
+	union {
+		char *buf;
+		// OC explicitly uses *signed* chars.
+		// Helper methods for reading unsigned bytes cast it to an unsigned byte first.
+		// Just, do not ask.
+		signed char byte;
+	};
+} nn_DriveRequest;
 
-nn_component *nn_addDrive(nn_computer *computer, nn_address address, int slot, nn_drive *drive);
+typedef nn_Exit nn_DriveHandler(nn_DriveRequest *req);
 
-// Screens and GPUs
-typedef struct nn_screen nn_screen;
+typedef struct nn_Drive {
+	// The capacity of the drive.
+	// It is in bytes, but it MUST be a multiple of the sector size.
+	// The total amount of sectors, as in capacity / sectorSize, must also be divisible by the platter count.
+	// If it is not, it is UB.
+	size_t capacity;
+	// the sector size, typically 512
+	size_t sectorSize;
+	// the amount of platters the drive has. This contributes to how many "rotations" are needed.
+	// A drive with 8 sectors but 1 platter, when seeking from sector 1 to 8, would mean 7 rotations.
+	// However, if it has 2 platters, it'd be seen as 1 to 4 being at the same angle as 5 to 8, which
+	// would mean only 3 rotations.
+	size_t platterCount;
+	// how many reads can be issued per tick.
+	// Reading either a sector or a byte counts as 1 read.
+	size_t readsPerTick;
+	// how many writes can be issued per tick.
+	// Writing a sector counts as 1 write.
+	// Writing a byte counts as 1 read and 1 write,
+	// you can imagine it as reading the sector, editing the byte,
+	// then writing the sector back.
+	size_t writesPerTick;
+	// Set to 0 for *infinite*, effectively an SSD.
+	// This would mean there is 0 penalty for seeking (technically unreliastic even for an SSD).
+	// This is simply used to compute idle time. It is in literal full rotations per minute.
+	size_t rpm;
+	// If false, it behaves like a normal OC drive, where the drive can spin backwards to seek.
+	// However, this is unrealistic, as doing so may crack the sensitive platter and make the
+	// reader lose lift.
+	// For fans of physics, this option only allows the seeks to go forwards.
+	// This is super punishing at a slow RPM, so it is recommended to bump up
+	// the RPM to something like 7200 RPM.
+	bool onlySpinForwards;
+	// The energy cost of an actual read/write.
+	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
+	double dataEnergyCost;
+} nn_Drive;
 
-typedef struct nn_scrchr_t {
-    unsigned int codepoint;
-    int fg;
-    int bg;
-    nn_bool_t isFgPalette;
-    nn_bool_t isBgPalette;
-} nn_scrchr_t;
+typedef struct nn_VDrive {
+	// initial label
+	const char *label;
+	size_t labellen;
+	// initial data
+	const char *data;
+	size_t datalen;
+} nn_VDrive;
 
-nn_screen *nn_newScreen(nn_Context *context, int maxWidth, int maxHeight, int maxDepth, int editableColors, int paletteColors);
-nn_componentTable *nn_getScreenTable(nn_universe *universe);
+extern nn_Drive nn_defaultDrives[4];
 
-void nn_retainScreen(nn_screen *screen);
-void nn_destroyScreen(nn_screen *screen);
+nn_ComponentState *nn_createDrive(nn_Universe *universe, const nn_Drive *drive, nn_DriveHandler *handler, void *userdata);
+nn_ComponentState *nn_createVDrive(nn_Universe *universe, const nn_Drive *drive, const nn_VDrive *vdrive);
 
-void nn_lockScreen(nn_screen *screen);
-void nn_unlockScreen(nn_screen *screen);
+typedef enum nn_ScreenAction {
+	// instance dropped
+	NN_SCR_DROP,
+	// free screen state
+	NN_SCR_FREE,
 
-void nn_getResolution(nn_screen *screen, int *width, int *height);
-void nn_maxResolution(nn_screen *screen, int *width, int *height);
-void nn_setResolution(nn_screen *screen, int width, int height);
-// changes the maximum resolution
-// DOES NOT USE THE LOCK AND THUS MAY CAUSE RACE CONDITIONS AND SEGFAULTS!!!!!
-nn_bool_t nn_unsafeReallocateScreenBuffer(nn_screen *screen, int maxWidth, int maxHeight);
+	// set w to 1 if it is on, or 0 if it is off.
+	NN_SCR_ISON,
+	// attempt to turn the screen on.
+	// set w to 1 if it was on, or 0 if it was off.
+	// set h to 1 if it is now on, or 0 if it is now off.
+	NN_SCR_TURNON,
+	// attempt to turn the screen off.
+	// set w to 1 if it was on, or 0 if it was off.
+	// set h to 1 if it is now on, or 0 if it is now off.
+	NN_SCR_TURNOFF,
+	// get a keyboard. The index requested is stored in h.
+	// If the index is out of bounds, set keyboard to NULL.
+	// Else, write the keyboard address into the buffer in keyboard.
+	// The capacity of the buffer is stored in w.
+	NN_SCR_GETKEYBOARD,
+	// change the screen to/from precise mode.
+	// Precise mode means mouse events will have real-number coordinates, as opposed to integer-based ones.
+	// NeoNucleus does not automatically round this, you are meant to round it.
+	// The new precision value is stored in w, where it is a 1 to enable it and 0 to disable it.
+	// Set w to 1 if precise mode is now enabled, or 0 if it isn't.
+	NN_SCR_SETPRECISE,
+	// Set w to 1 if precise mode is enabled, or 0 if it isn't.
+	NN_SCR_ISPRECISE,
+	// change the screen to/from inverted touch mode.
+	// Inverted touch mode normally provides an alternative way to interact with the touchscreen.
+	// For example, in OC, it makes the GUI only open with shift+rightclick, and normal rightclick
+	// triggers a touch event instead. It is best to give it an equivalent meaning to OC's to prevent
+	// unexpected program behavior.
+	// The new inverted touch mode state is stored in w, where it is a 1 to enable it and 0 to disable it.
+	// Set w to 1 if inverted touch mode is now enabled, or 0 if it isn't.
+	NN_SCR_SETTOUCHINVERTED,
+	// Set w to 1 if inverted touch mode is enabled, or 0 if it isn't.
+	NN_SCR_ISTOUCHINVERTED,
+	// Gets the aspect ratio (amount of screen blocks joined together).
+	// Outside of MC, this may not make much sense, in which case you can just set it to 1x1.
+	// Store the width in w and the height in h.
+	NN_SCR_GETASPECTRATIO,
+} nn_ScreenAction;
 
-void nn_getViewport(nn_screen *screen, int *width, int *height);
-void nn_setViewport(nn_screen *screen, int width, int height);
+typedef struct nn_ScreenRequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	nn_ScreenAction action;
+	int w;
+	int h;
+	char *keyboard;
+} nn_ScreenRequest;
 
-void nn_getAspectRatio(nn_screen *screen, int *width, int *height);
-void nn_setAspectRatio(nn_screen *screen, int width, int height);
+typedef enum nn_ScreenFeatures {
+	NN_SCRF_NONE = 0,
+	// whether it supports mouse input.
+	// If it doesn't, it should not emit
+	// touch, drag or other mouse events.
+	// Walk events should also not be emitted.
+	NN_SCRF_MOUSE = 1<<0,
+	// Whether precise mode is supported.
+	NN_SCRF_PRECISE = 1<<1,
+	// Whether touch inverted is supported.
+	NN_SCRF_TOUCHINVERTED = 1<<2,
+	// it indicates that the palette can be edited.
+	NN_SCRF_EDITABLECOLORS = 1<<3,
+} nn_ScreenFeatures;
 
-void nn_addKeyboard(nn_screen *screen, nn_address address);
-void nn_removeKeyboard(nn_screen *screen, nn_address address);
-nn_address nn_getKeyboard(nn_screen *screen, nn_size_t idx);
-nn_size_t nn_getKeyboardCount(nn_screen *screen);
+// A struct for the reference screen configurations
+// This does not influence the interface at all,
+// however it exists as a runtime reference of what
+// the conventional screen tiers are.
+typedef struct nn_ScreenConfig {
+	int maxWidth;
+	int maxHeight;
+	nn_ScreenFeatures features;
+	int paletteColors;
+	char maxDepth;
+} nn_ScreenConfig;
 
-void nn_setEditableColors(nn_screen *screen, int count);
-int nn_getEditableColors(nn_screen *screen);
-void nn_setPaletteColor(nn_screen *screen, int idx, int color);
-int nn_getPaletteColor(nn_screen *screen, int idx);
-int nn_getPaletteCount(nn_screen *screen);
+// OC has 3 tiers, NN adds a 4th one as well.
+extern nn_ScreenConfig nn_defaultScreens[4];
 
-int nn_maxDepth(nn_screen *screen);
-int nn_getDepth(nn_screen *screen);
-void nn_setDepth(nn_screen *screen, int depth);
+typedef nn_Exit nn_ScreenHandler(nn_ScreenRequest *req);
+
+nn_ComponentState *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata);
+// a useless component which does nothing
+nn_ComponentState *nn_createKeyboard(nn_Universe *universe);
+
+// Remember:
+// - Colors are in 0xRRGGBB format.
+// - Screen coordinates and palettes are 1-indexed.
+// - If NN_GPU_SETRESOLUTION returns NN_OK, a screen_resized signal is queued automatically.
+// - VRAM is always fast
+typedef enum nn_GPUAction {
+	// instance dropped
+	NN_GPU_DROP,
+	// component state dropped
+	NN_GPU_FREE,
+
+	// Conventional GPU functions
+
+	// requests to bind to a screen connected to the computer.
+	// The address is stored in text, with the length in width.
+	// The interface does check that the computer does have the screen, but do look out
+	// for time-of-check/time-of-use issues which may occur in multi-threaded environments.
+	// If x is set to 1, the reset flag is enabled. This means the GPU should "reset" the state
+	// of the screen.
+	NN_GPU_BIND,
+	// requests to unbind the GPU from its screen.
+	// If there is no screen, it just does nothing.
+	NN_GPU_UNBIND,
+	// Ask for the screen the GPU is currently bound to.
+	// If it is not bound to any, text should be set to NULL.
+	// If it is, you must write to text the address of the screen.
+	// width stores the capacity of text, so if needed, truncate it to that many bytes.
+	// The length of this address must be stored in width.
+	NN_GPU_GETSCREEN,
+	// Gets the current background.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	NN_GPU_GETBACKGROUND,
+	// Sets the current background.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	// The values x and y should be updated to reflect the old state.
+	NN_GPU_SETBACKGROUND,
+	// Gets the current foreground.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	NN_GPU_GETFOREGROUND,
+	// Sets the current foreground.
+	// x should store either the color in 0xRRGGBB format or the palette index.
+	// y should be 1 if x is a palette index and 0 if it is a color.
+	// The values x and y should be updated to reflect the old state.
+	NN_GPU_SETFOREGROUND,
+	// Gets the palette color.
+	// x is the index.
+	// y should be set to the color.
+	NN_GPU_GETPALETTECOLOR,
+	// Gets the palette color.
+	// x is the index.
+	// y is the color.
+	NN_GPU_SETPALETTECOLOR,
+	// Gets the maximum depth supported by the GPU and screen.
+	// Valid depth values in OC are 1, 4 and 8, however NN also recognizes 2, 3, 16 and 24.
+	// The result should be stored in x.
+	NN_GPU_MAXDEPTH,
+	// Gets the current depth the screen is displaying at.
+	// The result should be stored in x.
+	NN_GPU_GETDEPTH,
+	// Sets the current depth the screen is displaying at.
+	// The new depth is in x.
+	// This should not change the stored color values of neither the palette nor the characters,
+	// but simply change what their color is translated to graphically.
+	// The old depth should be stored in x.
+	NN_GPU_SETDEPTH,
+	// Gets the maximum resolution supported by the GPU and screen.
+	// Result should be in width and height.
+	NN_GPU_MAXRESOLUTION,
+	// Gets the resolution of the screen.
+	// Result should be in width and height.
+	NN_GPU_GETRESOLUTION,
+	// Sets the resolution of the screen.
+	// The new resolution should be stored in width and height.
+	// If successful, a screen_resized event is implicitly queued.
+	NN_GPU_SETRESOLUTION,
+	// Gets the current screen viewport.
+	// The result should be in width and height.
+	NN_GPU_GETVIEWPORT,
+	// Sets the screen viewport.
+	// The new viewport dimensions are stored in width and height.
+	NN_GPU_SETVIEWPORT,
+	// Gets a character.
+	// The position requested is given in x and y.
+	// The codepoint of the character should be set in [codepoint].
+	// The foreground and background color should be set in [width] and [height].
+	// The palette indexes of the foreground and background should be set
+	// in [dest] and [src] respectively. If the pixel color was not from
+	// the palette, the imaginary -1 palette index can be used.
+	NN_GPU_GET,
+	// Sets a horizontal line of text at a given x, y.
+	// The position is stored in x, y, and is the position of the first character.
+	// The text goes left-to-right on the horizontal line. Anything off-screen is discared.
+	// There is no wrapping.
+	// The text is stored in text, with the size of the text, in bytes, being stored in width.
+	NN_GPU_SET,
+	// like NN_GPU_SET, but the text is set vertically.
+	// This means instead of going from left-to-right on the screen on a horizontal line,
+	// it is up-to-down on a vertical line.
+	NN_GPU_SETVERTICAL,
+	// Copies a portion of the screen to another location.
+	// The rectangle being copied is width x height, and has the top-left corner at x, y.
+	// The destination rectangle is also width x height, but has the top-left corner at x + tx, y + ty.
+	// The copy happens as if it is using an intermediary buffer, thus even if the source and destination
+	// intersect, the order in which characters are copied must not change the result.
+	NN_GPU_COPY,
+	// Fills a rectangle
+	// The rectangle's top-left corner is at x, y, and its dimensions are width x height.
+	// The character it should be filled with has its unicode codepoint stored in codepoint.
+	NN_GPU_FILL,
+
+	// VRAM buffers (always blazing fast)
+	
+	// Should return the current active buffer.
+	// 0 for the screen, or if there is no screen.
+	// The result should be stored in x.
+	NN_GPU_GETACTIVEBUFFER,
+	// Switches the active buffer to a new one, stored in x.
+	NN_GPU_SETACTIVEBUFFER,
+	// Gets a buffer by index in an imaginary list containing all of them.
+	// The index is in x, the buffer is output in y.
+	// If y is 0, the sequence is assumed to end.
+	NN_GPU_BUFFERS,
+	// Allocates a buffer.
+	// The buffer sizes are in width and height, with 0 x 0 meaning max resolution (default).
+	// This consumes exactly width * height VRAM.
+	// The new buffer should be put in x.
+	// If there was not enough VRAM for this, x can be set to 0.
+	NN_GPU_ALLOCBUFFER,
+	// Frees a buffer.
+	// The buffer is stored in x.
+	// This releases the same VRAM that the buffer consumed when allocated.
+	NN_GPU_FREEBUFFER,
+	// Frees all buffers. The free VRAM should be equal to the total VRAM after this.
+	NN_GPU_FREEBUFFERS,
+	// Gets memory info about the GPU.
+	// x should be set to the amount of free VRAM available.
+	NN_GPU_FREEMEM,
+	// Gets the size of a buffer, stored in x.
+	// The size should be stored in width and height.
+	NN_GPU_GETBUFFERSIZE,
+	// Copy a region between buffers or between the screen and buffers.
+	// The destination buffer is stored in dest. If 0, it refers to the screen.
+	// The source buffer is stored in src. If 0, it refers to the screen.
+	// x, y, width and height define the source rectangle, in the same way as in fill, to copy from the source buffer.
+	// tx, ty refer to the top-left corner for the destination rectangle, in the destination buffer. It has the same width
+	// and height as the source rectangle.
+	// Screen-to-screen copies are illegal and checked, no need to worry about handling them.
+	NN_GPU_BITBLT,
+} nn_GPUAction;
+
+typedef struct nn_GPURequest {
+	void *userdata;
+	void *instance;
+	nn_Computer *computer;
+	struct nn_GPU *gpuConf;
+	nn_GPUAction action;
+	int x;
+	int y;
+	int width;
+	int height;
+	union {
+		struct {
+			int tx;
+			int ty;
+		};
+		nn_codepoint codepoint;
+		char *text;
+	};
+	int dest;
+	int src;
+} nn_GPURequest;
+
+typedef struct nn_GPU {
+	// the minimum between these and the screen's
+	// are the maximum width/height/depth supported.
+	int maxWidth;
+	int maxHeight;
+	char maxDepth;
+	// this is in pixels.
+	size_t totalVRAM;
+	// amount of times copy can be called before running out of budget.
+	int copyPerTick;
+	// amount of times fill can be called before running out of budget.
+	int fillPerTick;
+	// amount of times set can be called before running out of budget.
+	int setPerTick;
+	// amount of times setForeground can be called before running out of budget.
+	int setForegroundPerTick;
+	// amount of times setBackground can be called before running out of budget.
+	int setBackgroundPerTick;
+	// energy per non-space set.
+	double energyPerWrite;
+	// energy per space set.
+	double energyPerClear;
+} nn_GPU;
+
+typedef nn_Exit nn_GPUHandler(nn_GPURequest *req);
+
+// 1 GPU tier for every screen.
+extern nn_GPU nn_defaultGPUs[4];
+
+nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata);
+
+// Colors and palettes.
+// Do note that the 
+
+// The NeoNucleus 2-bit palette
+extern int nn_palette2[4];
+
+// The NeoNucleus 3-bit palette
+extern int nn_palette3[8];
+
+// The OC 4-bit palette.
+extern int nn_ocpalette4[16];
+
+// The Minecraft 4-bit palette, using dye colors.
+extern int nn_mcpalette4[16];
+
+// The OC 8-bit palette.
+extern int nn_ocpalette8[256];
+
+// initializes the contents of the palettes.
+void nn_initPalettes();
+
+// Expensive.
+// Maps a color to the closest match in a palette.
+int nn_mapColor(int color, int *palette, size_t len);
+// Expensive.
+// Maps a color within a given depth.
+// ocCompatible only matters for 4-bit, and determines whether to use the OC palette or the MC palette.
+// Invalid depths behave identically to 24-bit, in which case the color is left unchanged.
+int nn_mapDepth(int color, int depth, bool ocCompatible);
+
+// the name of a depth, if valid.
+// If invalid, NULL is returned, thus this can be used to check
+// if a depth is valid as well.
+// Valid depths are 1, 2, 3, 4, 8, 16 and 24.
 const char *nn_depthName(int depth);
 
-double nn_colorDistance(int colorA, int colorB);
-int nn_mapColor(int color, int *palette, int paletteSize);
+// Signal helpers
 
-int nn_mapDepth(int color, int depth, nn_bool_t legacy);
-void nn_getStd4BitPalette(int color[16]);
-void nn_getStd8BitPalette(int color[256]);
+// common mouse buttons, not an exhaustive list
+#define NN_BUTTON_LEFT 0
+#define NN_BUTTON_RIGHT 1
+#define NN_BUTTON_MIDDLE 2
 
-// Std4bit uses actual MC dye colors, except for white and black
-// Legacy uses OC's versions that were brightened
-void nn_getLegacy4BitPalette(int color[16]);
+// OC keycodes
+// taken from https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/resources/assets/opencomputers/loot/openos/lib/core/full_keyboard.lua
+#define NN_KEY_UNKNOWN 0
+#define NN_KEY_1 0x02
+#define NN_KEY_2 0x03
+#define NN_KEY_3 0x04
+#define NN_KEY_4 0x05
+#define NN_KEY_5 0x06
+#define NN_KEY_6 0x07
+#define NN_KEY_7 0x08
+#define NN_KEY_8 0x09
+#define NN_KEY_9 0x0A
+#define NN_KEY_0 0x0B
+#define NN_KEY_A 0x1E
+#define NN_KEY_B 0x30
+#define NN_KEY_C 0x2E
+#define NN_KEY_D 0x20
+#define NN_KEY_E 0x12
+#define NN_KEY_F 0x21
+#define NN_KEY_G 0x22
+#define NN_KEY_H 0x23
+#define NN_KEY_I 0x17
+#define NN_KEY_J 0x24
+#define NN_KEY_K 0x25
+#define NN_KEY_L 0x26
+#define NN_KEY_M 0x32
+#define NN_KEY_N 0x31
+#define NN_KEY_O 0x18
+#define NN_KEY_P 0x19
+#define NN_KEY_Q 0x10
+#define NN_KEY_R 0x13
+#define NN_KEY_S 0x1F
+#define NN_KEY_T 0x14
+#define NN_KEY_U 0x16
+#define NN_KEY_V 0x2F
+#define NN_KEY_W 0x11
+#define NN_KEY_X 0x2D
+#define NN_KEY_Y 0x15
+#define NN_KEY_Z 0x2C
 
-void nn_setPixel(nn_screen *screen, int x, int y, nn_scrchr_t pixel);
-nn_scrchr_t nn_getPixel(nn_screen *screen, int x, int y);
+#define NN_KEY_APOSTROPHE 0x28
+#define NN_KEY_AT 0x91
+#define NN_KEY_BACK 0x0E
+#define NN_KEY_BACKSLASH 0x2B
+// caps-lock
+#define NN_KEY_CAPITAL 0x3A
+#define NN_KEY_COLON 0x92
+#define NN_KEY_COMMA 0x33
+#define NN_KEY_ENTER 0x1C
+#define NN_KEY_EQUALS 0x0D
+// accent grave
+#define NN_KEY_GRAVE 0x29
+#define NN_KEY_LBRACKET 0x1A
+#define NN_KEY_LCONTROL 0x1D
+// left alt
+#define NN_KEY_LMENU 0x38
+#define NN_KEY_LSHIFT 0x2A
+#define NN_KEY_MINUS 0x0C
+#define NN_KEY_NUMLOCK 0x45
+#define NN_KEY_PAUSE 0xC5
+#define NN_KEY_PERIOD 0x34
+#define NN_KEY_RBRACKET 0x1B
+#define NN_KEY_RCONTROL 0x9D
+// right alt
+#define NN_KEY_RMENU 0xB8
+#define NN_KEY_RSHIFT 0x36
+// scroll lock
+#define NN_KEY_SCROLL 0x46
+#define NN_KEY_SEMICOLON 0x27
+#define NN_KEY_SLASH 0x35
+#define NN_KEY_SPACE 0x39
+#define NN_KEY_STOP 0x95
+#define NN_KEY_TAB 0x0F
+#define NN_KEY_UNDERLINE 0x93
 
-nn_bool_t nn_isDirty(nn_screen *screen);
-void nn_setDirty(nn_screen *screen, nn_bool_t dirty);
-nn_bool_t nn_isPrecise(nn_screen *screen);
-void nn_setPrecise(nn_screen *screen, nn_bool_t precise);
-nn_bool_t nn_isTouchModeInverted(nn_screen *screen);
-void nn_setTouchModeInverted(nn_screen *screen, nn_bool_t touchModeInverted);
-nn_bool_t nn_isOn(nn_screen *buffer);
-void nn_setOn(nn_screen *buffer, nn_bool_t on);
+#define NN_KEY_UP 0xC8
+#define NN_KEY_DOWN 0xD0
+#define NN_KEY_LEFT 0xCB
+#define NN_KEY_RIGHT 0xCD
+#define NN_KEY_HOME 0xC7
+#define NN_KEY_END 0xCF
+#define NN_KEY_PAGEUP 0xC9
+#define NN_KEY_PAGEDOWN 0xD1
+#define NN_KEY_INSERT 0xD2
+#define NN_KEY_DELETE 0xD3
 
-nn_component *nn_addScreen(nn_computer *computer, nn_address address, int slot, nn_screen *screen);
+#define NN_KEY_F1 0x3B
+#define NN_KEY_F2 0x3C
+#define NN_KEY_F3 0x3D
+#define NN_KEY_F4 0x3E
+#define NN_KEY_F5 0x3F
+#define NN_KEY_F6 0x40
+#define NN_KEY_F7 0x41
+#define NN_KEY_F8 0x42
+#define NN_KEY_F9 0x43
+#define NN_KEY_F10 0x44
+#define NN_KEY_F11 0x57
+#define NN_KEY_F12 0x58
+#define NN_KEY_F13 0x64
+#define NN_KEY_F14 0x65
+#define NN_KEY_F15 0x66
+#define NN_KEY_F16 0x67
+#define NN_KEY_F17 0x68
+#define NN_KEY_F18 0x69
+#define NN_KEY_F19 0x71
 
-typedef struct nn_gpuControl {
-    // VRAM Buffers
-    int totalVRAM;
-	int maximumBufferCount;
-	int defaultBufferWidth;
-	int defaultBufferHeight;
+#define NN_KEY_KANA 0x70
+#define NN_KEY_KANJI 0x94
+#define NN_KEY_CONVERT 0x79
+#define NN_KEY_NOCONVERT 0x7B
+#define NN_KEY_YEN 0x7D
+#define NN_KEY_CIRCUMFLEX 0x90
+#define NN_KEY_AX 0x96
 
-    // Calls per tick, only applicable to screens
-    double screenCopyPerTick;
-    double screenFillPerTick;
-    double screenSetsPerTick;
-    double bitbltPerTick; // for bitblit
+#define NN_KEY_NUMPAD0 0x52
+#define NN_KEY_NUMPAD1 0x4F
+#define NN_KEY_NUMPAD2 0x50
+#define NN_KEY_NUMPAD3 0x51
+#define NN_KEY_NUMPAD4 0x4B
+#define NN_KEY_NUMPAD5 0x4C
+#define NN_KEY_NUMPAD6 0x4D
+#define NN_KEY_NUMPAD7 0x47
+#define NN_KEY_NUMPAD8 0x48
+#define NN_KEY_NUMPAD9 0x49
+#define NN_KEY_NUMPADMUL 0x37
+#define NN_KEY_NUMPADDIV 0xB5
+#define NN_KEY_NUMPADSUB 0x4A
+#define NN_KEY_NUMPADADD 0x4E
+#define NN_KEY_NUMPADDECIMAL 0x53
+#define NN_KEY_NUMPADCOMMA 0xB3
+#define NN_KEY_NUMPADENTER 0x9C
+#define NN_KEY_NUMPADEQUALS 0x8D
 
-    // Heat
-    double heatPerPixelChange;
-    double heatPerPixelReset;
-    double heatPerVRAMChange;
+// pushes a screen_resized signal
+nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight);
+// pushes a touch signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushTouch(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a drag signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushDrag(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a drop signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a scroll signal
+// A positive direction usually means up, a negative one usually means down.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushScroll(nn_Computer *computer, const char *screenAddress, double x, double y, double direction, const char *player);
+// pushes a walk signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushWalk(nn_Computer *computer, const char *screenAddress, double x, double y, const char *player);
 
-    // Energy
-    double energyPerPixelChange;
-    double energyPerPixelReset;
-    double energyPerVRAMChange;
-} nn_gpuControl;
+// pushes a key_down event
+// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
+// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
+// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushKeyDown(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
+// pushes a key_up event
+// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
+// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
+// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushKeyUp(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
+// pushes a clipboard event
+// clipboard should be a NULL-terminated string.
+// NN does no truncation of the contents, but it is best to limit it.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, const char *player);
+// pushes a clipboard event
+// len is the length of the clipboard.
+// NN does no truncation of the contents, but it is best to limit it.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, size_t len, const char *player);
 
-// the control is COPIED.
-nn_component *nn_addGPU(nn_computer *computer, nn_address address, int slot, nn_gpuControl *control);
+// TODO: the remaining vanilla ones in https://ocdoc.cil.li/component:signals
 
-typedef struct nn_networkControl {
-    double packetBytesPerTick;
-    double heatPerFullPacket;
-    double energyPerFullPacket;
-} nn_networkControl;
-
-nn_bool_t nn_wakeupMatches(nn_value *values, nn_size_t valueLen, const char *wakeUp, nn_bool_t fuzzy);
-
-// NULL on success, error string on failure
-// this *retains* all of those values, meaning you must drop them after call this function
-const char *nn_pushNetworkMessage(nn_computer *computer, nn_address receiver, nn_address sender, nn_size_t port, double distance, nn_value *values, nn_size_t valueLen);
-
-typedef struct nn_modemTable {
-    void *userdata;
-    void (*deinit)(void *userdata);
-
-    // basic limits
-
-    nn_bool_t wireless;
-    nn_size_t maxValues;
-    nn_size_t maxPacketSize;
-    nn_size_t maxOpenPorts;
-
-    // ports
-
-    nn_bool_t (*isOpen)(void *userdata, nn_size_t port, nn_errorbuf_t err);
-    nn_bool_t (*open)(void *userdata, nn_size_t port, nn_errorbuf_t err);
-    // port NN_PORT_CLOSEALL means close all
-    nn_bool_t (*close)(void *userdata, nn_size_t port, nn_errorbuf_t err);
-    nn_size_t (*getPorts)(void *userdata, nn_size_t *ports, nn_errorbuf_t err);
-    
-    // messages
-
-    // Address is NULL if broadcasting
-    nn_bool_t (*send)(void *userdata, nn_address address, nn_size_t port, nn_value *values, nn_size_t valueCount, nn_errorbuf_t err);
-
-    // signal strength
-    double maxStrength;
-    double (*getStrength)(void *userdata, nn_errorbuf_t err);
-    double (*setStrength)(void *userdata, double strength, nn_errorbuf_t err);
-
-    // wake message
-    nn_size_t (*getWakeMessage)(void *userdata, char *buf, nn_errorbuf_t err);
-    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy, nn_errorbuf_t err);
-} nn_modemTable;
-
-typedef struct nn_modem nn_modem;
-
-typedef struct nn_debugLoopbackNetworkOpts {
-    nn_computer *computer;
-    nn_address address;
-    nn_size_t maxValues;
-    nn_size_t maxPacketSize;
-    nn_size_t maxOpenPorts;
-    double maxStrength;
-    nn_bool_t isWireless;
-} nn_debugLoopbackNetworkOpts;
-
-nn_modem *nn_newModem(nn_Context *context, nn_modemTable table, nn_networkControl control);
-nn_modem *nn_debugLoopbackModem(nn_Context *context, nn_debugLoopbackNetworkOpts opts, nn_networkControl control);
-nn_guard *nn_getModemLock(nn_modem *modem);
-void nn_retainModem(nn_modem *modem);
-nn_bool_t nn_destroyModem(nn_modem *modem);
-
-nn_component *nn_addModem(nn_computer *computer, nn_address address, int slot, nn_modem *modem);
-
-typedef struct nn_tunnelTable {
-    void *userdata;
-    void (*deinit)(void *userdata);
-    
-    nn_size_t maxValues;
-    nn_size_t maxPacketSize;
-    
-    void (*send)(void *userdata, nn_value *values, nn_size_t valueCount, nn_errorbuf_t err);
-    nn_size_t (*getChannel)(void *userdata, char *buf, nn_errorbuf_t err);
-    nn_size_t (*getWakeMessage)(void *userdata, char *buf, nn_errorbuf_t err);
-    nn_size_t (*setWakeMessage)(void *userdata, const char *buf, nn_size_t buflen, nn_bool_t fuzzy, nn_errorbuf_t err);
-} nn_tunnelTable;
-
-typedef struct nn_tunnel nn_tunnel;
-
-nn_tunnel *nn_newTunnel(nn_Context *context, nn_tunnelTable table, nn_networkControl control);
-nn_tunnel *nn_debugLoopbackTunnel(nn_Context *context, nn_debugLoopbackNetworkOpts opts, nn_networkControl control);
-nn_guard *nn_getTunnelLock(nn_tunnel *tunnel);
-void nn_retainTunnel(nn_tunnel *tunnel);
-nn_bool_t nn_destroyTunnel(nn_tunnel *tunnel);
-
-nn_component *nn_addTunnel(nn_computer *computer, nn_address address, int slot, nn_tunnel *tunnel);
-
-typedef struct nn_diskDriveTable {
-	void *userdata;
-	void (*deinit)(void *userdata);
-
-	// velocity is 0 or less for "default"
-	void (*eject)(void *userdata, double velocity, nn_errorbuf_t err);
-	nn_bool_t (*isEmpty)(void *userdata);
-	nn_address (*media)(void *userdata, nn_Alloc *alloc, nn_errorbuf_t err);
-} nn_diskDriveTable;
-
-typedef struct nn_diskDrive nn_diskDrive;
-
-nn_diskDrive *nn_newDiskDrive(nn_Context *context, nn_diskDriveTable table);
-nn_guard *nn_getDiskDriveLock(nn_diskDrive *diskDrive);
-void nn_retainDiskDrive(nn_diskDrive *diskDrive);
-nn_bool_t nn_destroyDiskDrive(nn_diskDrive *diskDrive);
-
-nn_component *nn_addDiskDrive(nn_computer *computer, nn_address address, int slot, nn_diskDrive *diskDrive);
-
-typedef struct nn_hologram nn_hologram;
-
-nn_hologram *nn_newHologram(nn_Context *context, int pallette_len, int width_x, int width_z, int height, int depth);
-nn_guard *nn_getHologramLock(nn_hologram *hologram);
-void nn_retainHologram(nn_hologram *hologram);
-nn_bool_t nn_destroyHologram(nn_hologram *hologram);
-
-nn_component *nn_addHologram(nn_computer *computer, nn_address address, int slot, nn_hologram *hologram);
-
-void nn_hologram_clear(nn_hologram *hologram);
-int nn_hologram_get(nn_hologram *hologram, int x, int y, int z);
-void nn_hologram_set(nn_hologram *hologram, int x, int y, int z, int value);
-void nn_hologram_fill(nn_hologram *hologram, int x, int z, int minY, int maxY, int value);
-void nn_hologram_copy(nn_hologram *hologram, int x, int z, int sx, int sz, int tx, int tz);
-float nn_hologram_getScale(nn_hologram *hologram);
-void nn_hologram_setScale(nn_hologram *hologram, float value);
-void nn_hologram_getTranslation(nn_hologram *hologram, double *x, double *y, double *z);
-void nn_hologram_setTranslation(nn_hologram *hologram, double x, double y, double z);
-int nn_hologram_maxDepth(nn_hologram *hologram);
-int nn_hologram_getPaletteColor(nn_hologram *hologram, int index);
-int nn_hologram_setPaletteColor(nn_hologram *hologram, int index, int value);
-
-typedef struct nn_externalComputerTable_t {
-	void *userdata;
-	void (*deinit)(void *userdata);
-
-	nn_bool_t (*start)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
-	nn_bool_t (*stop)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
-	nn_bool_t (*isRunning)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
-	void (*beep)(void *userdata, nn_computer *requester, double freq, double duration, double volume, nn_errorbuf_t err);
-	void (*crash)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
-	nn_architecture *(*getArchitecture)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
-	void (*getDeviceInfo)(void *userdata, nn_deviceInfoList_t *list, nn_computer *requester, nn_errorbuf_t err);
-	nn_bool_t (*isRobot)(void *userdata, nn_computer *requester, nn_errorbuf_t err);
-} nn_externalComputerTable_t;
-
-typedef struct nn_externalComputer_t nn_externalComputer_t;
-
-// An external computer is a computer component.
-// It may refer to the current computer (counter-intuitively)
-// It may exist when the computer it is refering too has no running state (aka is powered off)
-nn_externalComputer_t *nn_newExternalComputer(nn_Context *ctx, nn_externalComputerTable_t table);
-nn_guard *nn_externalComputer_getLock(nn_externalComputer_t *external);
-void nn_externalComputer_retain(nn_externalComputer_t *external);
-nn_bool_t nn_externalComputer_destroy(nn_externalComputer_t *external);
-
-nn_component *nn_externalComputer_addTo(nn_computer *computer, nn_address address, int slot, nn_externalComputer_t *external);
-
-#ifdef __cplusplus // c++ sucks
+#ifdef __cplusplus
 }
 #endif
 
