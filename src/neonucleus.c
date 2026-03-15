@@ -1127,7 +1127,11 @@ bool nn_isComputerIdle(nn_Computer *computer) {
 }
 
 void nn_addIdleTime(nn_Computer *computer, double time) {
-	computer->idleTimestamp += time;
+	//computer->idleTimestamp += time;
+}
+
+void nn_resetIdleTime(nn_Computer *computer) {
+	computer->idleTimestamp = -1;
 }
 
 nn_Exit nn_tick(nn_Computer *computer) {
@@ -1430,7 +1434,7 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 			nn_Method m = c.cstate->methods[j];
 			if(nn_strcmp(m.name, method) != 0) continue;
 			// indirect calls consume the entire call budget
-			if((m.flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
+			//if((m.flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
 		}
 		
 		nn_ComponentRequest req;
@@ -3094,6 +3098,7 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 	scrreq.instance = req->compUserdata;
 
 	const char *method = req->methodCalled;
+	nn_Exit e;
 	
 	switch(req->action) {
 	case NN_COMP_FREETYPE:
@@ -3110,6 +3115,54 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 		req->methodEnabled = true;
 		return NN_OK;
 	case NN_COMP_CALL:
+		if(nn_strcmp(method, "isOn") == 0) {
+			scrreq.action = NN_SCR_ISON;
+			e = state->handler(&scrreq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushbool(C, scrreq.w != 0);
+		}
+		if(nn_strcmp(method, "isPrecise") == 0) {
+			scrreq.action = NN_SCR_ISPRECISE;
+			e = state->handler(&scrreq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushbool(C, scrreq.w != 0);
+		}
+		if(nn_strcmp(method, "isTouchModeInverted") == 0) {
+			scrreq.action = NN_SCR_ISTOUCHINVERTED;
+			e = state->handler(&scrreq);
+			if(e) return e;
+			req->returnCount = 1;
+			return nn_pushbool(C, scrreq.w != 0);
+		}
+		if(nn_strcmp(method, "getAspectRatio") == 0) {
+			scrreq.action = NN_SCR_GETASPECTRATIO;
+			e = state->handler(&scrreq);
+			if(e) return e;
+			req->returnCount = 2;
+			e = nn_pushinteger(C, scrreq.w);
+			if(e) return e;
+			return nn_pushinteger(C, scrreq.h);
+		}
+		if(nn_strcmp(method, "getKeyboards") == 0) {
+			char buf[NN_MAX_ADDRESS];
+			size_t kbCount = 0;
+			while(true) {
+				scrreq.action = NN_SCR_GETKEYBOARD;
+				scrreq.keyboard = buf;
+				scrreq.w = sizeof(buf);
+				scrreq.h = kbCount;
+				e = state->handler(&scrreq);
+				if(e) return e;
+				if(scrreq.keyboard == NULL) break;
+				e = nn_pushlstring(C, buf, scrreq.w);
+				if(e) return e;
+				kbCount++;
+			}
+			req->returnCount = 1;
+			return nn_pusharraytable(C, kbCount);
+		}
 		nn_setError(C, "method not implemented yet");
 		return NN_EBADCALL;
 	}

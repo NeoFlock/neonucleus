@@ -269,6 +269,9 @@ local function writeEntry(entry, levelStack)
   if opts.Q then io.write('"') end
 
   if opts.color == "always" then
+	if not entry.extension then
+		print("entry:", entry)
+	end
     io.write("\27[" .. colorize(entry) .. "m")
   end
 

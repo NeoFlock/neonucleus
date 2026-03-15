@@ -428,6 +428,10 @@ nn_Exit ne_screen_handler(nn_ScreenRequest *req) {
 			req->keyboard = NULL;
 			return NN_OK;
 		}
+		if(req->h != 0) {
+			req->keyboard = NULL;
+			return NN_OK;
+		}
 		size_t keylen = strlen(buf->keyboard);
 		if(keylen > req->w) keylen = req->w;
 		memcpy(req->keyboard, buf->keyboard, keylen);
@@ -1204,6 +1208,7 @@ int main(int argc, char **argv) {
 			tickClock = tickDelay;
 			nn_clearstack(c);
 
+			if(getenv("NN_NOIDLE") != NULL) nn_resetIdleTime(c);
 			nn_Exit e = nn_tick(c);
 			if(e != NN_OK) {
 				nn_setErrorFromExit(c, e);

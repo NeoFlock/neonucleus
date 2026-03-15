@@ -5,6 +5,7 @@
 
 
 local sysyieldobj = {}
+local coroutine = coroutine
 
 local function sysyield()
 	coroutine.yield(sysyieldobj)
@@ -26,6 +27,7 @@ end
 function coroutine.wrap(f)
 	local co = coroutine.create(f)
 	return function(...)
+		if coroutine.status(co) ~= "suspended" then return end
 		local t = {coroutine.resume(co, ...)}
 		if t[1] then
 			return table.unpack(t, 2)

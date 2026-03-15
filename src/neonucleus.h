@@ -467,6 +467,7 @@ nn_ComputerState nn_getComputerState(nn_Computer *computer);
 bool nn_isComputerIdle(nn_Computer *computer);
 // Shifts over the idle timestamp.
 void nn_addIdleTime(nn_Computer *computer, double time);
+void nn_resetIdleTime(nn_Computer *computer);
 // runs a tick of the computer. Make sure to check the state as well!
 // This automatically resets the component budgets and call budget.
 // It also sets the idle timestamp to the current uptime.
