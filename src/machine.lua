@@ -69,7 +69,7 @@ local allInvoks = 0
 
 function component.invoke(address, method, ...)
 	allInvoks = allInvoks + 1
-	print(allInvoks)
+	--print(allInvoks)
 	local t = {pcall(cinvoke, address, method, ...)}
 	if computer.energy() <= 0 then sysyield() end -- out of power
 	if computer.isOverused() then sysyield() end -- overused

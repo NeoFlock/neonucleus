@@ -546,6 +546,97 @@ void nn_initContext(nn_Context *ctx) {
 	ctx->lock = nn_defaultLock;
 }
 
+// some util data structures
+
+#define NN_PTROFF(p, i, size) (void *)(((size_t)(p)) + ((i) * (size)))
+
+typedef enum nn_HashEntryState {
+	// equal
+	NN_HASH_EQUAL,
+	// different, ignore
+	NN_HASH_DIFFERENT,
+	// The slot was removed.
+	NN_HASH_REMOVED,
+	// Free but not equal.
+	NN_HASH_FREE,
+} nn_HashEntryState;
+
+typedef enum nn_HashAction {
+	// init to free
+	NN_HASH_INIT,
+	NN_HASH_HASH,
+	NN_HASH_REMOVE,
+	// checks if slot is equal to entry
+	NN_HASH_CMP,
+} nn_HashAction;
+
+// slot is the memory in the hashmap.
+// for NN_HASH_CMP, entry is the key, and may be NULL if we are only trying to get the state of a slot for iteration.
+// for NN_HASH_CMP, a HashEntryState should be returned.
+typedef size_t (nn_HashHandler)(nn_HashAction action, void *slot, void *entry);
+
+typedef struct nn_HashContext {
+	size_t entSize;
+	nn_HashHandler *handler;
+} nn_HashContext;
+
+// not a dynamic hashmap, has a fixed capacity.
+// This is because every hashmap we care about has a known maximum capacity that is equal to the length
+// and thus we literally do not care
+typedef struct nn_HashMap {
+	void *buf;
+	size_t bufsize;
+	nn_Context *ctx;
+	nn_HashContext *hash;
+} nn_HashMap;
+
+nn_Exit nn_hashInit(nn_HashMap *map, size_t capacity, nn_Context *ctx, nn_HashContext *hash) {
+	void *buf = nn_alloc(ctx, hash->entSize * capacity);
+	if(buf == NULL) return NN_ENOMEM;
+	map->buf = buf;
+	map->bufsize = capacity;
+	map->ctx = ctx;
+	map->hash = hash;
+	for(size_t i = 0; i < map->bufsize; i++) {
+		hash->handler(NN_HASH_INIT, NN_PTROFF(map->buf, i, hash->entSize), NULL);
+	}
+	return NN_OK;
+}
+
+// note: does not free entries
+void nn_hashDeinit(nn_HashMap *map) {
+	nn_free(map->ctx, map->buf, map->hash->entSize * map->bufsize);
+}
+
+size_t nn_hashGetHash(nn_HashMap *map, void *entry) {
+	return map->hash->handler(NN_HASH_HASH, entry, NULL);
+}
+void *nn_hashGetAt(nn_HashMap *map, size_t idx) {
+	return NN_PTROFF(map->buf, idx, map->hash->entSize);
+}
+
+// get by entry by key. It is assumed that the entry is NULL.
+void *nn_hashGet(nn_HashMap *map, void *entry);
+// should put the entire entry over there.
+void *nn_hashPut(nn_HashMap *map, void *entry);
+void *nn_hashRemove(nn_HashMap *map, void *entry);
+
+// takes in an entry and returns the next one. If entry is NULL, it will return the first one.
+// Returns NULL on empty.
+// entry must be either NULL or a pointer to the map's buffer.
+void *nn_hashIterate(nn_HashMap *map, void *entry) {
+	size_t entSize = map->hash->entSize;
+	void *bufEnd = NN_PTROFF(map->buf, map->bufsize, entSize);
+	if(entry == NULL) {
+		if(map->bufsize == 0) return NULL;
+		entry = map->buf;
+	} else {
+		entry = NN_PTROFF(entry, 1, entSize);
+	}
+}
+
+// real stuff
+
 typedef struct nn_ComponentState {
 	nn_Universe *universe;
 	void *userdata;
