@@ -1,5 +1,6 @@
 # For MVP functionality
 
+- stop doing linear scans and do hashmaps smh (ls /dev is awfully slow and this MIGHT be why)
 - volatile filesystem
 - device info
 

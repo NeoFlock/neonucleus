@@ -769,7 +769,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->desiredArch.name = NULL;
 	c->archState = NULL;
 
-	c->totalCallBudget = 1000;
+	c->totalCallBudget = 50000;
 	c->callBudget = c->totalCallBudget;
 
 	c->componentCap = maxComponents;
@@ -2221,15 +2221,15 @@ nn_ComponentState *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eepro
 		{"getDataSize", "function(): number - Get the storage capacity of the EEPROM data.", NN_DIRECT},
 		{"getLabel", "function(): string - Get the EEPROM label", NN_INDIRECT},
 		{"setLabel", "function(label: string): string - Set the EEPROM label and return what was actually set, which may be truncated.", NN_INDIRECT},
-		{"get", "function(): string - Get the current EEPROM contents.", NN_INDIRECT},
-		{"getData", "function(): string - Get the current EEPROM data contents.", NN_INDIRECT},
-		{"set", "function(data: string) - Set the current EEPROM contents.", NN_INDIRECT},
-		{"setData", "function(data: string) - Set the current EEPROM data contents.", NN_INDIRECT},
-		{"getArchitecture", "function(): string - Get the current EEPROM architecture intended.", NN_INDIRECT},
-		{"setArchitecture", "function(data: string) - Set the current EEPROM architecture intended.", NN_INDIRECT},
+		{"get", "function(): string - Get the current EEPROM contents.", NN_DIRECT},
+		{"getData", "function(): string - Get the current EEPROM data contents.", NN_DIRECT},
+		{"set", "function(data: string) - Set the current EEPROM contents.", NN_DIRECT},
+		{"setData", "function(data: string) - Set the current EEPROM data contents.", NN_DIRECT},
+		{"getArchitecture", "function(): string - Get the current EEPROM architecture intended.", NN_DIRECT},
+		{"setArchitecture", "function(data: string) - Set the current EEPROM architecture intended.", NN_DIRECT},
 		{"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT},
 		{"makeReadonly", "function(checksum: string) - Makes the EEPROM read-only, this cannot be undone.", NN_INDIRECT},
-		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_INDIRECT},
+		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_DIRECT},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentState *t = nn_createComponentState(universe, "eeprom", state, methods, nn_eeprom_handler);
