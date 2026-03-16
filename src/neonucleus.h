@@ -511,6 +511,7 @@ typedef struct nn_Method {
 	const char *name;
 	const char *docString;
 	nn_MethodFlags flags;
+	int idx;
 } nn_Method;
 
 typedef struct nn_ComponentState nn_ComponentState;
@@ -575,12 +576,15 @@ nn_Exit nn_removeComponent(nn_Computer *computer, const char *address);
 const char *nn_getComponentType(nn_Computer *computer, const char *address);
 // Gets the slot of a component.
 int nn_getComponentSlot(nn_Computer *computer, const char *address);
-// Returns the array of component methods. This can be used for doc strings or just listing methods.
-const nn_Method *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len);
-// get the address at a certain index.
-// It'll return NULL for out of bounds indexes.
-// This can be used to iterate over all components.
-const char *nn_getComponentAddress(nn_Computer *computer, size_t idx);
+// Iterates over the methods of a component.
+// Returns NULL at end of iteration.
+// name should be NULL at the start.
+// NOTE: the method pointer MUST be returned by the iterator, as it is offset during iteration.
+const nn_Method *nn_nextComponentMethod(nn_Computer *computer, const char *address, const nn_Method *old);
+// iterate over components.
+// for prev = NULL, returns the first one.
+// returns NULL at the end of iteration.
+const char *nn_getNextComponent(nn_Computer *computer, const char *prev);
 // Returns the doc-string associated with a method.
 const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method);
 void *nn_getComponentUserdata(nn_Computer *computer, const char *address);

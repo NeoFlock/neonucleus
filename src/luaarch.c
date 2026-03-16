@@ -280,9 +280,7 @@ fail:
 static int luaArch_component_list(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	lua_createtable(L, 64, 0);
-	for(size_t i = 0; true; i++) {
-		const char *addr = nn_getComponentAddress(arch->computer, i);
-		if(addr == NULL) break;
+	for(const char *addr = nn_getNextComponent(arch->computer, NULL); addr != NULL; addr = nn_getNextComponent(arch->computer, addr)) {
 		lua_pushstring(L, nn_getComponentType(arch->computer, addr));
 		lua_setfield(L, -2, addr);
 	}
@@ -378,14 +376,13 @@ static int luaArch_component_methods(lua_State *L) {
 		lua_pushstring(L, "no such component");
 		return 2;
 	}
-	size_t len;
-	const nn_Method *methods = nn_getComponentMethods(arch->computer, address, &len);
-	lua_createtable(L, 0, len);
-	for(size_t i = 0; i < len; i++) {
-		if(methods[i].flags & NN_FIELD_MASK) continue; // skip
+	const nn_Method *method = nn_nextComponentMethod(arch->computer, address, NULL);
+	lua_createtable(L, 0, 0);
+	for(; method != NULL; method = nn_nextComponentMethod(arch->computer, address, method)) {
+		if(method->flags & NN_FIELD_MASK) continue; // skip
 
-		lua_pushboolean(L, (methods[i].flags & NN_DIRECT) != 0);
-		lua_setfield(L, -2, methods[i].name);
+		lua_pushboolean(L, (method->flags & NN_DIRECT) != 0);
+		lua_setfield(L, -2, method->name);
 	}
 	return 1;
 }
@@ -399,20 +396,19 @@ static int luaArch_component_fields(lua_State *L) {
 		lua_pushstring(L, "no such component");
 		return 2;
 	}
-	size_t len;
-	const nn_Method *methods = nn_getComponentMethods(arch->computer, address, &len);
-	lua_createtable(L, 0, len);
-	for(size_t i = 0; i < len; i++) {
-		if((methods[i].flags & NN_FIELD_MASK) == 0) continue; // skip
+	const nn_Method *method = nn_nextComponentMethod(arch->computer, address, NULL);
+	lua_createtable(L, 0, 0);
+	for(; method != NULL; method = nn_nextComponentMethod(arch->computer, address, method)) {
+		if((method->flags & NN_FIELD_MASK) == 0) continue; // skip
 
 		lua_createtable(L, 0, 3);
-		lua_pushboolean(L, (methods[i].flags & NN_DIRECT) != 0);
+		lua_pushboolean(L, (method->flags & NN_DIRECT) != 0);
 		lua_setfield(L, -2, "direct");
-		lua_pushboolean(L, (methods[i].flags & NN_GETTER) != 0);
+		lua_pushboolean(L, (method->flags & NN_GETTER) != 0);
 		lua_setfield(L, -2, "getter");
-		lua_pushboolean(L, (methods[i].flags & NN_SETTER) != 0);
+		lua_pushboolean(L, (method->flags & NN_SETTER) != 0);
 		lua_setfield(L, -2, "setter");
-		lua_setfield(L, -2, methods[i].name);
+		lua_setfield(L, -2, method->name);
 	}
 	return 1;
 }

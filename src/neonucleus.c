@@ -309,6 +309,8 @@ void nn_crc32ChecksumBytes(unsigned int checksum, char out[8]) {
 	}
 }
 
+// TODO: rework completely
+// apparently can overflow??
 bool nn_simplifyPath(const char original[NN_MAX_PATH], char simplified[NN_MAX_PATH]) {
 	// pass 1: check for valid characters, and \ becomes /
 	for(size_t i = 0; true; i++) {
@@ -572,6 +574,7 @@ typedef enum nn_HashAction {
 
 // slot is the memory in the hashmap.
 // for NN_HASH_CMP, entry is the key, and may be NULL if we are only trying to get the state of a slot for iteration.
+// if entry is NULL, NN_HASH_EQUAL is invalid and NN_HASH_DIFFERENT means it is used up.
 // for NN_HASH_CMP, a HashEntryState should be returned.
 typedef size_t (nn_HashHandler)(nn_HashAction action, void *slot, void *entry);
 
@@ -587,10 +590,10 @@ typedef struct nn_HashMap {
 	void *buf;
 	size_t bufsize;
 	nn_Context *ctx;
-	nn_HashContext *hash;
+	const nn_HashContext *hash;
 } nn_HashMap;
 
-nn_Exit nn_hashInit(nn_HashMap *map, size_t capacity, nn_Context *ctx, nn_HashContext *hash) {
+nn_Exit nn_hashInit(nn_HashMap *map, size_t capacity, nn_Context *ctx, const nn_HashContext *hash) {
 	void *buf = nn_alloc(ctx, hash->entSize * capacity);
 	if(buf == NULL) return NN_ENOMEM;
 	map->buf = buf;
@@ -616,10 +619,60 @@ void *nn_hashGetAt(nn_HashMap *map, size_t idx) {
 }
 
 // get by entry by key. It is assumed that the entry is NULL.
-void *nn_hashGet(nn_HashMap *map, void *entry);
+void *nn_hashGet(nn_HashMap *map, void *entry) {
+	if(entry == NULL) return NULL;
+	size_t len = map->bufsize;
+	if(len == 0) return NULL;
+	size_t base = nn_hashGetHash(map, entry) % len;
+	size_t entSize = map->hash->entSize;
+	for(size_t i = 0; i < len; i++) {
+		size_t j = (base + i) % len;
+		void *slot = NN_PTROFF(map->buf, j, entSize);
+		nn_HashEntryState state = map->hash->handler(NN_HASH_CMP, slot, entry);
+		switch(state) {
+		case NN_HASH_EQUAL:
+			return slot;
+		case NN_HASH_DIFFERENT:
+		case NN_HASH_REMOVED:
+			continue;
+		case NN_HASH_FREE:
+			break;
+		}
+	}
+	return NULL;
+}
+
 // should put the entire entry over there.
-void *nn_hashPut(nn_HashMap *map, void *entry);
-void *nn_hashRemove(nn_HashMap *map, void *entry);
+// False on ENOSPC.
+bool nn_hashPut(nn_HashMap *map, void *entry) {
+	if(entry == NULL) return false;
+	size_t len = map->bufsize;
+	if(len == 0) return false;
+	size_t base = nn_hashGetHash(map, entry) % len;
+	size_t entSize = map->hash->entSize;
+	for(size_t i = 0; i < len; i++) {
+		size_t j = (base + i) % len;
+		void *slot = NN_PTROFF(map->buf, j, entSize);
+		nn_HashEntryState state = map->hash->handler(NN_HASH_CMP, slot, entry);
+		switch(state) {
+		case NN_HASH_EQUAL:
+		case NN_HASH_REMOVED:
+		case NN_HASH_FREE:
+			nn_memcpy(slot, entry, entSize);
+			return true;
+		case NN_HASH_DIFFERENT:
+			continue;
+		}
+	}
+	return false;
+}
+
+// remove an entry
+void nn_hashRemove(nn_HashMap *map, void *entry) {
+	void *mem = nn_hashGet(map, entry);
+	if(mem == NULL) return;
+	map->hash->handler(NN_HASH_REMOVE, mem, NULL);
+}
 
 // takes in an entry and returns the next one. If entry is NULL, it will return the first one.
 // Returns NULL on empty.
@@ -633,6 +686,23 @@ void *nn_hashIterate(nn_HashMap *map, void *entry) {
 	} else {
 		entry = NN_PTROFF(entry, 1, entSize);
 	}
+	while(true) {
+		if(entry == bufEnd) return NULL;
+		nn_HashEntryState state = map->hash->handler(NN_HASH_CMP, entry, NULL);
+		if(state == NN_HASH_DIFFERENT) break;
+		entry = NN_PTROFF(entry, 1, entSize);
+	}
+	return entry;
+}
+
+// from https://gist.github.com/MohamedTaha98/ccdf734f13299efb73ff0b12f7ce429f
+// TODO: experiment with better ones
+size_t nn_strhash(const char *s) {
+	size_t hash = 5381;
+	int c;
+	while ((c = *s++))
+		hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+	return hash;
 }
 
 // real stuff
@@ -643,10 +713,35 @@ typedef struct nn_ComponentState {
 	nn_Arena arena;
 	const char *name;
 	nn_ComponentHandler *handler;
-	// NULL-terminated
-	nn_Method *methods;
-	size_t methodCount;
+	nn_HashMap methods;
 } nn_ComponentState;
+
+static size_t nn_methodHash(nn_HashAction act, nn_Method *slot, nn_Method *ent) {
+	switch(act) {
+	case NN_HASH_INIT:
+		slot->name = NULL;
+		slot->flags = -1;
+		break;
+	case NN_HASH_HASH:
+		return nn_strhash(slot->name);
+	case NN_HASH_REMOVE:
+		slot->flags = -1;
+		break;
+	case NN_HASH_CMP:
+		if(slot->name == NULL) return NN_HASH_FREE;
+		if(slot->flags == -1) return NN_HASH_REMOVED;
+		if(ent == NULL) {
+			return NN_HASH_DIFFERENT;
+		}
+		return nn_strcmp(slot->name, ent->name) == 0 ? NN_HASH_EQUAL : NN_HASH_DIFFERENT;
+	}
+	return 0;
+}
+
+static const nn_HashContext nn_methodHasher = {
+	.entSize = sizeof(nn_Method),
+	.handler = (nn_HashHandler *)nn_methodHash,
+};
 
 // currently just a wrapper around a context
 // but will be way more in the future
@@ -662,6 +757,31 @@ typedef struct nn_Component {
 	void *userdata;
 	void *state;
 } nn_Component;
+
+static size_t nn_componentHash(nn_HashAction act, nn_Component *slot, nn_Component *ent) {
+	switch(act) {
+	case NN_HASH_INIT:
+		slot->address = NULL;
+		slot->cstate = NULL;
+		break;
+	case NN_HASH_HASH:
+		return nn_strhash(slot->address);
+	case NN_HASH_REMOVE:
+		slot->cstate = NULL;
+		break;
+	case NN_HASH_CMP:
+		if(slot->address == NULL) return NN_HASH_FREE;
+		if(slot->cstate == NULL) return NN_HASH_REMOVED;
+		if(ent == NULL) return NN_HASH_DIFFERENT;
+		return nn_strcmp(slot->address, ent->address) == 0 ? NN_HASH_EQUAL : NN_HASH_DIFFERENT;
+	}
+	return 0;
+}
+
+static const nn_HashContext nn_componentHasher = {
+	.entSize = sizeof(nn_Component),
+	.handler = (nn_HashHandler *)nn_componentHash,
+};
 
 // the values
 typedef enum nn_ValueType {
@@ -725,9 +845,7 @@ typedef struct nn_Computer {
 	nn_Architecture desiredArch;
 	size_t callBudget;
 	size_t totalCallBudget;
-	size_t componentCap;
-	size_t componentLen;
-	nn_Component *components;
+	nn_HashMap components;
 	size_t deviceInfoCap;
 	size_t deviceInfoLen;
 	nn_DeviceInfo *deviceInfo;
@@ -769,6 +887,7 @@ nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *na
 	ctype->universe = universe;
 	ctype->userdata = userdata;
 	ctype->handler = handler;
+	ctype->methods.ctx = NULL;
 
 	nn_Arena *arena = &ctype->arena;
 	nn_arinit(arena, ctx);
@@ -780,10 +899,7 @@ nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *na
 	size_t methodCount = 0;
 	while(methods[methodCount].name != NULL) methodCount++;
 
-	nn_Method *methodscpy = nn_aralloc(arena, methodCount * sizeof(nn_Method));
-	if(methodscpy == NULL) goto fail;
-	ctype->methods = methodscpy;
-	ctype->methodCount = methodCount;
+	if(nn_hashInit(&ctype->methods, methodCount, ctx, &nn_methodHasher)) goto fail;
 
 	for(size_t i = 0; i < methodCount; i++) {
 		nn_Method cpy;
@@ -793,12 +909,12 @@ nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *na
 		cpy.docString = nn_arstrdup(arena, methods[i].docString);
 		if(cpy.docString == NULL) goto fail;
 
-		ctype->methods[i] = cpy;
+		if(!nn_hashPut(&ctype->methods, &cpy)) goto fail;
 	}
 
 	return ctype;
 fail:;
-	 // yes, because of arenas, we support freeing a "partially initialized state"
+	 // yes, because of arenas and a bit of hashmap bullshit, we support freeing a "partially initialized state"
 	 nn_destroyComponentState(ctype);
 	 return NULL;
 }
@@ -816,6 +932,10 @@ void nn_destroyComponentState(nn_ComponentState *ctype) {
 	req.action = NN_COMP_FREETYPE;
 	req.methodCalled = NULL;
 	ctype->handler(&req);
+
+	if(ctype->methods.ctx != NULL) {
+		nn_hashDeinit(&ctype->methods);
+	}
 
 	nn_ardestroy(&ctype->arena);
 	nn_free(ctx, ctype, sizeof(nn_ComponentState));
@@ -863,10 +983,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->totalCallBudget = 50000;
 	c->callBudget = c->totalCallBudget;
 
-	c->componentCap = maxComponents;
-	c->componentLen = 0;
-	c->components = nn_alloc(ctx, sizeof(nn_Component) * maxComponents);
-	if(c->components == NULL) {
+	if(nn_hashInit(&c->components, maxComponents, ctx, &nn_componentHasher)) {
 		nn_strfree(ctx, c->address);
 		nn_free(ctx, c, sizeof(nn_Computer));
 		return NULL;
@@ -876,7 +993,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->deviceInfoLen = 0;
 	c->deviceInfo = nn_alloc(ctx, sizeof(nn_DeviceInfo) * maxDevices);
 	if(c->deviceInfo == NULL) {
-		nn_free(ctx, c->components, sizeof(nn_Component) * maxComponents);
+		nn_hashDeinit(&c->components);
 		nn_strfree(ctx, c->address);
 		nn_free(ctx, c, sizeof(nn_Computer));
 		return NULL;
@@ -900,6 +1017,20 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 static void nn_dropValue(nn_Value val);
 static void nn_dropComponent(nn_Computer *computer, nn_Component c);
 
+static nn_Component *nn_getInternalComponent(nn_Computer *computer, const char *address) {
+	nn_Component lookingFor = {
+		.address = (char *)address,
+	};
+	return nn_hashGet(&computer->components, &lookingFor);
+}
+
+static const nn_Method *nn_getInternalMethod(nn_Component *c, const char *method) {
+	nn_Method lookingFor = {
+		.name = method,
+	};
+	return nn_hashGet(&c->cstate->methods, &lookingFor);
+}
+
 void nn_destroyComputer(nn_Computer *computer) {
 	nn_Context *ctx = &computer->universe->ctx;
 
@@ -915,8 +1046,9 @@ void nn_destroyComputer(nn_Computer *computer) {
 	for(size_t i = 0; i < computer->stackSize; i++) {
 		nn_dropValue(computer->callstack[i]);
 	}
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_dropComponent(computer, computer->components[i]);
+	for(const char *addr = nn_getNextComponent(computer, NULL); addr != NULL; addr = nn_getNextComponent(computer, addr)) {
+		nn_Component *c = nn_getInternalComponent(computer, addr);
+		nn_dropComponent(computer, *c);
 	}
 	for(size_t i = 0; i < computer->signalCount; i++) {
 		nn_Signal s = computer->signals[i];
@@ -927,7 +1059,7 @@ void nn_destroyComputer(nn_Computer *computer) {
 		nn_strfree(ctx, computer->users[i]);
 	}
 
-	nn_free(ctx, computer->components, sizeof(nn_Component) * computer->componentCap);
+	nn_hashDeinit(&computer->components);
 	nn_free(ctx, computer->deviceInfo, sizeof(nn_DeviceInfo) * computer->deviceInfoCap);
 	if(computer->tmpaddress != NULL) nn_strfree(ctx, computer->tmpaddress);
 	nn_strfree(ctx, computer->address);
@@ -1267,8 +1399,6 @@ nn_Exit nn_tick(nn_Computer *computer) {
 }
 
 nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *ctype, const char *address, int slot, void *userdata) {
-	if(computer->componentLen == computer->componentCap) return NN_ELIMIT;
-
 	nn_Component c;
 	c.address = nn_strdup(&computer->universe->ctx, address);
 	if(c.address == NULL) return NN_ENOMEM;
@@ -1295,7 +1425,10 @@ nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *ctype, const c
 	// get the state back!
 	c.state = req.state;
 
-	computer->components[computer->componentLen++] = c;
+	if(!nn_hashPut(&computer->components, &c)) {
+		nn_dropComponent(computer, c);
+		return NN_ELIMIT;
+	}
 
 	if(computer->state == NN_RUNNING) {
 		err = nn_pushstring(computer, "component_added");
@@ -1310,45 +1443,15 @@ nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *ctype, const c
 	return NN_OK;
 }
 
+
 bool nn_hasComponent(nn_Computer *computer, const char *address) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component *c = &computer->components[i];
-		if(nn_strcmp(c->address, address) == 0) {
-			return true;
-		}
-	}
-	return false;
+	return nn_getInternalComponent(computer, address) != NULL;
 }
 
 bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component *c = &computer->components[i];
-		if(nn_strcmp(c->address, address) != 0) continue;
-
-		bool found = false;
-		for(size_t j = 0; j < c->cstate->methodCount; j++) {
-			if(nn_strcmp(c->cstate->methods[j].name, method) != 0) continue;
-			found = true;
-			break;
-		}
-		if(!found) return false;
-		
-		nn_ComponentRequest req;
-		req.typeUserdata = c->cstate->userdata;
-		req.compUserdata = c->userdata;
-		req.state = c->state;
-		req.computer = computer;
-		req.compAddress = address;
-		req.action = NN_COMP_ENABLED;
-		req.methodCalled = method;
-		// default response in case it is not implemented
-		req.methodEnabled = true;
-		// should never error
-		c->cstate->handler(&req);
-
-		return req.methodEnabled;
-	}
-	return false;
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) return false;
+	return nn_getInternalMethod(c, method) != NULL;
 }
 
 static void nn_dropComponent(nn_Computer *computer, nn_Component c) {
@@ -1368,21 +1471,13 @@ static void nn_dropComponent(nn_Computer *computer, nn_Component c) {
 
 nn_Exit nn_removeComponent(nn_Computer *computer, const char *address) {
 	size_t j = 0;
-	nn_Component c;
-	c.address = NULL;
-
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		if(nn_strcmp(computer->components[i].address, address) == 0) {
-			c = computer->components[i];
-		} else {
-			computer->components[j++] = computer->components[i];
-		}
-	}
-	computer->componentLen = j;
-
+	nn_Component *pc = nn_getInternalComponent(computer, address);
 	// already removed!
-	if(c.address == NULL) return NN_EBADSTATE;
+	if(pc == NULL) return NN_EBADSTATE;
+	// copied cuz hashRemove will invalidate the memory
+	nn_Component c = *pc;
 	nn_dropComponent(computer, c);
+	nn_hashRemove(&computer->components, pc);
 
 	if(computer->state == NN_RUNNING) {
 		nn_Exit err = nn_pushstring(computer, "component_removed");
@@ -1399,69 +1494,50 @@ nn_Exit nn_removeComponent(nn_Computer *computer, const char *address) {
 }
 
 const char *nn_getComponentType(nn_Computer *computer, const char *address) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component *c = &computer->components[i];
-		if(nn_strcmp(c->address, address) == 0) {
-			return c->cstate->name;
-		}
-	}
-	return NULL;
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) return NULL;
+	return c->cstate->name;
 }
 
 int nn_getComponentSlot(nn_Computer *computer, const char *address) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component *c = &computer->components[i];
-		if(nn_strcmp(c->address, address) == 0) {
-			return c->slot;
-		}
-	}
-	return 0;
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) return -1;
+	return c->slot;
 }
 
-const nn_Method *nn_getComponentMethods(nn_Computer *computer, const char *address, size_t *len) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component *c = &computer->components[i];
-		if(nn_strcmp(c->address, address) == 0) {
-			if(len != NULL) *len = c->cstate->methodCount;
-			return c->cstate->methods;
-		}
-	}
-	if(len != NULL) *len = 0;
-	return NULL;
+const nn_Method *nn_nextComponentMethod(nn_Computer *computer, const char *address, const nn_Method *method) {
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) return NULL;
+	// fuck the const qualifier
+	return nn_hashIterate(&c->cstate->methods, (void *)method);
 }
 
-const char *nn_getComponentAddress(nn_Computer *computer, size_t idx) {
-	if(idx >= computer->componentLen) return NULL;
-	return computer->components[idx].address;
+const char *nn_getNextComponent(nn_Computer *computer, const char *prev) {
+	if(prev == NULL) {
+		nn_Component *c = nn_hashIterate(&computer->components, NULL);
+		if(c == NULL) return NULL;
+		return c->address;
+	}
+	nn_Component *c = nn_getInternalComponent(computer, prev);
+	printf("cur addr iter: %s comp: %p\n", prev == NULL ? "(null)" : prev, c);
+	if(c == NULL) return NULL;
+	c = nn_hashIterate(&computer->components, c);
+	if(c == NULL) return NULL;
+	return c->address;
 }
 
 const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method) {
-	if(!nn_hasComponent(computer, address)) {
-		return NULL;
-	}
-	if(!nn_hasMethod(computer, address, method)) {
-		return NULL;
-	}
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component c = computer->components[i];
-		if(nn_strcmp(c.address, address) != 0) continue;
-
-		for(size_t j = 0; j < c.cstate->methodCount; j++) {
-			if(nn_strcmp(c.cstate->methods[j].name, method) == 0) return c.cstate->methods[j].docString;
-		}
-		return NULL;
-	}
-	return NULL;
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) return NULL;
+	const nn_Method *m = nn_getInternalMethod(c, method);
+	if(m == NULL) return NULL;
+	return m->docString;
 }
 
 void *nn_getComponentUserdata(nn_Computer *computer, const char *address) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component *c = &computer->components[i];
-		if(nn_strcmp(c->address, address) == 0) {
-			return c->userdata;
-		}
-	}
-	return 0;
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) return NULL;
+	return c->userdata;
 }
 
 static void nn_retainValue(nn_Value val) {
@@ -1507,64 +1583,55 @@ static void nn_dropValue(nn_Value val) {
 }
 
 nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) {
-	if(!nn_hasComponent(computer, address)) {
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) {
 		nn_setError(computer, "no such component");
 		return NN_EBADCALL;
 	}
-	if(!nn_hasMethod(computer, address, method)) {
+	const nn_Method *m = nn_getInternalMethod(c, method);
+	if(m == NULL) {
 		nn_setError(computer, "no such method");
 		return NN_EBADCALL;
 	}
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component c = computer->components[i];
-		if(nn_strcmp(c.address, address) != 0) continue;
+	// minimum cost of a component call
+	if(computer->callBudget > 0) computer->callBudget--;
+	//if((m->flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
+	
+	nn_ComponentRequest req;
+	req.typeUserdata = c->cstate->userdata;
+	req.compUserdata = c->userdata;
+	req.state = c->state;
+	req.computer = computer;
+	req.compAddress = address;
+	req.action = NN_COMP_CALL;
+	req.methodCalled = method;
+	// default is to return nothing
+	req.returnCount = 0;
 
-		// minimum cost of a component call
-		if(computer->callBudget > 0) computer->callBudget--;
-		for(size_t j = 0; j < c.cstate->methodCount; j++) {
-			nn_Method m = c.cstate->methods[j];
-			if(nn_strcmp(m.name, method) != 0) continue;
-			// indirect calls consume the entire call budget
-			//if((m.flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
-		}
-		
-		nn_ComponentRequest req;
-		req.typeUserdata = c.cstate->userdata;
-		req.compUserdata = c.userdata;
-		req.state = c.state;
-		req.computer = computer;
-		req.compAddress = address;
-		req.action = NN_COMP_CALL;
-		req.methodCalled = method;
-		// default is to return nothing
-		req.returnCount = 0;
-
-		nn_Exit err = c.cstate->handler(&req);
-		if(err) {
-			if(err != NN_EBADCALL) nn_setErrorFromExit(computer, err);
-			// clear junk
-			nn_clearstack(computer);
-			return err;
-		}
-
-		if(computer->stackSize < req.returnCount) {
-			err = NN_EBELOWSTACK;
-			nn_setErrorFromExit(computer, err);
-			nn_clearstack(computer);
-			return err;
-		}
-
-		size_t endOfTrim = computer->stackSize - req.returnCount;
-		for(size_t i = 0; i < endOfTrim; i++) {
-			nn_dropValue(computer->callstack[i]);
-		}
-		for(size_t i = 0; i < req.returnCount; i++) {
-			computer->callstack[i] = computer->callstack[endOfTrim + i];
-		}
-		computer->stackSize = req.returnCount;
-		return NN_OK;
+	nn_Exit err = c->cstate->handler(&req);
+	if(err) {
+		if(err != NN_EBADCALL) nn_setErrorFromExit(computer, err);
+		// clear junk
+		nn_clearstack(computer);
+		return err;
 	}
-	return NN_EBADSTATE;
+
+	if(computer->stackSize < req.returnCount) {
+		err = NN_EBELOWSTACK;
+		nn_setErrorFromExit(computer, err);
+		nn_clearstack(computer);
+		return err;
+	}
+
+	size_t endOfTrim = computer->stackSize - req.returnCount;
+	for(size_t i = 0; i < endOfTrim; i++) {
+		nn_dropValue(computer->callstack[i]);
+	}
+	for(size_t i = 0; i < req.returnCount; i++) {
+		computer->callstack[i] = computer->callstack[endOfTrim + i];
+	}
+	computer->stackSize = req.returnCount;
+	return NN_OK;
 }
 
 void nn_setCallBudget(nn_Computer *computer, size_t budget) {
@@ -1584,16 +1651,16 @@ void nn_resetCallBudget(nn_Computer *computer) {
 }
 
 bool nn_componentsOverused(nn_Computer *computer) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		if(computer->components[i].budgetUsed >= NN_COMPONENT_CALLBUDGET) return true;
+	for(nn_Component *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
+		if(c->budgetUsed >= NN_COMPONENT_CALLBUDGET) return true;
 	}
 	if(computer->totalCallBudget == 0) return false;
 	return computer->callBudget == 0;
 }
 
 void nn_resetComponentBudgets(nn_Computer *computer) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		computer->components[i].budgetUsed = 0;
+	for(nn_Component *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
+		c->budgetUsed = 0;
 	}
 }
 bool nn_costComponent(nn_Computer *computer, const char *address, double perTick) {
@@ -1601,13 +1668,10 @@ bool nn_costComponent(nn_Computer *computer, const char *address, double perTick
 }
 
 bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick) {
-	for(size_t i = 0; i < computer->componentLen; i++) {
-		nn_Component *c = &computer->components[i];
-		if(nn_strcmp(c->address, address) != 0) continue;
-		c->budgetUsed += (NN_COMPONENT_CALLBUDGET * amount) / perTick;
-		return c->budgetUsed >= NN_COMPONENT_CALLBUDGET;
-	}
-	return false;
+	nn_Component *c = nn_getInternalComponent(computer, address);
+	if(c == NULL) return false;
+	c->budgetUsed += (NN_COMPONENT_CALLBUDGET * amount) / perTick;
+	return c->budgetUsed >= NN_COMPONENT_CALLBUDGET;
 }
 
 bool nn_checkstack(nn_Computer *computer, size_t amount) {
