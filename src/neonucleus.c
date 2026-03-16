@@ -180,10 +180,30 @@ size_t nn_strlen(const char *s) {
 	return l;
 }
 
+size_t nn_strlenUntil(const char *s, char sep) {
+	size_t l = 0;
+	while(1) {
+		char c = s[l];
+		if(c == '\0') break;
+		if(c == sep) break;
+		l++;
+	}
+	return l;
+}
+
 void nn_memcpy(void *dest, const void *src, size_t len) {
 	char *out = (char *)dest;
 	const char *in = (const char *)src;
 	for(size_t i = 0; i < len; i++) out[i] = in[i];
+}
+
+void nn_strcpy(char *dest, const char *src) {
+	while(1) {
+		*dest = *src;
+		if(*src == '\0') break;
+		dest++;
+		src++;
+	}
 }
 
 char *nn_strdup(nn_Context *ctx, const char *s) {
@@ -309,43 +329,61 @@ void nn_crc32ChecksumBytes(unsigned int checksum, char out[8]) {
 	}
 }
 
-// TODO: rework completely
-// apparently can overflow??
-bool nn_simplifyPath(const char original[NN_MAX_PATH], char simplified[NN_MAX_PATH]) {
+static bool nn_isLiterallyJust(const char *s, size_t len, char c) {
+	for(size_t i = 0; i < len; i++) if(s[i] != c) return false;
+	return true;
+}
+
+void nn_simplifyPath(const char original[NN_MAX_PATH], char simplified[NN_MAX_PATH]) {
 	// pass 1: check for valid characters, and \ becomes /
 	for(size_t i = 0; true; i++) {
 		if(original[i] == '\\') simplified[i] = '/';
 		else simplified[i] = original[i];
 		if(original[i] == '\0') break;
 	}
-	// get rid of //, starting / and ending /
+	// this is similar to KOCOS pathfixing
+	// in https://github.com/NeoFlock/onyx-os/blob/main/usr/src/kocos/fs.lua#L237
 	{
-		while(simplified[0] == '/') {
-			for(size_t i = 1; true; i++) {
-				simplified[i-1] = simplified[i];
-				if(simplified[i] == '\0') break;
+		char resolved[NN_MAX_PATH];
+
+		struct {const char *mem; size_t len;} slices[NN_MAX_PATH];
+		size_t slicecount = 0;
+
+		size_t i = 0;
+		while(1) {
+			if(simplified[i] == '\0') break;
+			char *mem = simplified + i;
+			size_t sublen = nn_strlenUntil(mem, '/');
+
+			if(sublen == 0) {
+				i++;
+				continue;
 			}
+			slices[slicecount].mem = mem;
+			slices[slicecount].len = sublen;
+			slicecount++;
+			if(nn_isLiterallyJust(mem, sublen, '.')) {
+				// no underflow for u
+				if(slicecount < sublen) slicecount = sublen;
+				slicecount -= sublen;
+			}
+			if(mem[sublen] == '\0') break;
+			i += sublen + 1;
 		}
 
-		size_t j = 0;
-		for(size_t i = 0; simplified[i] != '\0'; i++) {
-			if(simplified[i] == '/' && simplified[i+1] == '/') {
-				// simply discard it
-				continue;
-			} else {
-				simplified[j] = simplified[i];
-				j++;
-			}
+		// concat into resolved
+		size_t resolvedLen = 0;
+		for(size_t i = 0; i < slicecount; i++) {
+			bool isLast = (i == (slicecount - 1));
+			char *dest = resolved + resolvedLen;
+			nn_memcpy(dest, slices[i].mem, slices[i].len);
+			dest[slices[i].len] = isLast ? '\0' : '/';
+			resolvedLen += slices[i].len + 1;
 		}
-		simplified[j] = '\0';
-		while(simplified[j-1] == '/') {
-			j--;
-			simplified[j] = '\0';
-		}
+
+		// copy over
+		nn_strcpy(simplified, resolved);
 	}
-	// TODO: handle ..
-	// valid
-	return true;
 }
 
 int nn_memcmp(const char *a, const char *b, size_t len) {
@@ -593,7 +631,13 @@ typedef struct nn_HashMap {
 	const nn_HashContext *hash;
 } nn_HashMap;
 
+// tells hashmaps to scale the capacity by this much
+#ifndef NN_HASH_MULTIPLIER
+#define NN_HASH_MULTIPLIER 32
+#endif
+
 nn_Exit nn_hashInit(nn_HashMap *map, size_t capacity, nn_Context *ctx, const nn_HashContext *hash) {
+	capacity *= NN_HASH_MULTIPLIER;
 	void *buf = nn_alloc(ctx, hash->entSize * capacity);
 	if(buf == NULL) return NN_ENOMEM;
 	map->buf = buf;
@@ -648,7 +692,7 @@ bool nn_hashPut(nn_HashMap *map, void *entry) {
 	if(entry == NULL) return false;
 	size_t len = map->bufsize;
 	if(len == 0) return false;
-	size_t base = nn_hashGetHash(map, entry) % len;
+	size_t base = nn_hashGetHash(map, entry);
 	size_t entSize = map->hash->entSize;
 	for(size_t i = 0; i < len; i++) {
 		size_t j = (base + i) % len;
@@ -661,8 +705,9 @@ bool nn_hashPut(nn_HashMap *map, void *entry) {
 			nn_memcpy(slot, entry, entSize);
 			return true;
 		case NN_HASH_DIFFERENT:
-			continue;
+			break;
 		}
+		printf("hash put wrong\n");
 	}
 	return false;
 }
@@ -980,7 +1025,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->desiredArch.name = NULL;
 	c->archState = NULL;
 
-	c->totalCallBudget = 50000;
+	c->totalCallBudget = 1000000;
 	c->callBudget = c->totalCallBudget;
 
 	if(nn_hashInit(&c->components, maxComponents, ctx, &nn_componentHasher)) {
@@ -1519,7 +1564,6 @@ const char *nn_getNextComponent(nn_Computer *computer, const char *prev) {
 		return c->address;
 	}
 	nn_Component *c = nn_getInternalComponent(computer, prev);
-	printf("cur addr iter: %s comp: %p\n", prev == NULL ? "(null)" : prev, c);
 	if(c == NULL) return NULL;
 	c = nn_hashIterate(&computer->components, c);
 	if(c == NULL) return NULL;
@@ -2309,18 +2353,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
-nn_EEPROM nn_defaultEEPROM = (nn_EEPROM) {
-	.size = 4 * NN_KiB,
-	.dataSize = 256,
-	.readEnergyCost = 1,
-	.writeEnergyCost = 100,
-	.readDataEnergyCost = 0.1,
-	.writeDataEnergyCost = 5,
-	.writeDelay = 2,
-	.writeDataDelay = 1,
-};
-
-nn_EEPROM nn_defaultEEPROMs[4] = {
+const nn_EEPROM nn_defaultEEPROMs[4] = {
 	(nn_EEPROM) {
 		.size = 4 * NN_KiB,
 		.dataSize = 256,
@@ -2499,7 +2532,7 @@ typedef struct nn_Filesystem_state {
 	nn_Filesystem fs;
 } nn_Filesystem_state;
 
-nn_Filesystem nn_defaultFilesystems[4] = {
+const nn_Filesystem nn_defaultFilesystems[4] = {
 	(nn_Filesystem) {
 		.spaceTotal = 1 * NN_MiB,
 		.readsPerTick = 4,
@@ -2527,14 +2560,14 @@ nn_Filesystem nn_defaultFilesystems[4] = {
 };
 
 
-nn_Filesystem nn_defaultFloppy = (nn_Filesystem) {
+const nn_Filesystem nn_defaultFloppy = (nn_Filesystem) {
 	.spaceTotal = 512 * NN_KiB,
 	.readsPerTick = 1,
 	.writesPerTick = 1,
 	.dataEnergyCost = 8.0 / NN_MiB,
 };
 
-nn_Filesystem nn_defaultTmpFS = (nn_Filesystem) {
+const nn_Filesystem nn_defaultTmpFS = (nn_Filesystem) {
 	.spaceTotal = 64 * NN_KiB,
 	.readsPerTick = 1024,
 	.writesPerTick = 512,
@@ -2880,7 +2913,7 @@ nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesyste
 	return t;
 }
 
-nn_Drive nn_defaultDrives[4] = {
+const nn_Drive nn_defaultDrives[4] = {
 	(nn_Drive) {
 		.capacity = 1 * NN_MiB,
 		.sectorSize = 512,
@@ -3204,7 +3237,7 @@ cleanup:
 	return NULL;
 }
 
-nn_ScreenConfig nn_defaultScreens[4] = {
+const nn_ScreenConfig nn_defaultScreens[4] = {
 	(nn_ScreenConfig) {
 		.maxWidth = 50,
 		.maxHeight = 16,
@@ -3364,7 +3397,7 @@ nn_ComponentState *nn_createKeyboard(nn_Universe *universe) {
 	return nn_createComponentState(universe, "keyboard", NULL, methods, nn_keyboard_handler);
 }
 
-nn_GPU nn_defaultGPUs[4] = {
+const nn_GPU nn_defaultGPUs[4] = {
 	(nn_GPU) {
 		.maxWidth = 50,
 		.maxHeight = 16,

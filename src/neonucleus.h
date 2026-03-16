@@ -227,6 +227,14 @@ void *nn_alloc(nn_Context *ctx, size_t size);
 void nn_free(nn_Context *ctx, void *memory, size_t size);
 void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize);
 
+// Basic utils
+
+// Does canonical path handling. Is used for sandboxing paths.
+// It will turn \ to /, will turn invalid characters into spaces,
+// and will resolve ...
+// it also gets rid of / prefixes, / suffixes and //
+void nn_simplifyPath(const char original[NN_MAX_PATH], char simplified[NN_MAX_PATH]);
+
 typedef enum nn_Exit {
 	// no error
 	NN_OK = 0,
@@ -861,7 +869,7 @@ typedef struct nn_EEPROM {
 // Tier 2 - A better EEPROM
 // Tier 3 - An even better EEPROM
 // Tier 4- The best EEPROM
-extern nn_EEPROM nn_defaultEEPROMs[4];
+extern const nn_EEPROM nn_defaultEEPROMs[4];
 
 typedef struct nn_VEEPROM {
 	const char *code;
@@ -1035,11 +1043,11 @@ typedef struct nn_Filesystem {
 // 1 - Tier 2 equivalent
 // 2 - Tier 3 equivalent
 // 3 - Tier 4, a better version of Tier 3.
-extern nn_Filesystem nn_defaultFilesystems[4];
+extern const nn_Filesystem nn_defaultFilesystems[4];
 // a basic floppy
-extern nn_Filesystem nn_defaultFloppy;
+extern const nn_Filesystem nn_defaultFloppy;
 // a generic tmpfs
-extern nn_Filesystem nn_defaultTmpFS;
+extern const nn_Filesystem nn_defaultTmpFS;
 
 typedef nn_Exit nn_FilesystemHandler(nn_FilesystemRequest *request);
 
@@ -1182,7 +1190,7 @@ typedef struct nn_VDrive {
 	size_t datalen;
 } nn_VDrive;
 
-extern nn_Drive nn_defaultDrives[4];
+extern const nn_Drive nn_defaultDrives[4];
 
 nn_ComponentState *nn_createDrive(nn_Universe *universe, const nn_Drive *drive, nn_DriveHandler *handler, void *userdata);
 nn_ComponentState *nn_createVDrive(nn_Universe *universe, const nn_Drive *drive, const nn_VDrive *vdrive);
@@ -1270,7 +1278,7 @@ typedef struct nn_ScreenConfig {
 } nn_ScreenConfig;
 
 // OC has 3 tiers, NN adds a 4th one as well.
-extern nn_ScreenConfig nn_defaultScreens[4];
+extern const nn_ScreenConfig nn_defaultScreens[4];
 
 typedef nn_Exit nn_ScreenHandler(nn_ScreenRequest *req);
 
@@ -1480,7 +1488,7 @@ typedef struct nn_GPU {
 typedef nn_Exit nn_GPUHandler(nn_GPURequest *req);
 
 // 1 GPU tier for every screen.
-extern nn_GPU nn_defaultGPUs[4];
+extern const nn_GPU nn_defaultGPUs[4];
 
 nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata);
 

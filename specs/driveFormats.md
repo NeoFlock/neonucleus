@@ -34,7 +34,7 @@ The structures in this spec will be written as C structs. A `char` is 1 byte, a 
 struct nnfs_header {
     char header[5] = "NNFS\0"; // stores a 5 byte NULL-terminated string as the header of the entire file.
     varint_t version = 0; // 0 for the current version
-    char label[]; // NULL-terminated string for the label
+    char label[]; // NULL-terminated string for the label. Empty string means no label.
     varint_t capacity;
     varint_t flags;
     varint_t compression;
@@ -88,7 +88,7 @@ The length of `a` would be 2, as it has `foo.txt` and `b`, and `b`'s would be 1.
 struct nniso_header {
     char header[6] = "NNISO\0"; // stores a 5 byte NULL-terminated string as the header of the entire file.
     varint_t version = 0; // 0 for the current version
-    char label[]; // NULL-terminated string for the label
+    char label[]; // NULL-terminated string for the label. Empty string means no label.
     varint_t capacity;
     varint_t sectorSize;
     varint_t flags;
