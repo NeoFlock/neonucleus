@@ -549,9 +549,9 @@ typedef struct nn_ComponentRequest {
 	const char *compAddress;
 	// the action requested
 	nn_ComponentAction action;
-	// for NN_COMP_CALL, it is the method called.
-	// for NN_COMP_ENABLED, it is the method being checked.
-	const char *methodCalled;
+	// for NN_COMP_CALL, it is the idx of the method called.
+	// for NN_COMP_ENABLED, it is the idx of the method being checked.
+	int methodCalled;
 	union {
 		// for NN_COMP_CALL, it is the amount of return values.
 		size_t returnCount;

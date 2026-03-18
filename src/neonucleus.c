@@ -380,6 +380,7 @@ void nn_simplifyPath(const char original[NN_MAX_PATH], char simplified[NN_MAX_PA
 			dest[slices[i].len] = isLast ? '\0' : '/';
 			resolvedLen += slices[i].len + 1;
 		}
+		resolved[resolvedLen] = '\0';
 
 		// copy over
 		nn_strcpy(simplified, resolved);
@@ -707,7 +708,6 @@ bool nn_hashPut(nn_HashMap *map, void *entry) {
 		case NN_HASH_DIFFERENT:
 			break;
 		}
-		printf("hash put wrong\n");
 	}
 	return false;
 }
@@ -953,6 +953,7 @@ nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *na
 		if(cpy.name == NULL) goto fail;
 		cpy.docString = nn_arstrdup(arena, methods[i].docString);
 		if(cpy.docString == NULL) goto fail;
+		cpy.idx = methods[i].idx;
 
 		if(!nn_hashPut(&ctype->methods, &cpy)) goto fail;
 	}
@@ -975,7 +976,7 @@ void nn_destroyComponentState(nn_ComponentState *ctype) {
 	req.computer = NULL;
 	req.compAddress = NULL;
 	req.action = NN_COMP_FREETYPE;
-	req.methodCalled = NULL;
+	req.methodCalled = 0;
 	ctype->handler(&req);
 
 	if(ctype->methods.ctx != NULL) {
@@ -1091,8 +1092,7 @@ void nn_destroyComputer(nn_Computer *computer) {
 	for(size_t i = 0; i < computer->stackSize; i++) {
 		nn_dropValue(computer->callstack[i]);
 	}
-	for(const char *addr = nn_getNextComponent(computer, NULL); addr != NULL; addr = nn_getNextComponent(computer, addr)) {
-		nn_Component *c = nn_getInternalComponent(computer, addr);
+	for(nn_Component *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
 		nn_dropComponent(computer, *c);
 	}
 	for(size_t i = 0; i < computer->signalCount; i++) {
@@ -1460,7 +1460,7 @@ nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *ctype, const c
 	req.computer = computer;
 	req.compAddress = address;
 	req.action = NN_COMP_INIT;
-	req.methodCalled = NULL;
+	req.methodCalled = 0;
 
 	nn_Exit err = ctype->handler(&req);
 	if(err != NN_OK) {
@@ -1507,7 +1507,7 @@ static void nn_dropComponent(nn_Computer *computer, nn_Component c) {
 	req.computer = computer;
 	req.compAddress = c.address;
 	req.action = NN_COMP_DEINIT;
-	req.methodCalled = NULL;
+	req.methodCalled = 0;
 
 	c.cstate->handler(&req);
 	
@@ -1639,7 +1639,7 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 	}
 	// minimum cost of a component call
 	if(computer->callBudget > 0) computer->callBudget--;
-	//if((m->flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
+	if((m->flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
 	
 	nn_ComponentRequest req;
 	req.typeUserdata = c->cstate->userdata;
@@ -1648,7 +1648,7 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 	req.computer = computer;
 	req.compAddress = address;
 	req.action = NN_COMP_CALL;
-	req.methodCalled = method;
+	req.methodCalled = m->idx;
 	// default is to return nothing
 	req.returnCount = 0;
 
@@ -2134,6 +2134,22 @@ typedef struct nn_VEEPROM_state {
 	char label[NN_MAX_LABEL];
 } nn_VEEPROM_state;
 
+typedef enum nn_EEPROM_Nums {
+	NN_EENUM_GETSIZE,
+	NN_EENUM_GETDATASIZE,
+	NN_EENUM_GETLABEL,
+	NN_EENUM_SETLABEL,
+	NN_EENUM_GET,
+	NN_EENUM_GETDATA,
+	NN_EENUM_SET,
+	NN_EENUM_SETDATA,
+	NN_EENUM_GETARCH,
+	NN_EENUM_SETARCH,
+	NN_EENUM_ISRO,
+	NN_EENUM_MKRO,
+	NN_EENUM_CHKSUM,
+} nn_EEPROM_Nums;
+
 nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 	nn_EEPROM_state *state = req->typeUserdata;
 	void *instance = req->compUserdata;
@@ -2147,7 +2163,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 	ereq.computer = computer;
 	ereq.eepromConf = &state->eeprom;
 
-	const char *method = req->methodCalled;
+	int method = req->methodCalled;
 
 	switch(req->action) {
 	case NN_COMP_FREETYPE:
@@ -2164,22 +2180,22 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 		req->methodEnabled = true;
 		return NN_OK;
 	case NN_COMP_CALL:
-		if(nn_strcmp(method, "getSize") == 0) {
+		if(method == NN_EENUM_GETSIZE) {
 			req->returnCount = 1;
 			return nn_pushnumber(computer, state->eeprom.size);
 		}
-		if(nn_strcmp(method, "getDataSize") == 0) {
+		if(method == NN_EENUM_GETDATASIZE) {
 			req->returnCount = 1;
 			return nn_pushnumber(computer, state->eeprom.dataSize);
 		}
-		if(nn_strcmp(method, "isReadOnly") == 0) {
+		if(method == NN_EENUM_ISRO) {
 			ereq.action = NN_EEPROM_ISREADONLY;
 			nn_Exit e = state->handler(&ereq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushbool(computer, ereq.buflen != 0);
 		}
-		if(nn_strcmp(method, "getChecksum") == 0) {
+		if(method == NN_EENUM_CHKSUM) {
 			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
@@ -2195,7 +2211,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushlstring(computer, encoded, 8);
 		}
-		if(nn_strcmp(method, "makeReadonly") == 0) {
+		if(method == NN_EENUM_MKRO) {
 			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
 			// 1st argument is a string, which is the checksum we're meant to have
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
@@ -2228,7 +2244,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushbool(computer, true);
 		}
-		if(nn_strcmp(method, "getLabel") == 0) {
+		if(method == NN_EENUM_GETLABEL) {
 			char buf[NN_MAX_LABEL];
 			ereq.action = NN_EEPROM_GETLABEL;
 			ereq.buf = buf;
@@ -2239,7 +2255,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			if(ereq.buf == NULL) return nn_pushnull(computer);
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
-		if(nn_strcmp(method, "setLabel") == 0) {
+		if(method == NN_EENUM_SETLABEL) {
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			size_t len;
 			const char *s = nn_tolstring(computer, 0, &len);
@@ -2254,7 +2270,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
-		if(nn_strcmp(method, "get") == 0) {
+		if(method == NN_EENUM_GET) {
 			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
@@ -2267,7 +2283,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
-		if(nn_strcmp(method, "getData") == 0) {
+		if(method == NN_EENUM_GETDATA) {
 			nn_removeEnergy(computer, state->eeprom.readDataEnergyCost);
 			// yup, on-stack.
 			// Perhaps in the future we'll make it heap-allocated.
@@ -2280,7 +2296,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
-		if(nn_strcmp(method, "getArchitecture") == 0) {
+		if(method == NN_EENUM_GETARCH) {
 			nn_removeEnergy(computer, state->eeprom.readDataEnergyCost);
 			char buf[NN_MAX_ARCHNAME];
 			ereq.action = NN_EEPROM_GETARCH;
@@ -2292,7 +2308,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			if(ereq.buflen == 0) return nn_pushnull(computer);
 			return nn_pushlstring(computer, buf, ereq.buflen);
 		}
-		if(nn_strcmp(method, "set") == 0) {
+		if(method == NN_EENUM_SET) {
 			nn_removeEnergy(computer, state->eeprom.writeEnergyCost);
 			nn_addIdleTime(computer, state->eeprom.writeDelay);
 			if(nn_getstacksize(computer) < 1) {
@@ -2315,7 +2331,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			ereq.buflen = len;
 			return state->handler(&ereq);
 		}
-		if(nn_strcmp(method, "setData") == 0) {
+		if(method == NN_EENUM_SETDATA) {
 			nn_removeEnergy(computer, state->eeprom.writeDataEnergyCost);
 			nn_addIdleTime(computer, state->eeprom.writeDataDelay);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
@@ -2331,7 +2347,7 @@ nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
 			ereq.buflen = len;
 			return state->handler(&ereq);
 		}
-		if(nn_strcmp(method, "setArchitecture") == 0) {
+		if(method == NN_EENUM_SETARCH) {
 			nn_removeEnergy(computer, state->eeprom.writeDataEnergyCost);
 			nn_Exit err = nn_defaultstring(computer, 0, "");
 			if(err) return err;
@@ -2405,19 +2421,19 @@ nn_ComponentState *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eepro
 	state->userdata = userdata;
 	state->handler = handler;
 	const nn_Method methods[] = {
-		{"getSize", "function(): number - Get the storage capacity of the EEPROM.", NN_DIRECT},
-		{"getDataSize", "function(): number - Get the storage capacity of the EEPROM data.", NN_DIRECT},
-		{"getLabel", "function(): string - Get the EEPROM label", NN_INDIRECT},
-		{"setLabel", "function(label: string): string - Set the EEPROM label and return what was actually set, which may be truncated.", NN_INDIRECT},
-		{"get", "function(): string - Get the current EEPROM contents.", NN_DIRECT},
-		{"getData", "function(): string - Get the current EEPROM data contents.", NN_DIRECT},
-		{"set", "function(data: string) - Set the current EEPROM contents.", NN_DIRECT},
-		{"setData", "function(data: string) - Set the current EEPROM data contents.", NN_DIRECT},
-		{"getArchitecture", "function(): string - Get the current EEPROM architecture intended.", NN_DIRECT},
-		{"setArchitecture", "function(data: string) - Set the current EEPROM architecture intended.", NN_DIRECT},
-		{"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT},
-		{"makeReadonly", "function(checksum: string) - Makes the EEPROM read-only, this cannot be undone.", NN_INDIRECT},
-		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_DIRECT},
+		{"getSize", "function(): number - Get the storage capacity of the EEPROM.", NN_DIRECT, NN_EENUM_GETSIZE},
+		{"getDataSize", "function(): number - Get the storage capacity of the EEPROM data.", NN_DIRECT, NN_EENUM_GETDATASIZE},
+		{"getLabel", "function(): string - Get the EEPROM label", NN_DIRECT, NN_EENUM_GETLABEL},
+		{"setLabel", "function(label: string): string - Set the EEPROM label and return what was actually set, which may be truncated.", NN_INDIRECT, NN_EENUM_SETLABEL},
+		{"get", "function(): string - Get the current EEPROM contents.", NN_DIRECT, NN_EENUM_GET},
+		{"getData", "function(): string - Get the current EEPROM data contents.", NN_DIRECT, NN_EENUM_GETDATA},
+		{"set", "function(data: string) - Set the current EEPROM contents.", NN_DIRECT, NN_EENUM_SET},
+		{"setData", "function(data: string) - Set the current EEPROM data contents.", NN_DIRECT, NN_EENUM_SETDATA},
+		{"getArchitecture", "function(): string - Get the current EEPROM architecture intended.", NN_DIRECT, NN_EENUM_GETARCH},
+		{"setArchitecture", "function(data: string) - Set the current EEPROM architecture intended.", NN_DIRECT, NN_EENUM_SETARCH},
+		{"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT, NN_EENUM_ISRO},
+		{"makeReadonly", "function(checksum: string) - Makes the EEPROM read-only, this cannot be undone.", NN_INDIRECT, NN_EENUM_MKRO},
+		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_DIRECT, NN_EENUM_CHKSUM},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentState *t = nn_createComponentState(universe, "eeprom", state, methods, nn_eeprom_handler);
@@ -2574,6 +2590,27 @@ const nn_Filesystem nn_defaultTmpFS = (nn_Filesystem) {
 	.dataEnergyCost = 512.0 / NN_MiB,
 };
 
+typedef enum nn_FS_Nums {
+	NN_FSNUM_SPACETOTAL,
+	NN_FSNUM_SPACEUSED,
+	NN_FSNUM_ISRO,
+	NN_FSNUM_GETLABEL,
+	NN_FSNUM_SETLABEL,
+	NN_FSNUM_OPEN,
+	NN_FSNUM_CLOSE,
+	NN_FSNUM_READ,
+	NN_FSNUM_WRITE,
+	NN_FSNUM_SEEK,
+	NN_FSNUM_LIST,
+	NN_FSNUM_EXISTS,
+	NN_FSNUM_SIZE,
+	NN_FSNUM_REMOVE,
+	NN_FSNUM_RENAME,
+	NN_FSNUM_ISDIR,
+	NN_FSNUM_LASTMOD,
+	NN_FSNUM_MKDIR,
+} nn_FS_Nums;
+
 nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 	nn_Filesystem_state *state = req->typeUserdata;
 	void *instance = req->compUserdata;
@@ -2587,7 +2624,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 	fsreq.computer = computer;
 	fsreq.fsConf = &state->fs;
 
-	const char *method = req->methodCalled;
+	int method = req->methodCalled;
 	nn_Exit err;
 
 	switch(req->action) {
@@ -2605,25 +2642,25 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 		req->methodEnabled = true;
 		return NN_OK;
 	case NN_COMP_CALL:
-		if(nn_strcmp(method, "spaceTotal") == 0) {
+		if(method == NN_FSNUM_SPACETOTAL) {
 			req->returnCount = 1;
 			return nn_pushnumber(computer, state->fs.spaceTotal);
 		}
-		if(nn_strcmp(method, "spaceUsed") == 0) {
+		if(method == NN_FSNUM_SPACEUSED) {
 			fsreq.action = NN_FS_SPACEUSED;
 			err = state->handler(&fsreq);
 			if(err) return err;
 			req->returnCount = 1;
 			return nn_pushnumber(computer, fsreq.size);
 		}
-		if(nn_strcmp(method, "isReadOnly") == 0) {
+		if(method == NN_FSNUM_ISRO) {
 			fsreq.action = NN_FS_ISREADONLY;
 			err = state->handler(&fsreq);
 			if(err) return err;
 			req->returnCount = 1;
 			return nn_pushbool(computer, fsreq.size != 0);
 		}
-		if(nn_strcmp(method, "getLabel") == 0) {
+		if(method == NN_FSNUM_GETLABEL) {
 			char buf[NN_MAX_LABEL];
 			fsreq.action = NN_FS_GETLABEL;
 			fsreq.strarg1 = buf;
@@ -2634,7 +2671,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
 			return nn_pushlstring(computer, buf, fsreq.strarg1len);
 		}
-		if(nn_strcmp(method, "setLabel") == 0) {
+		if(method == NN_FSNUM_SETLABEL) {
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			fsreq.action = NN_FS_SETLABEL;
 			// DO NOT MODIFY THE BUFFER!!!
@@ -2645,7 +2682,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
 			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
 		}
-		if(nn_strcmp(method, "open") == 0) {
+		if(method == NN_FSNUM_OPEN) {
 			nn_costComponent(computer, req->compAddress, state->fs.writesPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			err = nn_defaultstring(computer, 1, "r");
@@ -2672,13 +2709,13 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushnumber(computer, fsreq.fd);
 		}
-		if(nn_strcmp(method, "close") == 0) {
+		if(method == NN_FSNUM_CLOSE) {
 			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			fsreq.fd = nn_tointeger(computer, 0);
 			fsreq.action = NN_FS_CLOSE;
 			return state->handler(&fsreq);
 		}
-		if(nn_strcmp(method, "read") == 0) {
+		if(method == NN_FSNUM_READ) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 	 		if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultinteger(computer, 1, NN_MAX_READ);
@@ -2700,7 +2737,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			nn_removeEnergy(computer, state->fs.dataEnergyCost * fsreq.strarg1len);
 			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
 		}
-		if(nn_strcmp(method, "write") == 0) {
+		if(method == NN_FSNUM_WRITE) {
 			nn_costComponent(computer, req->compAddress, state->fs.writesPerTick);
 			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
@@ -2713,7 +2750,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			nn_removeEnergy(computer, state->fs.dataEnergyCost * fsreq.strarg1len);
 			return nn_pushbool(computer, true);
 		}
-		if(nn_strcmp(method, "seek") == 0) {
+		if(method == NN_FSNUM_SEEK) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultstring(computer, 1, "cur");
@@ -2740,7 +2777,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			err = state->handler(&fsreq);
 			return nn_pushnumber(computer, fsreq.off);
 		}
-		if(nn_strcmp(method, "list") == 0) {
+		if(method == NN_FSNUM_LIST) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
@@ -2792,7 +2829,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			state->handler(&fsreq);
 			return err;
 		}
-		if(nn_strcmp(method, "exists") == 0) {
+		if(method == NN_FSNUM_EXISTS) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
@@ -2812,7 +2849,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushbool(computer, fsreq.size != 0);
 		}
-		if(nn_strcmp(method, "size") == 0) {
+		if(method == NN_FSNUM_SIZE) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
@@ -2832,7 +2869,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushnumber(computer, fsreq.size);
 		}
-		if(nn_strcmp(method, "lastModified") == 0) {
+		if(method == NN_FSNUM_LASTMOD) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
@@ -2844,7 +2881,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			}
 			nn_simplifyPath(path, truepath);
 
-			fsreq.action = NN_FS_SIZE;
+			fsreq.action = NN_FS_LASTMODIFIED;
 			fsreq.strarg1 = truepath;
 			fsreq.strarg1len = nn_strlen(truepath);
 			err = state->handler(&fsreq);
@@ -2852,7 +2889,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushnumber(computer, fsreq.size * 1000);
 		}
-		if(nn_strcmp(method, "isDirectory") == 0) {
+		if(method == NN_FSNUM_ISDIR) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
@@ -2885,24 +2922,24 @@ nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesyste
 	state->handler = handler;
 	state->fs = *filesystem;
 	const nn_Method methods[] = {
-		{"spaceTotal", "function(): number - Get the storage capacity of the filesystem.", NN_DIRECT},
-		{"spaceUsed", "function(): number - Get the space used by the files on the drive.", NN_DIRECT},
-		{"isReadOnly", "function(): boolean - Returns whether the drive is read-only.", NN_DIRECT},
-		{"getLabel", "function(): string - Get the filesystem label.", NN_INDIRECT},
-		{"setLabel", "function(label: string): string - Set the filesystem label and return what was actually set, which may be truncated.", NN_INDIRECT},
-		{"open", "function(path: string, mode?: string = 'r'): number - Open a file. Valid modes are 'r' (read-only), 'w' (write-only) and 'a' (append-only).", NN_DIRECT},
-		{"close", "function(fd: number) - Closes a file.", NN_DIRECT},
-		{"read", "function(fd: number, count?: number): string? - Reads part of a file. If there is no more data, nothing is returned.", NN_DIRECT},
-		{"write", "function(fd: number, data: string): boolean - Writes the data to a file. Returns true on success.", NN_DIRECT},
-		{"seek", "function(fd: number, whence: string, offset: number): number - Seeks a file. Valid whences are 'set' (relative to start), 'cur' (relative to current), 'end' (relative to EoF, backwards). Returns the new position.", NN_DIRECT},
-		{"list", "function(path: string): string[] - Returns the names of the entries inside of the directory. Directories get a / appended to their names.", NN_DIRECT},
-		{"exists", "function(path: string): boolean - Checks if there exists an entry at the specified path.", NN_DIRECT},
-		{"size", "function(path: string) - Gets the size of the entry at the specified path.", NN_DIRECT},
-		{"remove", "function(path: string): boolean - Removes the entry at the specified path.", NN_DIRECT},
-		{"rename", "function(from: string, to: string): boolean - Renames or moves an entry to a new location.", NN_DIRECT},
-		{"isDirectory", "function(path: string): boolean - Checks if the entry at the specified path is a directory.", NN_DIRECT},
-		{"lastModified", "function(path: string): number - Returns the UNIX timestamp of the time the entry was last modified. This is stored in milliseconds, but is always a multiple of 1000.", NN_DIRECT},
-		{"makeDirectory", "function(path: string): boolean - Creates a directory. Creates parent directories if necessary.", NN_DIRECT},
+		{"spaceTotal", "function(): number - Get the storage capacity of the filesystem.", NN_DIRECT, NN_FSNUM_SPACETOTAL},
+		{"spaceUsed", "function(): number - Get the space used by the files on the drive.", NN_DIRECT, NN_FSNUM_SPACEUSED},
+		{"isReadOnly", "function(): boolean - Returns whether the drive is read-only.", NN_DIRECT, NN_FSNUM_ISRO},
+		{"getLabel", "function(): string - Get the filesystem label.", NN_DIRECT, NN_FSNUM_GETLABEL},
+		{"setLabel", "function(label: string): string - Set the filesystem label and return what was actually set, which may be truncated.", NN_INDIRECT, NN_FSNUM_SETLABEL},
+		{"open", "function(path: string, mode?: string = 'r'): number - Open a file. Valid modes are 'r' (read-only), 'w' (write-only) and 'a' (append-only).", NN_DIRECT, NN_FSNUM_OPEN},
+		{"close", "function(fd: number) - Closes a file.", NN_DIRECT, NN_FSNUM_CLOSE},
+		{"read", "function(fd: number, count?: number): string? - Reads part of a file. If there is no more data, nothing is returned.", NN_DIRECT, NN_FSNUM_READ},
+		{"write", "function(fd: number, data: string): boolean - Writes the data to a file. Returns true on success.", NN_DIRECT, NN_FSNUM_WRITE},
+		{"seek", "function(fd: number, whence: string, offset: number): number - Seeks a file. Valid whences are 'set' (relative to start), 'cur' (relative to current), 'end' (relative to EoF, backwards). Returns the new position.", NN_DIRECT, NN_FSNUM_SEEK},
+		{"list", "function(path: string): string[] - Returns the names of the entries inside of the directory. Directories get a / appended to their names.", NN_DIRECT, NN_FSNUM_LIST},
+		{"exists", "function(path: string): boolean - Checks if there exists an entry at the specified path.", NN_DIRECT, NN_FSNUM_EXISTS},
+		{"size", "function(path: string) - Gets the size of the entry at the specified path.", NN_DIRECT, NN_FSNUM_SIZE},
+		{"remove", "function(path: string): boolean - Removes the entry at the specified path.", NN_DIRECT, NN_FSNUM_REMOVE},
+		{"rename", "function(from: string, to: string): boolean - Renames or moves an entry to a new location.", NN_DIRECT, NN_FSNUM_RENAME},
+		{"isDirectory", "function(path: string): boolean - Checks if the entry at the specified path is a directory.", NN_DIRECT, NN_FSNUM_ISDIR},
+		{"lastModified", "function(path: string): number - Returns the UNIX timestamp of the time the entry was last modified. This is stored in milliseconds, but is always a multiple of 1000.", NN_DIRECT, NN_FSNUM_LASTMOD},
+		{"makeDirectory", "function(path: string): boolean - Creates a directory. Creates parent directories if necessary.", NN_DIRECT, NN_FSNUM_MKDIR},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentState *t = nn_createComponentState(universe, "filesystem", state, methods, nn_filesystem_handler);
@@ -2985,6 +3022,19 @@ void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, c
 	nn_addIdleTime(C, sectorDelta * latencyPerSector);
 }
 
+typedef enum nn_Drive_Nums {
+	NN_DRIVENUM_GETLABEL,
+	NN_DRIVENUM_SETLABEL,
+	NN_DRIVENUM_GETCAPACITY,
+	NN_DRIVENUM_GETPLATTERCOUNT,
+	NN_DRIVENUM_GETSECTORSIZE,
+	NN_DRIVENUM_READSECTOR,
+	NN_DRIVENUM_WRITESECTOR,
+	NN_DRIVENUM_READBYTE,
+	NN_DRIVENUM_READUBYTE,
+	NN_DRIVENUM_WRITEBYTE,
+} nn_Drive_Nums;
+
 nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
 	nn_DriveState *state = req->typeUserdata;
 	void *instance = req->compUserdata;
@@ -2999,7 +3049,7 @@ nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
 	dreq.driveConf = &state->drive;
 	nn_Drive conf = state->drive;
 
-	const char *method = req->methodCalled;
+	int method = req->methodCalled;
 	nn_Exit e;
 
 	size_t maxSectors = conf.capacity / conf.sectorSize;
@@ -3019,19 +3069,19 @@ nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
 		req->methodEnabled = true;
 		return NN_OK;
 	case NN_COMP_CALL:
-		if(nn_strcmp(method, "getCapacity") == 0) {
+		if(method == NN_DRIVENUM_GETCAPACITY) {
 			req->returnCount = 1;
 			return nn_pushinteger(C, conf.capacity);
 		}
-		if(nn_strcmp(method, "getSectorSize") == 0) {
+		if(method == NN_DRIVENUM_GETSECTORSIZE) {
 			req->returnCount = 1;
 			return nn_pushinteger(C, conf.sectorSize);
 		}
-		if(nn_strcmp(method, "getPlatterCount") == 0) {
+		if(method == NN_DRIVENUM_GETPLATTERCOUNT) {
 			req->returnCount = 1;
 			return nn_pushinteger(C, conf.platterCount);
 		}
-		if(nn_strcmp(method, "getLabel") == 0) {
+		if(method == NN_DRIVENUM_GETLABEL) {
 			dreq.action = NN_DRIVE_GETLABEL;
 			dreq.index = NN_MAX_LABEL;
 			char buf[NN_MAX_LABEL];
@@ -3042,7 +3092,7 @@ nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
 			if(dreq.index == 0) return nn_pushnull(C);
 			return nn_pushlstring(C, buf, dreq.index);
 		}
-		if(nn_strcmp(method, "setLabel") == 0) {
+		if(method == NN_DRIVENUM_SETLABEL) {
 			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			dreq.action = NN_DRIVE_SETLABEL;
 			dreq.buf = (char *)nn_tolstring(C, 0, &dreq.index);
@@ -3052,7 +3102,7 @@ nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
 			if(dreq.index == 0) return nn_pushnull(C);
 			return nn_pushlstring(C, dreq.buf, dreq.index);
 		}
-		if(nn_strcmp(method, "readSector") == 0) {
+		if(method == NN_DRIVENUM_READSECTOR) {
 			nn_costComponent(C, req->compAddress, conf.readsPerTick);
 			nn_removeEnergy(C, conf.dataEnergyCost * conf.sectorSize);
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
@@ -3082,7 +3132,7 @@ nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushlstring(C, buf, conf.sectorSize);
 		}
-		if(nn_strcmp(method, "writeSector") == 0) {
+		if(method == NN_DRIVENUM_WRITESECTOR) {
 			nn_costComponent(C, req->compAddress, conf.writesPerTick);
 			nn_removeEnergy(C, conf.dataEnergyCost * conf.sectorSize);
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
@@ -3134,16 +3184,16 @@ nn_ComponentState *nn_createDrive(nn_Universe *universe, const nn_Drive *drive, 
 	state->handler = handler;
 	state->drive = *drive;
 	const nn_Method methods[] = {
-		{"getLabel", "function(): string - Get the drive label.", NN_INDIRECT},
-		{"setLabel", "function(label: string): string - Set the drive label. Returns the new label.", NN_INDIRECT},
-		{"getCapacity", "function(): integer - Get the drive capacity, in bytes.", NN_DIRECT},
-		{"getPlatterCount", "function(): integer - Get the platter count", NN_DIRECT},
-		{"getSectorSize", "function(): integer - Get the sector size, in bytes.", NN_DIRECT},
-		{"readSector", "function(index: integer): string - Returns the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT},
-		{"writeSector", "function(index: integer, data: string): boolean - Changes the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT},
-		{"readByte", "function(index: integer): integer - Reads a single signed byte and returns it. Bytes are 1-indexed.", NN_DIRECT},
-		{"readUByte", "function(index: integer): integer - Reads a single unsigned byte and returns it. Bytes are 1-indexed.", NN_DIRECT},
-		{"writeByte", "function(index: integer, value: integer): boolean - Changes a single byte, can be signed or unsigned. Bytes are 1-indexed.", NN_DIRECT},
+		{"getLabel", "function(): string - Get the drive label.", NN_DIRECT, NN_DRIVENUM_GETLABEL},
+		{"setLabel", "function(label: string): string - Set the drive label. Returns the new label.", NN_INDIRECT, NN_DRIVENUM_SETLABEL},
+		{"getCapacity", "function(): integer - Get the drive capacity, in bytes.", NN_DIRECT, NN_DRIVENUM_GETCAPACITY},
+		{"getPlatterCount", "function(): integer - Get the platter count", NN_DIRECT, NN_DRIVENUM_GETPLATTERCOUNT},
+		{"getSectorSize", "function(): integer - Get the sector size, in bytes.", NN_DIRECT, NN_DRIVENUM_GETSECTORSIZE},
+		{"readSector", "function(index: integer): string - Returns the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT, NN_DRIVENUM_READSECTOR},
+		{"writeSector", "function(index: integer, data: string): boolean - Changes the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT, NN_DRIVENUM_WRITESECTOR},
+		{"readByte", "function(index: integer): integer - Reads a single signed byte and returns it. Bytes are 1-indexed.", NN_DIRECT, NN_DRIVENUM_READBYTE},
+		{"readUByte", "function(index: integer): integer - Reads a single unsigned byte and returns it. Bytes are 1-indexed.", NN_DIRECT, NN_DRIVENUM_READUBYTE},
+		{"writeByte", "function(index: integer, value: integer): boolean - Changes a single byte, can be signed or unsigned. Bytes are 1-indexed.", NN_DIRECT, NN_DRIVENUM_WRITEBYTE},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentState *t = nn_createComponentState(universe, "drive", state, methods, nn_drive_handler);
@@ -3274,6 +3324,18 @@ typedef struct nn_Screen_state {
 	nn_ScreenHandler *handler;
 } nn_Screen_state;
 
+typedef enum nn_Screen_Nums {
+	NN_SCRNUM_ISON,
+	NN_SCRNUM_TURNON,
+	NN_SCRNUM_TURNOFF,
+	NN_SCRNUM_GETASPECTRATIO,
+	NN_SCRNUM_GETKEYBOARDS,
+	NN_SCRNUM_SETPRECISE,
+	NN_SCRNUM_ISPRECISE,
+	NN_SCRNUM_SETTMINVERTED,
+	NN_SCRNUM_ISTMINVERTED,
+} nn_Screen_Nums;
+
 static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 	nn_Screen_state *state = req->typeUserdata;
 	nn_Context ctx = state->universe->ctx;
@@ -3285,7 +3347,7 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 	scrreq.userdata = state->userdata;
 	scrreq.instance = req->compUserdata;
 
-	const char *method = req->methodCalled;
+	int method = req->methodCalled;
 	nn_Exit e;
 	
 	switch(req->action) {
@@ -3303,28 +3365,28 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 		req->methodEnabled = true;
 		return NN_OK;
 	case NN_COMP_CALL:
-		if(nn_strcmp(method, "isOn") == 0) {
+		if(method == NN_SCRNUM_ISON) {
 			scrreq.action = NN_SCR_ISON;
 			e = state->handler(&scrreq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushbool(C, scrreq.w != 0);
 		}
-		if(nn_strcmp(method, "isPrecise") == 0) {
+		if(method == NN_SCRNUM_ISPRECISE) {
 			scrreq.action = NN_SCR_ISPRECISE;
 			e = state->handler(&scrreq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushbool(C, scrreq.w != 0);
 		}
-		if(nn_strcmp(method, "isTouchModeInverted") == 0) {
+		if(method == NN_SCRNUM_ISTMINVERTED) {
 			scrreq.action = NN_SCR_ISTOUCHINVERTED;
 			e = state->handler(&scrreq);
 			if(e) return e;
 			req->returnCount = 1;
 			return nn_pushbool(C, scrreq.w != 0);
 		}
-		if(nn_strcmp(method, "getAspectRatio") == 0) {
+		if(method == NN_SCRNUM_GETASPECTRATIO) {
 			scrreq.action = NN_SCR_GETASPECTRATIO;
 			e = state->handler(&scrreq);
 			if(e) return e;
@@ -3333,7 +3395,7 @@ static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
 			if(e) return e;
 			return nn_pushinteger(C, scrreq.h);
 		}
-		if(nn_strcmp(method, "getKeyboards") == 0) {
+		if(method == NN_SCRNUM_GETKEYBOARDS) {
 			char buf[NN_MAX_ADDRESS];
 			size_t kbCount = 0;
 			while(true) {
@@ -3366,15 +3428,15 @@ nn_ComponentState *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *hand
 	state->userdata = userdata;
 
 	const nn_Method methods[] = {
-		{"isOn", "function(): boolean - Returns whether the screen is on", NN_DIRECT},
-		{"turnOn", "function(): boolean, boolean - Turns the screen on. Returns whether the screen is was off and the new power state.", NN_DIRECT},
-		{"turnOff", "function(): boolean, boolean - Turns the screen off. Returns whether the screen is was on and the new power state.", NN_DIRECT},
-		{"getAspectRatio", "function(): number, number - Returns how large the screen is, typically in blocks.", NN_DIRECT},
-		{"getKeyboards", "function(): string[] - Returns a list of keyboards attached to this screen.", NN_DIRECT},
-		{"setPrecise", "function(enabled: boolean): boolean - Enable or disable precise mode (sub-pixel precision in touch events).", NN_DIRECT},
-		{"isPrecise", "function(): boolean - Checks if precise mode is enabled.", NN_DIRECT},
-		{"setTouchModeInverted", "function(enabled: boolean): boolean - Enable or disable inverted touch mode (alters player interactions)", NN_DIRECT},
-		{"isTouchModeInverted", "function(): boolean - Checks if inverted touch mode is enabled.", NN_DIRECT},
+		{"isOn", "function(): boolean - Returns whether the screen is on", NN_DIRECT, NN_SCRNUM_ISON},
+		{"turnOn", "function(): boolean, boolean - Turns the screen on. Returns whether the screen is was off and the new power state.", NN_DIRECT, NN_SCRNUM_TURNON},
+		{"turnOff", "function(): boolean, boolean - Turns the screen off. Returns whether the screen is was on and the new power state.", NN_DIRECT, NN_SCRNUM_TURNOFF},
+		{"getAspectRatio", "function(): number, number - Returns how large the screen is, typically in blocks.", NN_DIRECT, NN_SCRNUM_GETASPECTRATIO},
+		{"getKeyboards", "function(): string[] - Returns a list of keyboards attached to this screen.", NN_DIRECT, NN_SCRNUM_GETKEYBOARDS},
+		{"setPrecise", "function(enabled: boolean): boolean - Enable or disable precise mode (sub-pixel precision in touch events).", NN_DIRECT, NN_SCRNUM_SETPRECISE},
+		{"isPrecise", "function(): boolean - Checks if precise mode is enabled.", NN_DIRECT, NN_SCRNUM_ISPRECISE},
+		{"setTouchModeInverted", "function(enabled: boolean): boolean - Enable or disable inverted touch mode (alters player interactions)", NN_DIRECT, NN_SCRNUM_SETTMINVERTED},
+		{"isTouchModeInverted", "function(): boolean - Checks if inverted touch mode is enabled.", NN_DIRECT, NN_SCRNUM_ISTMINVERTED},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentState *t = nn_createComponentState(universe, "screen", state, methods, nn_screen_handler);
@@ -3459,6 +3521,40 @@ typedef struct nn_GPU_state {
 	nn_GPU gpu;
 } nn_GPU_state;
 
+typedef enum nn_GPU_Nums {
+	NN_GPUNUM_BIND,
+	NN_GPUNUM_UNBIND,
+	NN_GPUNUM_GETSCREEN,
+	NN_GPUNUM_GETBACKGROUND,
+	NN_GPUNUM_GETFOREGROUND,
+	NN_GPUNUM_SETBACKGROUND,
+	NN_GPUNUM_SETFOREGROUND,
+	NN_GPUNUM_GETPALETTECOLOR,
+	NN_GPUNUM_SETPALETTECOLOR,
+	NN_GPUNUM_MAXDEPTH,
+	NN_GPUNUM_GETDEPTH,
+	NN_GPUNUM_SETDEPTH,
+	NN_GPUNUM_MAXRESOLUTION,
+	NN_GPUNUM_GETRESOLUTION,
+	NN_GPUNUM_SETRESOLUTION,
+	NN_GPUNUM_GETVIEWPORT,
+	NN_GPUNUM_SETVIEWPORT,
+	NN_GPUNUM_GET,
+	NN_GPUNUM_SET,
+	NN_GPUNUM_COPY,
+	NN_GPUNUM_FILL,
+	NN_GPUNUM_FREEMEM,
+	NN_GPUNUM_TOTALMEM,
+	NN_GPUNUM_GETACTIVEBUFFER,
+	NN_GPUNUM_SETACTIVEBUFFER,
+	NN_GPUNUM_BUFFERS,
+	NN_GPUNUM_GETBUFFERSIZE,
+	NN_GPUNUM_ALLOCATEBUFFER,
+	NN_GPUNUM_FREEBUFFER,
+	NN_GPUNUM_FREEALLBUFFERS,
+	NN_GPUNUM_BITBLT,
+} nn_GPU_NUms;
+
 nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 	nn_Computer *C = req->computer;
 	nn_GPU_state *state = req->typeUserdata;
@@ -3471,7 +3567,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 	greq.instance = req->compUserdata;
 	greq.gpuConf = &state->gpu;
 
-	const char *method = req->methodCalled;
+	int method = req->methodCalled;
 	nn_Exit err;
 
 	switch(req->action) {
@@ -3489,7 +3585,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 		req->methodEnabled = true;
 		return NN_OK;
 	case NN_COMP_CALL:
-		if(nn_strcmp(method, "bind") == 0) {
+		if(method == NN_GPUNUM_BIND) {
 			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			err = nn_defaultboolean(C, 1, false);
 			if(err) return err;
@@ -3503,13 +3599,13 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return nn_pushbool(C, true);
 		}
-		if(nn_strcmp(method, "unbind") == 0) {
+		if(method == NN_GPUNUM_UNBIND) {
 			greq.action = NN_GPU_UNBIND;
 			err = state->handler(&greq);
 			if(err) return err;
 			return nn_pushbool(C, true);
 		}
-		if(nn_strcmp(method, "getScreen") == 0) {
+		if(method == NN_GPUNUM_GETSCREEN) {
 			char buf[NN_MAX_ADDRESS];
 			greq.action = NN_GPU_GETSCREEN;
 			greq.text = buf;
@@ -3520,7 +3616,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(greq.text == NULL) return nn_pushnull(C);
 			return nn_pushlstring(C, greq.text, greq.width);
 		}
-		if(nn_strcmp(method, "getResolution") == 0) {
+		if(method == NN_GPUNUM_GETRESOLUTION) {
 			greq.action = NN_GPU_GETRESOLUTION;
 			err = state->handler(&greq);
 			if(err) return err;
@@ -3529,7 +3625,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return nn_pushinteger(C, greq.height);
 		}
-		if(nn_strcmp(method, "set") == 0) {
+		if(method == NN_GPUNUM_SET) {
 			nn_costComponent(C, req->compAddress, conf.setPerTick);
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
@@ -3551,7 +3647,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushbool(C, true);
 		}
-		if(nn_strcmp(method, "get") == 0) {
+		if(method == NN_GPUNUM_GET) {
 			nn_costComponent(C, req->compAddress, conf.setPerTick);
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
@@ -3577,7 +3673,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return NN_OK;
 		}
-		if(nn_strcmp(method, "fill") == 0) {
+		if(method == NN_GPUNUM_FILL) {
 			nn_costComponent(C, req->compAddress, conf.fillPerTick);
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
@@ -3609,7 +3705,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushbool(C, true);
 		}
-		if(nn_strcmp(method, "copy") == 0) {
+		if(method == NN_GPUNUM_COPY) {
 			nn_costComponent(C, req->compAddress, conf.copyPerTick);
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
@@ -3637,21 +3733,21 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushbool(C, true);
 		}
-		if(nn_strcmp(method, "getDepth") == 0) {
+		if(method == NN_GPUNUM_GETDEPTH) {
 			greq.action = NN_GPU_GETDEPTH;
 			err = state->handler(&greq);
 			if(err) return err;
 			req->returnCount = 1;
 			return nn_pushinteger(C, greq.x);
 		}
-		if(nn_strcmp(method, "maxDepth") == 0) {
+		if(method == NN_GPUNUM_SETDEPTH) {
 			greq.action = NN_GPU_MAXDEPTH;
 			err = state->handler(&greq);
 			if(err) return err;
 			req->returnCount = 1;
 			return nn_pushinteger(C, greq.x);
 		}
-		if(nn_strcmp(method, "getViewport") == 0) {
+		if(method == NN_GPUNUM_GETVIEWPORT) {
 			greq.action = NN_GPU_GETVIEWPORT;
 			err = state->handler(&greq);
 			if(err) return err;
@@ -3660,7 +3756,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return nn_pushinteger(C, greq.height);
 		}
-		if(nn_strcmp(method, "getResolution") == 0) {
+		if(method == NN_GPUNUM_GETRESOLUTION) {
 			greq.action = NN_GPU_GETRESOLUTION;
 			err = state->handler(&greq);
 			if(err) return err;
@@ -3669,7 +3765,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return nn_pushinteger(C, greq.height);
 		}
-		if(nn_strcmp(method, "maxResolution") == 0) {
+		if(method == NN_GPUNUM_MAXRESOLUTION) {
 			greq.action = NN_GPU_MAXRESOLUTION;
 			err = state->handler(&greq);
 			if(err) return err;
@@ -3678,7 +3774,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return nn_pushinteger(C, greq.height);
 		}
-		if(nn_strcmp(method, "setForeground") == 0) {
+		if(method == NN_GPUNUM_SETFOREGROUND) {
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultboolean(C, 1, false);
 			if(err) return err;
@@ -3695,7 +3791,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return NN_OK;
 		}
-		if(nn_strcmp(method, "getForeground") == 0) {
+		if(method == NN_GPUNUM_GETFOREGROUND) {
 			greq.action = NN_GPU_GETFOREGROUND;
 			err = state->handler(&greq);
 			if(err) return err;
@@ -3706,7 +3802,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return NN_OK;
 		}
-		if(nn_strcmp(method, "setBackground") == 0) {
+		if(method == NN_GPUNUM_SETBACKGROUND) {
 			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			err = nn_defaultboolean(C, 1, false);
 			if(err) return err;
@@ -3723,18 +3819,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			if(err) return err;
 			return NN_OK;
 		}
-		if(nn_strcmp(method, "getBackground") == 0) {
-			greq.action = NN_GPU_GETBACKGROUND;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.x);
-			if(err) return err;
-			err = nn_pushbool(C, greq.y != 0);
-			if(err) return err;
-			return NN_OK;
-		}
-		if(nn_strcmp(method, "getBackground") == 0) {
+		if(method == NN_GPUNUM_GETBACKGROUND) {
 			greq.action = NN_GPU_GETBACKGROUND;
 			err = state->handler(&greq);
 			if(err) return err;
@@ -3761,38 +3846,38 @@ nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPU
 	state->gpu = *gpu;
 
 	const nn_Method methods[] = {
-		{"bind", "function(address: string, reset?: boolean) - Bind the GPU to a screen.", NN_INDIRECT},
-		{"unbind", "function() - Unbind the GPU, if bound.", NN_INDIRECT},
-		{"getScreen", "function(): string? - Get the screen address, if any.", NN_DIRECT},
-		{"getBackground", "function(): integer, boolean - Get the current background color, and whether it is a palette index.", NN_DIRECT},
-		{"getForeground", "function(): integer, boolean - Get the current foreground color, and whether it is a palette index.", NN_DIRECT},
-		{"setBackground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current background color. Returns the old background color.", NN_DIRECT},
-		{"setForeground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current foreground color. Returns the old foreground color.", NN_DIRECT},
-		{"getPaletteColor", "function(index: integer): integer - Get a color from the palette.", NN_DIRECT},
-		{"setPaletteColor", "function(index: integer, color: integer): integer - Change a color from the palette. Returns the old one.", NN_DIRECT},
-		{"maxDepth", "function(): integer - Returns the maximum depth supported.", NN_DIRECT},
-		{"getDepth", "function(): integer - Returns the current depth used.", NN_DIRECT},
-		{"setDepth", "function(depth: integer): string - Change the current depth. Returns the name of the old one.", NN_DIRECT},
-		{"maxResolution", "function(): integer, integer - Returns the maximum working resolution.", NN_DIRECT},
-		{"getResolution", "function(): integer, integer - Returns the current resolution.", NN_DIRECT},
-		{"setResolution", "function(w: integer, h: integer): boolean - Changes the current resolution.", NN_DIRECT},
-		{"getViewport", "function(): integer, integer - Returns the current viewport resolution.", NN_DIRECT},
-		{"setViewport", "function(w: integer, h: integer): boolean - Changes the current viewport resolution.", NN_DIRECT},
-		{"get", "function(x: integer, y: integer): string, integer, integer, integer?, integer? - Gets information about a character. Returns the character, foreground color, background color, foreground palette index (if applicable), background palette index (if applicable).", NN_DIRECT},
-		{"set", "function(x: integer, y: integer, value: string, vertical?: boolean): boolean - Writes a string to the screen. The string is simply copied to the buffer, escapes and special characters are not given special treatment.", NN_DIRECT},
-		{"copy", "function(x: integer, y: integer, width: integer, height: integer, dx: integer, dy: integer) - Copies a rectangle on the screen buffer to a new position. The new position is x + dx, y + dy, thus dx and dy determine the translation of the copy.", NN_DIRECT},
-		{"fill", "function(x: integer, y: integer, width: integer, height: integer, char: string): boolean - Fills a rectangle on the screen buffer. Returns true on success, false otherwise.", NN_DIRECT},
+		{"bind", "function(address: string, reset?: boolean) - Bind the GPU to a screen.", NN_INDIRECT, NN_GPUNUM_BIND},
+		{"unbind", "function() - Unbind the GPU, if bound.", NN_INDIRECT, NN_GPUNUM_UNBIND},
+		{"getScreen", "function(): string? - Get the screen address, if any.", NN_DIRECT, NN_GPUNUM_GETSCREEN},
+		{"getBackground", "function(): integer, boolean - Get the current background color, and whether it is a palette index.", NN_DIRECT, NN_GPUNUM_GETBACKGROUND},
+		{"getForeground", "function(): integer, boolean - Get the current foreground color, and whether it is a palette index.", NN_DIRECT, NN_GPUNUM_GETFOREGROUND},
+		{"setBackground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current background color. Returns the old background color.", NN_DIRECT, NN_GPUNUM_SETBACKGROUND},
+		{"setForeground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current foreground color. Returns the old foreground color.", NN_DIRECT, NN_GPUNUM_SETFOREGROUND},
+		{"getPaletteColor", "function(index: integer): integer - Get a color from the palette.", NN_DIRECT, NN_GPUNUM_GETPALETTECOLOR},
+		{"setPaletteColor", "function(index: integer, color: integer): integer - Change a color from the palette. Returns the old one.", NN_DIRECT, NN_GPUNUM_SETPALETTECOLOR},
+		{"maxDepth", "function(): integer - Returns the maximum depth supported.", NN_DIRECT, NN_GPUNUM_MAXDEPTH},
+		{"getDepth", "function(): integer - Returns the current depth used.", NN_DIRECT, NN_GPUNUM_GETDEPTH},
+		{"setDepth", "function(depth: integer): string - Change the current depth. Returns the name of the old one.", NN_DIRECT, NN_GPUNUM_SETDEPTH},
+		{"maxResolution", "function(): integer, integer - Returns the maximum working resolution.", NN_DIRECT, NN_GPUNUM_MAXRESOLUTION},
+		{"getResolution", "function(): integer, integer - Returns the current resolution.", NN_DIRECT, NN_GPUNUM_GETRESOLUTION},
+		{"setResolution", "function(w: integer, h: integer): boolean - Changes the current resolution.", NN_DIRECT, NN_GPUNUM_SETRESOLUTION},
+		{"getViewport", "function(): integer, integer - Returns the current viewport resolution.", NN_DIRECT, NN_GPUNUM_GETVIEWPORT},
+		{"setViewport", "function(w: integer, h: integer): boolean - Changes the current viewport resolution.", NN_DIRECT, NN_GPUNUM_SETVIEWPORT},
+		{"get", "function(x: integer, y: integer): string, integer, integer, integer?, integer? - Gets information about a character. Returns the character, foreground color, background color, foreground palette index (if applicable), background palette index (if applicable).", NN_DIRECT, NN_GPUNUM_GET},
+		{"set", "function(x: integer, y: integer, value: string, vertical?: boolean): boolean - Writes a string to the screen. The string is simply copied to the buffer, escapes and special characters are not given special treatment.", NN_DIRECT, NN_GPUNUM_SET},
+		{"copy", "function(x: integer, y: integer, width: integer, height: integer, dx: integer, dy: integer) - Copies a rectangle on the screen buffer to a new position. The new position is x + dx, y + dy, thus dx and dy determine the translation of the copy.", NN_DIRECT, NN_GPUNUM_COPY},
+		{"fill", "function(x: integer, y: integer, width: integer, height: integer, char: string): boolean - Fills a rectangle on the screen buffer. Returns true on success, false otherwise.", NN_DIRECT, NN_GPUNUM_FILL},
 		// TODO: vram buffers
-		{"freeMemory", "function(): integer - Returns the amount of free VRAM remaining.", NN_DIRECT},
-		{"totalMemory", "function(): integer - Returns the total amount of VRAM usable.", NN_DIRECT},
-		{"getActiveBuffer", "function(): integer - Returns the current buffer. 0 means the screen.", NN_DIRECT},
-		{"setActiveBuffer", "function(buf: integer): integer - Switches to another buffer. 0 means the screen.", NN_DIRECT},
-		{"buffers", "function(): integer[] - Returns a list of all allocated buffers, except 0, which is reserved for the screen.", NN_DIRECT},
-		{"getBufferSize", "function(buf?: integer): integer, integer - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT},
-		{"allocateBuffer", "function(width?: integer, height?: integer): integer - Allocates a new buffer of a specific size, defaulting to the GPU's maximum resolution.", NN_DIRECT},
-		{"freeBuffer", "function(buffer?: integer): boolean - Frees a buffer, defaulting to the current one. If the current one is freed, it will switch to the screen.", NN_DIRECT},
-		{"freeAllBuffers", "function() - Frees every buffer and switches to the screen. This cannot fail.", NN_DIRECT},
-		{"bitblt", "function(dest?: integer, col?: integer, row?: integer, width?: integer, height?: integer, src?: integer, fromCol?: integer, fromRow?: integer): boolean - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT},
+		{"freeMemory", "function(): integer - Returns the amount of free VRAM remaining.", NN_DIRECT, NN_GPUNUM_FREEMEM},
+		{"totalMemory", "function(): integer - Returns the total amount of VRAM usable.", NN_DIRECT, NN_GPUNUM_TOTALMEM},
+		{"getActiveBuffer", "function(): integer - Returns the current buffer. 0 means the screen.", NN_DIRECT, NN_GPUNUM_GETACTIVEBUFFER},
+		{"setActiveBuffer", "function(buf: integer): integer - Switches to another buffer. 0 means the screen.", NN_DIRECT, NN_GPUNUM_SETACTIVEBUFFER},
+		{"buffers", "function(): integer[] - Returns a list of all allocated buffers, except 0, which is reserved for the screen.", NN_DIRECT, NN_GPUNUM_BUFFERS},
+		{"getBufferSize", "function(buf?: integer): integer, integer - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT, NN_GPUNUM_GETBUFFERSIZE},
+		{"allocateBuffer", "function(width?: integer, height?: integer): integer - Allocates a new buffer of a specific size, defaulting to the GPU's maximum resolution.", NN_DIRECT, NN_GPUNUM_ALLOCATEBUFFER},
+		{"freeBuffer", "function(buffer?: integer): boolean - Frees a buffer, defaulting to the current one. If the current one is freed, it will switch to the screen.", NN_DIRECT, NN_GPUNUM_FREEBUFFER},
+		{"freeAllBuffers", "function() - Frees every buffer and switches to the screen. This cannot fail.", NN_DIRECT, NN_GPUNUM_FREEALLBUFFERS},
+		{"bitblt", "function(dest?: integer, col?: integer, row?: integer, width?: integer, height?: integer, src?: integer, fromCol?: integer, fromRow?: integer): boolean - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT, NN_GPUNUM_BITBLT},
 		{NULL, NULL, NN_INDIRECT},
 	};
 	nn_ComponentState *t = nn_createComponentState(universe, "gpu", state, methods, nn_gpu_handler);

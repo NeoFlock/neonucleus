@@ -256,7 +256,6 @@ local f = assert(load(code, "=bios"))
 local thread = coroutine.create(f)
 
 while true do
-	collectgarbage("collect")
 	local ok, err = resume(thread)
 	if not ok then
 		print(debug.traceback(thread, err))

@@ -1107,7 +1107,6 @@ int main(int argc, char **argv) {
 
 	Font font = LoadFont("unscii-16-full.ttf");
 	double tickDelay = 0.05;
-	double tickClock = 0;
 
 	if(getenv("NN_TICKDELAY") != NULL) {
 		tickDelay = atof(getenv("NN_TICKDELAY"));
@@ -1116,6 +1115,8 @@ int main(int argc, char **argv) {
 	struct {int key; nn_codepoint unicode;} keybuf[512];
 	memset(keybuf, 0, sizeof(keybuf));
 	size_t keycap = sizeof(keybuf) / sizeof(keybuf[0]);
+
+	double nextTick = 0;
 
 	while(true) {
 		if(WindowShouldClose()) break;
@@ -1201,11 +1202,11 @@ int main(int argc, char **argv) {
 			}
 		}
 
-		tickClock -= GetFrameTime();
+		double tickNow = GetTime();
 
-		if(tickClock <= 0) {
+		if(tickNow >= nextTick) {
 			accumulatedEnergyCost = 0;
-			tickClock = tickDelay;
+			nextTick = tickNow + tickDelay;
 			nn_clearstack(c);
 
 			if(getenv("NN_NOIDLE") != NULL) nn_resetIdleTime(c);
