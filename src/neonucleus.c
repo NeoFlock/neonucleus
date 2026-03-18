@@ -1640,6 +1640,11 @@ nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) 
 	// minimum cost of a component call
 	if(computer->callBudget > 0) computer->callBudget--;
 	if((m->flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
+
+	while(computer->stackSize > 0) {
+		if(!nn_isnull(computer, computer->stackSize-1)) break;
+		nn_pop(computer);
+	}
 	
 	nn_ComponentRequest req;
 	req.typeUserdata = c->cstate->userdata;
@@ -1706,6 +1711,7 @@ void nn_resetComponentBudgets(nn_Computer *computer) {
 	for(nn_Component *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
 		c->budgetUsed = 0;
 	}
+	computer->callBudget = computer->totalCallBudget;
 }
 bool nn_costComponent(nn_Computer *computer, const char *address, double perTick) {
 	return nn_costComponentN(computer, address, 1, perTick);
