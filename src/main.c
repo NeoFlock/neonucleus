@@ -500,6 +500,7 @@ ne_ScreenBuffer *ne_gpu_currentBuffer(ne_GPUState *state) {
 }
 
 nn_Exit ne_gpu_handler(nn_GPURequest *req) {
+	// completely rewrite this buggy and incomplete mess.
 	nn_Computer *C = req->computer;
 	ne_GPUState *state = req->instance;
 

@@ -3591,6 +3591,7 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 		req->methodEnabled = true;
 		return NN_OK;
 	case NN_COMP_CALL:
+		// TODO: completely rewrite this buggy mess
 		if(method == NN_GPUNUM_BIND) {
 			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			err = nn_defaultboolean(C, 1, false);
@@ -3746,12 +3747,25 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			req->returnCount = 1;
 			return nn_pushinteger(C, greq.x);
 		}
-		if(method == NN_GPUNUM_SETDEPTH) {
+		if(method == NN_GPUNUM_MAXDEPTH) {
 			greq.action = NN_GPU_MAXDEPTH;
 			err = state->handler(&greq);
 			if(err) return err;
 			req->returnCount = 1;
 			return nn_pushinteger(C, greq.x);
+		}
+		if(method == NN_GPUNUM_SETDEPTH) {
+			if(nn_checkinteger(C, 0, "bad argument #1 (bitdepth expected)")) return NN_EBADCALL;
+			greq.action = NN_GPU_SETDEPTH;
+			err = state->handler(&greq);
+			greq.x = nn_tointeger(C, 0);
+			if(nn_depthName(greq.x) == NULL) {
+				nn_setError(C, "bad depth");
+				return NN_EBADCALL;
+			}
+			if(err) return err;
+			req->returnCount = 1;
+			return nn_pushstring(C, nn_depthName(greq.x));
 		}
 		if(method == NN_GPUNUM_GETVIEWPORT) {
 			greq.action = NN_GPU_GETVIEWPORT;
@@ -3835,6 +3849,20 @@ nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
 			err = nn_pushbool(C, greq.y != 0);
 			if(err) return err;
 			return NN_OK;
+		}
+		// VRAM shenanigans
+		if(method == NN_GPUNUM_GETBUFFERSIZE) {
+			err = nn_defaultinteger(C, 0, 0);
+			if(err) return err;
+			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+			greq.x = nn_tointeger(C, 0);
+			greq.action = greq.x == 0 ? NN_GPU_GETRESOLUTION : NN_GPU_GETBUFFERSIZE;
+			err = state->handler(&greq);
+			if(err) return err;
+			req->returnCount = 2;
+			err = nn_pushinteger(C, greq.width);
+			if(err) return err;
+			return nn_pushinteger(C, greq.height);
 		}
 		nn_setError(C, "method not yet implemented");
 		return NN_EBADCALL;
