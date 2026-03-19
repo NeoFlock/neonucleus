@@ -2780,6 +2780,8 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 				return NN_EBADCALL;
 			}
 			err = state->handler(&fsreq);
+			if(err) return err;
+			req->returnCount = 1;
 			return nn_pushnumber(computer, fsreq.off);
 		}
 		if(method == NN_FSNUM_LIST) {
