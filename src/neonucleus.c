@@ -2784,7 +2784,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.off);
 		}
 		if(method == NN_FSNUM_LIST) {
-			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
+			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2836,7 +2836,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return err;
 		}
 		if(method == NN_FSNUM_EXISTS) {
-			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
+			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2856,7 +2856,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushbool(computer, fsreq.size != 0);
 		}
 		if(method == NN_FSNUM_SIZE) {
-			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
+			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2876,7 +2876,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.size);
 		}
 		if(method == NN_FSNUM_LASTMOD) {
-			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
+			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
@@ -2896,7 +2896,7 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushnumber(computer, fsreq.size * 1000);
 		}
 		if(method == NN_FSNUM_ISDIR) {
-			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
+			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			char truepath[NN_MAX_PATH];
 			size_t pathlen;
