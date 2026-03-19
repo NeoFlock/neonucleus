@@ -1668,6 +1668,21 @@ const char *nn_depthName(int depth);
 #define NN_KEY_NUMPADENTER 0x9C
 #define NN_KEY_NUMPADEQUALS 0x8D
 
+// the bottom side, can also be downwards / negative y
+#define NN_SIDE_BOTTOM 0
+// the top side, can also be upwards / positive y
+#define NN_SIDE_TOP 1
+// backwards, can also be north / negative z
+#define NN_SIDE_BACK 2
+// forwards, can also be south / positive z
+#define NN_SIDE_FRONT 3
+// to the right, can also be west / negative x
+#define NN_SIDE_RIGHT 4
+// to the left, can also be east / positive x
+#define NN_SIDE_LEFT 5
+// absolutely no clue
+#define NN_SIDE_UNKNOWN 6
+
 // pushes a screen_resized signal
 nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight);
 // pushes a touch signal
@@ -1710,7 +1725,50 @@ nn_Exit nn_pushClipboard(nn_Computer *computer, const char *keyboardAddress, con
 // The signal is checked, as in, the player must be a user of the computer if users are defined.
 nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, size_t len, const char *player);
 
-// TODO: the remaining vanilla ones in https://ocdoc.cil.li/component:signals
+// pushes a redstone_changed signal.
+// side is the side of the device the redstone changed on
+// oldValue is the old value
+// newValue is the new value, must not be equal to oldValue
+// color is the color of the redstone signal
+// if color < 0, it is set to null
+nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddress, int side, int oldValue, int newValue, int color);
+
+// pushes a motion signal.
+// Do note that it is meant to only be sent if the entity has a direct line of sight and if |(relX, relY, relZ)| >= sensitivity.
+// This signal does *not* check if the motion sensor actually is sensitive enough to detect it, so make sure to check it yourself.
+// relX, relY and relZ are the relative postion in 3D Cartesian space.
+// entityName can be NULL if the entity has no name.
+nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName);
+
+typedef struct nn_EncodedNetworkContents {
+	nn_Context *ctx;
+	char *buf;
+	size_t buflen;
+	size_t valueCount;
+} nn_EncodedNetworkContents;
+
+// applies basic encoding to a network message. This encoding has a header, and thus should remain backwards-compatible.
+// The encoding serves 2 purposes:
+// 1. Prevent shared memory between computers. Values do not use atomic reference counting, and thus this could lead to UAF or memory leaks.
+// 2. Simplify implementing packet queues, which should be used in relays. The lack of access to raw values would force implementers to use
+// an encoding anyways.
+// This only encodes the contents, not the sender, hops, or other metadata which may be needed in the queue.
+// This does not pop the values, in case you need them afterwards. If you don't just call nn_popn().
+// The encoding is universal, so it is perfectly fine to store on-disk.
+nn_Exit nn_encodeNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents, size_t valueCount);
+// Allocates a copy of [buf] and stores it in contents.
+// This is useful for copying network contents, either from storage or from another buffer.
+nn_Exit nn_copyNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount);
+void nn_dropNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents);
+// Pushes the encoded contents onto the stack.
+// This does not drop the network contents.
+nn_Exit nn_pushNetworkContents(nn_Computer *computer, const nn_EncodedNetworkContents *contents);
+
+// push a modem_message, can be queued by both modems and tunnels.
+// This does not check if the modem has that port open, so make sure to check it yourself.
+// It does not check if the distance is within the modem's range, if it is wireless, and thus does not send it.
+// Note that if a relay with a card should change the sender.
+nn_Exit nn_pushModemMessage(nn_Computer *computer, const char *modemAddress, const char *sender, int port, double distance, const nn_EncodedNetworkContents *contents);
 
 #ifdef __cplusplus
 }
