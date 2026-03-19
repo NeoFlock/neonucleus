@@ -3006,10 +3006,13 @@ typedef struct nn_DriveState {
 } nn_DriveState;
 
 void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, const nn_Drive *drive) {
+	// Check if SSD
+	if(drive->rpm == 0) return;
+
 	size_t maxSectors = drive->capacity / drive->sectorSize;
 	size_t sectorsPerPlatter = maxSectors / drive->platterCount;
 	// RPM over the number of sectors, over 60 seconds.
-	double latencyPerSector = (double)drive->rpm / maxSectors / 60;
+	double latencyPerSector = 1.0 / ((double)drive->rpm / 60 * maxSectors);
 
 	// magic
 	lastSector %= sectorsPerPlatter;

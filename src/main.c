@@ -215,6 +215,25 @@ nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 		}
 		fwrite(req->strarg1, sizeof(char), req->strarg1len, f);
 		return NN_OK;
+	case NN_FS_SEEK:
+		if(req->fd < 0 || req->fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		f = state->files[req->fd];
+		if(f == NULL) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		int whence = SEEK_SET;
+		if(req->whence == NN_SEEK_CUR) {
+			whence = SEEK_CUR;
+		} else if(req->whence == NN_SEEK_END) {
+			whence = SEEK_END;
+		}
+		fseek(f, req->off, whence);
+		req->off = ftell(f);
+		return NN_OK;
 	case NN_FS_OPENDIR:
 		ne_fsState_truepath(state, truepath, req->strarg1);
 		state->dir = ne_opendir(truepath);
