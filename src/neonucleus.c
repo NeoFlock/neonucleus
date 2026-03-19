@@ -1026,7 +1026,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->desiredArch.name = NULL;
 	c->archState = NULL;
 
-	c->totalCallBudget = 1000000;
+	c->totalCallBudget = 10000;
 	c->callBudget = c->totalCallBudget;
 
 	if(nn_hashInit(&c->components, maxComponents, ctx, &nn_componentHasher)) {
@@ -2689,7 +2689,6 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
 		}
 		if(method == NN_FSNUM_OPEN) {
-			nn_costComponent(computer, req->compAddress, state->fs.writesPerTick);
 			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 			err = nn_defaultstring(computer, 1, "r");
 			if(err) return err;
