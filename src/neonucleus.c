@@ -2718,7 +2718,9 @@ nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
 			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 			fsreq.fd = nn_tointeger(computer, 0);
 			fsreq.action = NN_FS_CLOSE;
-			return state->handler(&fsreq);
+			err = state->handler(&fsreq);
+			if(err) return err;
+			return nn_pushbool(computer, true);
 		}
 		if(method == NN_FSNUM_READ) {
 			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);

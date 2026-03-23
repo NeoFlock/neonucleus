@@ -1,5 +1,6 @@
 # For MVP functionality
 
+- write a tester OS, basically a menu with tests to run
 - stop doing linear scans and do hashmaps smh (ls /dev is awfully slow and this MIGHT be why)
 - volatile filesystem
 - device info

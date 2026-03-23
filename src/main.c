@@ -200,7 +200,12 @@ nn_Exit ne_fsState_handler(nn_FilesystemRequest *req) {
 		if(feof(f)) {
 			req->strarg1 = NULL;
 		} else {
-			req->strarg1len = fread(req->strarg1, sizeof(char), req->strarg1len, f);
+			size_t off = 0;
+			while(off < req->strarg1len) {
+				if(feof(f)) break;
+				off += fread(req->strarg1 + off, sizeof(char), req->strarg1len - off, f);
+			}
+			req->strarg1len = off;
 		}
 		return NN_OK;
 	case NN_FS_WRITE:
