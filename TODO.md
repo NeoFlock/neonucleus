@@ -1,8 +1,10 @@
 # For MVP functionality
 
-- new component interface
+- finish `eeprom` class and volatile eeprom 
+- `filesystem`, `drive`, `gpu`, `screen` class implementations
 - `ncomplib` with reference component implementations (depends on libc)
-- the new component classes and implementations
+- write a tester OS, basically a menu with tests to run
+- volatile drive
 - volatile filesystem
 - device info
 
