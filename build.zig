@@ -10,43 +10,20 @@ const LibBuildOpts = struct {
 
 fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
     const dataMod = b.createModule(.{
-        .root_source_file = b.path("src/data.zig"),
         .target = opts.target,
         .optimize = opts.optimize,
         .strip = if (opts.optimize == .Debug) false else true,
         .unwind_tables = if (opts.optimize == .Debug) null else .none,
         .pic = true,
+        .sanitize_c = .full,
     });
 
     const strict = opts.optimize != .Debug;
 
     dataMod.addCSourceFiles(.{
         .files = &[_][]const u8{
-            "src/lock.c",
-            "src/utils.c",
-            "src/value.c",
-            "src/resource.c",
-            "src/component.c",
-            "src/computer.c",
-            "src/deviceInfo.c",
-            "src/universe.c",
-            "src/unicode.c",
-            // components
-            "src/components/eeprom.c",
-            "src/components/volatileEeprom.c",
-            "src/components/filesystem.c",
-            "src/components/volatileFilesystem.c",
-            "src/components/drive.c",
-            "src/components/volatileDrive.c",
-            "src/components/screen.c",
-            "src/components/gpu.c",
-            "src/components/keyboard.c",
-            "src/components/modem.c",
-            "src/components/loopbackModem.c",
-            "src/components/tunnel.c",
-            "src/components/loopbackTunnel.c",
-            "src/components/diskDrive.c",
-            "src/components/externalComputer.c",
+            "src/neonucleus.c",
+            "src/ncomplib.h",
         },
         .flags = &.{
             if (opts.baremetal) "-DNN_BAREMETAL" else "",
@@ -61,14 +38,6 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
 
     if (!opts.baremetal) {
         dataMod.link_libc = true; // we need a libc
-        dataMod.addCSourceFiles(.{
-            .files = &.{
-                "src/tinycthread.c",
-            },
-            .flags = &.{
-                "-fPIE",
-            },
-        });
     }
 
     dataMod.addIncludePath(b.path("src"));
@@ -213,8 +182,8 @@ pub fn build(b: *std.Build) !void {
         const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua53;
         emulator.addCSourceFiles(.{
             .files = &.{
-                "src/testLuaArch.c",
-                "src/emulator.c",
+                "src/luaarch.c",
+                "src/main.c",
             },
             .flags = &.{
                 if (opts.baremetal) "-DNN_BAREMETAL" else "",

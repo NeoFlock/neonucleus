@@ -1,6 +1,8 @@
 # For MVP functionality
 
-- stop doing linear scans and do hashmaps smh (ls /dev is awfully slow and this MIGHT be why)
+- new component interface
+- `ncomplib` with reference component implementations (depends on libc)
+- the new component classes and implementations
 - volatile filesystem
 - device info
 
@@ -44,7 +46,7 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 - `speaker` component, allows playing audio by asking for binary samples and pushing a signal when it needs more
 - `microphone` component, allows reading audio from nearby sources
 - `tape_drive` component, compatible with Computronics
-- `cd_reader` and `cd_writer` components, to work with CDs
+- `cd_drive` to work with CDs (can be read-only, write-only or read-write)
 - `serial` component, for serial communications with other devices (USB?)
 - `iron_noteblock` component
 - `colorful_lamp` component
@@ -61,4 +63,4 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 NOTE: we're mostly bottlenecked by the architecture (typically a Lua VM) and the intentional bottlenecking from call costs.
 
 - make signals use a circular buffer instead of a simple array
-- use a hashmap for components (and device info), this may require reworking how iterating over them is handled
+- use more arenas if possible

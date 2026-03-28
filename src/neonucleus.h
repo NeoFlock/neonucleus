@@ -227,6 +227,9 @@ void *nn_alloc(nn_Context *ctx, size_t size);
 void nn_free(nn_Context *ctx, void *memory, size_t size);
 void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize);
 
+typedef char nn_uuid[37];
+void nn_randomUUID(nn_Context *ctx, nn_uuid uuid);
+
 // Basic utils
 
 // Does canonical path handling. Is used for sandboxing paths.
@@ -481,24 +484,9 @@ void nn_resetIdleTime(nn_Computer *computer);
 // It also sets the idle timestamp to the current uptime.
 nn_Exit nn_tick(nn_Computer *computer);
 
-typedef struct nn_DeviceInfoEntry {
-	const char *name;
-	const char *value;
-} nn_DeviceInfoEntry;
+// raw component and methods
 
-typedef struct nn_DeviceInfo {
-	const char *address;
-	const nn_DeviceInfoEntry *entries;
-} nn_DeviceInfo;
-
-// adds some device information to the computer. This can also be removed.
-// Entries is terminated by a NULL name, and preferrably also NULL value.
-// It is perfectly fine to free entries after the call, it is copied.
-nn_Exit nn_addDeviceInfo(nn_Computer *computer, const char *address, const nn_DeviceInfoEntry entries[]);
-// Removes info assicated with a device
-void nn_removeDeviceInfo(nn_Computer *computer, const char *address);
-// gets the device info array.
-const nn_DeviceInfo *nn_getDeviceInfo(nn_Computer *computer, size_t *len);
+typedef struct nn_Component nn_Component;
 
 typedef enum nn_MethodFlags {
 	// calling will consume the entire call budget
@@ -517,91 +505,108 @@ typedef enum nn_MethodFlags {
 
 typedef struct nn_Method {
 	const char *name;
-	const char *docString;
+	const char *doc;
 	nn_MethodFlags flags;
-	int idx;
 } nn_Method;
 
-typedef struct nn_ComponentState nn_ComponentState;
+// component signals
+
+// tells the component to reset its state
+// sent to the components with slot >= 0 and to tmpfs when computer state is dropped
+#define NN_CSIGRESET "reset"
 
 typedef enum nn_ComponentAction {
-	// create the local state
-	NN_COMP_INIT,
-	// delete the local state
-	NN_COMP_DEINIT,
-	// perform a method call
-	NN_COMP_CALL,
-	// check if a method is enabled
-	NN_COMP_ENABLED,
-	// delete the type userdata
-	NN_COMP_FREETYPE,
+	// component dropped
+	NN_COMP_DROP,
+	// component method invoked
+	NN_COMP_INVOKE,
+	// checking if component method is enabled
+	// (may be locked by tier)
+	NN_COMP_CHECKMETHOD,
+	// signal sent to the machine
+	NN_COMP_SIGNAL,
 } nn_ComponentAction;
 
 typedef struct nn_ComponentRequest {
-	// the userdata of the component type. This may be an associated VM, for example.
-	void *typeUserdata;
-	// the userdata of the component, passed in addComponent. This may be an associated resource, for example.
-	void *compUserdata;
-	// the local state of the component. NN_COMP_INIT should initialize this pointer.
-	void *state;
+	nn_Context *ctx;
 	nn_Computer *computer;
-	// address of the component
-	const char *compAddress;
-	// the action requested
+	void *state;
 	nn_ComponentAction action;
-	// for NN_COMP_CALL, it is the idx of the method called.
-	// for NN_COMP_ENABLED, it is the idx of the method being checked.
-	int methodCalled;
+	// method index
+	unsigned int methodIdx;
 	union {
-		// for NN_COMP_CALL, it is the amount of return values.
+		// return count
 		size_t returnCount;
-		// for NN_COMP_ENABLED, it is whether the method is enabled.
+		// method enabled
 		bool methodEnabled;
+		// signal invocation
+		const char *signal;
 	};
 } nn_ComponentRequest;
 
-typedef nn_Exit nn_ComponentHandler(nn_ComponentRequest *req);
+typedef nn_Exit (nn_ComponentHandler)(nn_ComponentRequest *request);
 
-// Creates a new component type. It is safe to free name and methods afterwards.
-nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler);
-// NOTE: do not destroy this before destroying any components using it, or any computers with components using it.
-// The component type is still used one last time for the destructor of the components.
-void nn_destroyComponentState(nn_ComponentState *cstate);
+// creates a blank component.
+// It has no methods, 
+nn_Component *nn_createComponent(nn_Universe *universe, const char *address, const char *type);
+void nn_retainComponent(nn_Component *c);
+void nn_retainComponentN(nn_Component *c, size_t n);
+void nn_dropComponent(nn_Component *c);
+void nn_dropComponentN(nn_Component *c, size_t n);
 
-// adds a component. Outside of the initialization state (aka after the first tick), it also emits the signal for component added.
-// You MUST NOT destroy the component type while a component using that type still exists.
-// You can free the address after the call just fine.
-nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *cstate, const char *address, int slot, void *userdata);
-// Checks if a component of that address exists.
-bool nn_hasComponent(nn_Computer *computer, const char *address);
-// Checks if the component has that method.
-// This not only checks if the method exists in the component type,
-// but also checks if the method is enabled for the component instance.
-bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method);
-// removes a component. Outside of the initialization state (aka after the first tick), it also emits the signal for component removed.
-nn_Exit nn_removeComponent(nn_Computer *computer, const char *address);
-// Gets the name of a type of a component.
-const char *nn_getComponentType(nn_Computer *computer, const char *address);
-// Gets the slot of a component.
-int nn_getComponentSlot(nn_Computer *computer, const char *address);
-// Iterates over the methods of a component.
-// Returns NULL at end of iteration.
-// name should be NULL at the start.
-// NOTE: the method pointer MUST be returned by the iterator, as it is offset during iteration.
-const nn_Method *nn_nextComponentMethod(nn_Computer *computer, const char *address, const nn_Method *old);
-// iterate over components.
-// for prev = NULL, returns the first one.
-// returns NULL at the end of iteration.
-const char *nn_getNextComponent(nn_Computer *computer, const char *prev);
-// Returns the doc-string associated with a method.
-const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method);
-void *nn_getComponentUserdata(nn_Computer *computer, const char *address);
+// configure the state
+void nn_setComponentHandler(nn_Component *c, nn_ComponentHandler *handler);
+void nn_setComponentState(nn_Component *c, void *state);
+// sets the methods, same implications as setComponentMethodsArray.
+// methods is NULL-terminated, as in, it is terminated by a method with a NULL name.
+nn_Exit nn_setComponentMethods(nn_Component *c, const nn_Method *methods);
+// sets the methods.
+// The memory of the strings is copied, so they can be freed after this returns.
+// This operation is NOT atomic, if it fails, it will clear out the previous methods.
+nn_Exit nn_setComponentMethodsArray(nn_Component *c, const nn_Method *methods, size_t count);
+// Sets an internal type ID, which is meant to be a more precise typename.
+// For example, ncomplib would set ncl-screen for the screen component,
+// so the GPU can confirm it is being bound to a screen it knows how to use.
+nn_Exit nn_setComponentTypeID(nn_Component *c, const char *internalTypeID);
 
-// this uses the call stack.
-// Component calls must not call other components, it just doesn't work.
-// The lack of an argument count is because the entire call stack is assumed to be the arguments.
-// In the case of NN_EBUSY, you should call it again with the same arguments later.
-nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method);
+// get component state
+void *nn_getComponentState(nn_Component *c);
+// counts how many methods are registered. May return too many if some of them are not enabled.
+size_t nn_countComponentMethods(nn_Component *c);
+// will fill the methodnames array with the names of the *enabled* methods.
+// Will set *len to the amount of methods.
+void nn_getComponentMethods(nn_Component *c, const char **methodnames, size_t *len);
+// whether a method is defined and enabled
+bool nn_hasComponentMethod(nn_Component *c, const char *method);
+const char *nn_getComponentDoc(nn_Component *c, const char *method);
+nn_MethodFlags nn_getComponentMethodFlags(nn_Component *c, const char *method);
+const char *nn_getComponentType(nn_Component *c);
+const char *nn_getComponentTypeID(nn_Component *c);
+
+// Adds a component to the computer on a given slot.
+// This will also queue a component_added signal if the computer is in a running state.
+// If the component already is mounted, an error is returned.
+nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot);
+// Removes a component from the computer.
+// This will also queue a component_removed signal if the computer is in a running state.
+// If the component is not mounted, no error is returned.
+nn_Exit nn_unmountComponent(nn_Computer *c, const char *address);
+// gets a component by address. Will return NULL if there is none.
+nn_Component *nn_getComponent(nn_Computer *c, const char *address);
+int nn_getComponentSlot(nn_Computer *c, const char *address);
+size_t nn_countComponents(nn_Computer *c);
+void nn_getComponents(nn_Computer *c, const char **components);
+
+// invoke the component method.
+// Everything on-stack is taken as an argument.
+// Will pop off trailing nulls.
+// Every remaining is what the component returned.
+nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const char *method);
+
+// send a signal to a component.
+// Computer actually can be NULL, but the component may crash if the signal
+// assumes one is specified.
+nn_Exit nn_signalComponent(nn_Component *component, nn_Computer *computer, const char *signal);
 
 // Sets the call budget.
 // The default is 1,000.
@@ -806,44 +811,10 @@ nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount);
 // If there is no signal, it returns EBADSTATE
 nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 
-// The high-level API of the built-in components.
+// The high-level API of the built-in component classes.
 // These components still make no assumptions about the OS, and still require handlers to connect them to the outside work.
 
-// TODO: screen, gpu, filesystem, eeprom and the rest of the universe
-
-typedef enum nn_EEPROMAction {
-	// the eeprom instance has been dropped
-	NN_EEPROM_DROP,
-	// the eeprom state has been dropped
-	NN_EEPROM_FREE,
-	NN_EEPROM_GET,
-	NN_EEPROM_SET,
-	NN_EEPROM_GETDATA,
-	NN_EEPROM_SETDATA,
-	NN_EEPROM_GETLABEL,
-	NN_EEPROM_SETLABEL,
-	NN_EEPROM_GETARCH,
-	NN_EEPROM_SETARCH,
-	NN_EEPROM_ISREADONLY,
-	NN_EEPROM_MAKEREADONLY,
-} nn_EEPROMAction;
-
-typedef struct nn_EEPROMRequest {
-	// associated userdata
-	void *userdata;
-	// associated component userdata
-	void *instance;
-	// the computer making the request
-	nn_Computer *computer;
-	const struct nn_EEPROM *eepromConf;
-	nn_EEPROMAction action;
-	// all the get* options should set this to the length,
-	// and its initial value is the capacity of [buf].
-	// For ISREADONLY, this should be set to 0 if false and 1 if true.
-	unsigned int buflen;
-	// this may be the buffer length
-	char *buf;
-} nn_EEPROMRequest;
+// EEPROM class
 
 // reads and writes are always 1/1
 typedef struct nn_EEPROM {
@@ -865,6 +836,39 @@ typedef struct nn_EEPROM {
 	double writeDataDelay;
 } nn_EEPROM;
 
+typedef enum nn_EEPROMAction {
+	// component is dropped
+	NN_EEPROM_DROP,
+	// check if readonly. If so, buflen should be 1, else it should be 0.
+	NN_EEPROM_ISRO,
+	// make the EEPROM readonly. Checksum already verified.
+	NN_EEPROM_MKRO,
+	// write the contents of the code into buf.
+	// Set buflen to the length.
+	NN_EEPROM_GET,
+	// store the contents in buf into the EEPROM as code.
+	// the length of buf is in buflen.
+	NN_EEPROM_SET,
+	NN_EEPROM_GETDATA,
+	NN_EEPROM_SETDATA,
+	NN_EEPROM_GETARCH,
+	NN_EEPROM_SETARCH,
+	NN_EEPROM_GETLABEL,
+	NN_EEPROM_SETLABEL,
+} nn_EEPROMAction;
+
+typedef struct nn_EEPROMRequest {
+	nn_Context *ctx;
+	nn_Computer *computer;
+	void *state;
+	const nn_EEPROM *eeprom;
+	nn_EEPROMAction action;
+	char *buf;
+	size_t buflen;
+} nn_EEPROMRequest;
+
+typedef nn_Exit (nn_EEPROMHandler)(nn_EEPROMRequest *request);
+
 // Tier 1 - The normal EEPROM equivalent
 // Tier 2 - A better EEPROM
 // Tier 3 - An even better EEPROM
@@ -882,147 +886,10 @@ typedef struct nn_VEEPROM {
 	bool isReadonly;
 } nn_VEEPROM;
 
-typedef nn_Exit nn_EEPROMHandler(nn_EEPROMRequest *request);
+nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const nn_EEPROM *eeprom, void *state, nn_EEPROMHandler *handler);
+nn_Component *nn_createVEEPROM(nn_Universe *universe, const char *address, const nn_VEEPROM *veeprom, const nn_EEPROM *eeprom);
 
-// the userdata passed to the component is the userdata
-// in the handler
-nn_ComponentState *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata);
-nn_ComponentState *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem);
-
-// Note on paths:
-// - Paths given always have their length stored, but also have a NULL terminator.
-// - Paths are validated. They check for illegal characters as per OC's definition.
-// - Logical paradoxes such as rename("a", "a/b") are automatically checked and handled.
-// - \ are automatically replaced with /
-// - .. and leading / is handled automatically. This also improves sandboxing, as ../a.txt would become just a.txt
-// - For rename, it automatically checks if the destination exists and if so, errors out.
-typedef enum nn_FilesystemAction {
-	// the filesystem instance has been dropped.
-	// This is just for computer-local state, make sure to free it.
-	NN_FS_DROP,
-	// the filesystem state has been dropped.
-	// Make sure to close all file descriptors which are still open.
-	NN_FS_FREE,
-	// open a file. strarg1 stores the path, and strarg2 stores the mode.
-	// strarg1len and strarg2len are their respective lengths.
-	// The output should be in fd.
-	NN_FS_OPEN,
-	// read a file.
-	// The file descriptor is stored in fd,
-	// make sure to ensure it is valid.
-	// strarg1len is the capacity of strarg1.
-	// Write the result of reading into strarg1.
-	// Update strarg1len to reflect the amount of data read.
-	// Set strarg1 to NULL to indicate EOF.
-	NN_FS_READ,
-	// write to a file.
-	// The file descriptor is stored in fd,
-	// make sure to ensure it is valid.
-	// strarg1len is the amount of data to write.
-	// strarg1 is the contents of the buffer to write.
-	NN_FS_WRITE,
-	// seek a file.
-	// The file descriptor is stored in fd,
-	// make sure to ensure it is valid.
-	// The offset is stored in off.
-	// The seek mode is stored in whence.
-	// It should set off to the new position.
-	NN_FS_SEEK,
-	// close a file.
-	// The file descriptor is stored in fd,
-	// make sure to ensure it is valid.
-	NN_FS_CLOSE,
-	// open a directory file descriptor.
-	// The result should be in fd.
-	NN_FS_OPENDIR,
-	// read a directory file descriptor, stored in fd.
-	// The entry should be stored in strarg2, and strarg2len is the capacity of the buffer.
-	// If the buffer is too short, truncate the result.
-	// Set strarg2len to the length of the entry.
-	// If there are no more entries, set strarg2 to NULL.
-	// Do note that directories should have / appended at the end of their entries.
-	// Directory file descriptors are not exposed to the architecture,
-	// thus they can only come from NN_FS_OPENDIR.
-	// This means you may not need to validate these file descriptors.
-	NN_FS_READDIR,
-	// close a directory file descriptor, stored in fd.
-	// Directory file descriptors are not exposed to the architecture,
-	// thus they can only come from NN_FS_OPENDIR.
-	// This means you may not need to validate these file descriptors.
-	NN_FS_CLOSEDIR,
-	// Create a directory at a given path stored in strarg1.
-	// strarg1len is the length of the path.
-	// It is meant to also create parent directories recursively
-	// as needed.
-	NN_FS_MKDIR,
-	// Return the lastmodified timestamp.
-	// This number is stored in seconds.
-	// The timestamp should be stored in size, it may not make
-	// sense but it is a field and it is there.
-	// Do note that the lastModified() method returns it in milliseconds,
-	// however it must be a multiple of 1000 due to OpenOS depending
-	// on that behavior.
-	NN_FS_LASTMODIFIED,
-	// Checks if a path, stored in strarg1, is a directory.
-	// If it is, size should be set to 1.
-	// If it is not, size should be set to 0.
-	NN_FS_ISDIRECTORY,
-	// Checks if the filesystem is read-only.
-	// If it is, size should be set to 1.
-	// If it is not, size should be set to 0.
-	NN_FS_ISREADONLY,
-	// Checks if a path, stored in strarg1, exists on the filesystem.
-	// If it is, size should be set to 1.
-	// If it is not, size should be set to 0.
-	NN_FS_EXISTS,
-	// Returns the label.
-	// The label should be written into strarg1, with strarg1len as the capacity.
-	// Set strarg1len to the label length.
-	NN_FS_GETLABEL,
-	// Sets the label.
-	// The label is stored in strarg1, with strarg1len as the length.
-	NN_FS_SETLABEL,
-	// Gets the space used, it should be stored in size.
-	NN_FS_SPACEUSED,
-	// Gets 2 paths, strarg1 and strarg2, with their lengths.
-	// It should try to rename strarg1 to strarg2, as in,
-	// it should move strarg1 to be at strarg2, potentially
-	// using recursive directory copies.
-	NN_FS_RENAME,
-	// Removes the path stored in strarg1.
-	NN_FS_REMOVE,
-	// Returns the size of the entry at strarg1.
-	// The size of a directory is typically 0.
-	// The size of a file is typically the amount of bytes in its contents.
-	// Using other measures of size will rarely break code,
-	// but may confuse users.
-	NN_FS_SIZE,
-} nn_FilesystemAction;
-
-typedef enum nn_FilesystemWhence {
-	// relative to start
-	NN_SEEK_SET,
-	// relative to the current position
-	NN_SEEK_CUR,
-	// relative to the EOF position.
-	NN_SEEK_END,
-} nn_FilesystemWhence;
-
-typedef struct nn_FilesystemRequest {
-	void *userdata;
-	void *instance;
-	nn_Computer *computer;
-	struct nn_Filesystem *fsConf;
-	nn_FilesystemAction action;
-	int fd;
-	nn_FilesystemWhence whence;
-	int off;
-	char *strarg1;
-	size_t strarg1len;
-	char *strarg2;
-	size_t strarg2len;
-	size_t size;
-} nn_FilesystemRequest;
+// Filesystem class
 
 typedef struct nn_Filesystem {
 	// the maximum capacity of the filesystem
@@ -1048,8 +915,6 @@ extern const nn_Filesystem nn_defaultFilesystems[4];
 extern const nn_Filesystem nn_defaultFloppy;
 // a generic tmpfs
 extern const nn_Filesystem nn_defaultTmpFS;
-
-typedef nn_Exit nn_FilesystemHandler(nn_FilesystemRequest *request);
 
 typedef struct nn_VFileNode {
 	// the name of the node.
@@ -1085,63 +950,7 @@ typedef struct nn_VFilesystem {
 	nn_VFileNode *image;
 } nn_VFilesystem;
 
-nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata);
-nn_ComponentState *nn_createVFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, const nn_VFilesystem *vfs);
-
-typedef enum nn_DriveAction {
-	// instance dropped
-	NN_DRIVE_DROP,
-	// free screen state
-	NN_DRIVE_FREE,
-	// Gets the current label.
-	// [index] is set to the capacity of [buf].
-	// You must write the label into [buf], then set [index] to the length of the label.
-	// Empty label means no label.
-	NN_DRIVE_GETLABEL,
-	// Sets the current label.
-	// [index] is set to the length of [buf].
-	// Empty label means no label.
-	// Set [index] to the new length of the label, if it has been truncated.
-	NN_DRIVE_SETLABEL,
-	// gets the current read head, or more accurately, the last sector used
-	// in order to compute seeking penalties.
-	// You must output the current read head in [index].
-	NN_DRIVE_GETCURSECTOR,
-	// Reads a sector.
-	// The sector index is in [index], and the contents are in [buf].
-	NN_DRIVE_READSECTOR,
-	// Writes a sector.
-	// The sector index is in [index].
-	// Output the contents of that sector in [buf].
-	NN_DRIVE_WRITESECTOR,
-	// Reads a byte
-	// The byte index is in [index].
-	// You must output the byte in [byte].
-	NN_DRIVE_READBYTE,
-	// Writes a byte.
-	// The byte index is in [index], the byte is in [byte].
-	NN_DRIVE_WRITEBYTE,
-} nn_DriveAction;
-
-// Note that sectors and bytes are 1-indexed.
-// Bounds checking is done automatically by the interface.
-typedef struct nn_DriveRequest {
-	void *userdata;
-	void *instance;
-	nn_Computer *computer;
-	struct nn_Drive *driveConf;
-	nn_DriveAction action;
-	size_t index;
-	union {
-		char *buf;
-		// OC explicitly uses *signed* chars.
-		// Helper methods for reading unsigned bytes cast it to an unsigned byte first.
-		// Just, do not ask.
-		signed char byte;
-	};
-} nn_DriveRequest;
-
-typedef nn_Exit nn_DriveHandler(nn_DriveRequest *req);
+// Drive class
 
 typedef struct nn_Drive {
 	// The capacity of the drive.
@@ -1191,64 +1000,9 @@ typedef struct nn_VDrive {
 } nn_VDrive;
 
 extern const nn_Drive nn_defaultDrives[4];
+extern const nn_Drive nn_floppyDrive;
 
-nn_ComponentState *nn_createDrive(nn_Universe *universe, const nn_Drive *drive, nn_DriveHandler *handler, void *userdata);
-nn_ComponentState *nn_createVDrive(nn_Universe *universe, const nn_Drive *drive, const nn_VDrive *vdrive);
-
-typedef enum nn_ScreenAction {
-	// instance dropped
-	NN_SCR_DROP,
-	// free screen state
-	NN_SCR_FREE,
-
-	// set w to 1 if it is on, or 0 if it is off.
-	NN_SCR_ISON,
-	// attempt to turn the screen on.
-	// set w to 1 if it was on, or 0 if it was off.
-	// set h to 1 if it is now on, or 0 if it is now off.
-	NN_SCR_TURNON,
-	// attempt to turn the screen off.
-	// set w to 1 if it was on, or 0 if it was off.
-	// set h to 1 if it is now on, or 0 if it is now off.
-	NN_SCR_TURNOFF,
-	// get a keyboard. The index requested is stored in h.
-	// If the index is out of bounds, set keyboard to NULL.
-	// Else, write the keyboard address into the buffer in keyboard.
-	// The capacity of the buffer is stored in w.
-	NN_SCR_GETKEYBOARD,
-	// change the screen to/from precise mode.
-	// Precise mode means mouse events will have real-number coordinates, as opposed to integer-based ones.
-	// NeoNucleus does not automatically round this, you are meant to round it.
-	// The new precision value is stored in w, where it is a 1 to enable it and 0 to disable it.
-	// Set w to 1 if precise mode is now enabled, or 0 if it isn't.
-	NN_SCR_SETPRECISE,
-	// Set w to 1 if precise mode is enabled, or 0 if it isn't.
-	NN_SCR_ISPRECISE,
-	// change the screen to/from inverted touch mode.
-	// Inverted touch mode normally provides an alternative way to interact with the touchscreen.
-	// For example, in OC, it makes the GUI only open with shift+rightclick, and normal rightclick
-	// triggers a touch event instead. It is best to give it an equivalent meaning to OC's to prevent
-	// unexpected program behavior.
-	// The new inverted touch mode state is stored in w, where it is a 1 to enable it and 0 to disable it.
-	// Set w to 1 if inverted touch mode is now enabled, or 0 if it isn't.
-	NN_SCR_SETTOUCHINVERTED,
-	// Set w to 1 if inverted touch mode is enabled, or 0 if it isn't.
-	NN_SCR_ISTOUCHINVERTED,
-	// Gets the aspect ratio (amount of screen blocks joined together).
-	// Outside of MC, this may not make much sense, in which case you can just set it to 1x1.
-	// Store the width in w and the height in h.
-	NN_SCR_GETASPECTRATIO,
-} nn_ScreenAction;
-
-typedef struct nn_ScreenRequest {
-	void *userdata;
-	void *instance;
-	nn_Computer *computer;
-	nn_ScreenAction action;
-	int w;
-	int h;
-	char *keyboard;
-} nn_ScreenRequest;
+// Screen class
 
 typedef enum nn_ScreenFeatures {
 	NN_SCRF_NONE = 0,
@@ -1270,196 +1024,30 @@ typedef enum nn_ScreenFeatures {
 // however it exists as a runtime reference of what
 // the conventional screen tiers are.
 typedef struct nn_ScreenConfig {
+	// maximum width
 	int maxWidth;
+	// maximum height
 	int maxHeight;
+	// screen features
 	nn_ScreenFeatures features;
+	// default palette, if applicable.
+	// Can be NULL if there is none,
+	// in which case consider memsetting
+	// them to #000000.
+	int *defaultPalette;
+	// the amount of editable palette colors
 	int paletteColors;
+	// how many editable palette colors there are.
+	// It'd always be the first N ones.
+	int editableColors;
+	// the maximum depth of the screen
 	char maxDepth;
 } nn_ScreenConfig;
 
 // OC has 3 tiers, NN adds a 4th one as well.
 extern const nn_ScreenConfig nn_defaultScreens[4];
 
-typedef nn_Exit nn_ScreenHandler(nn_ScreenRequest *req);
-
-nn_ComponentState *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata);
-// a useless component which does nothing
-nn_ComponentState *nn_createKeyboard(nn_Universe *universe);
-
-// Remember:
-// - Colors are in 0xRRGGBB format.
-// - Screen coordinates and palettes are 1-indexed.
-// - If NN_GPU_SETRESOLUTION returns NN_OK, a screen_resized signal is queued automatically.
-// - VRAM is always fast
-typedef enum nn_GPUAction {
-	// instance dropped
-	NN_GPU_DROP,
-	// component state dropped
-	NN_GPU_FREE,
-
-	// Conventional GPU functions
-
-	// requests to bind to a screen connected to the computer.
-	// The address is stored in text, with the length in width.
-	// The interface does check that the computer does have the screen, but do look out
-	// for time-of-check/time-of-use issues which may occur in multi-threaded environments.
-	// If x is set to 1, the reset flag is enabled. This means the GPU should "reset" the state
-	// of the screen.
-	NN_GPU_BIND,
-	// requests to unbind the GPU from its screen.
-	// If there is no screen, it just does nothing.
-	NN_GPU_UNBIND,
-	// Ask for the screen the GPU is currently bound to.
-	// If it is not bound to any, text should be set to NULL.
-	// If it is, you must write to text the address of the screen.
-	// width stores the capacity of text, so if needed, truncate it to that many bytes.
-	// The length of this address must be stored in width.
-	NN_GPU_GETSCREEN,
-	// Gets the current background.
-	// x should store either the color in 0xRRGGBB format or the palette index.
-	// y should be 1 if x is a palette index and 0 if it is a color.
-	NN_GPU_GETBACKGROUND,
-	// Sets the current background.
-	// x should store either the color in 0xRRGGBB format or the palette index.
-	// y should be 1 if x is a palette index and 0 if it is a color.
-	// The values x and y should be updated to reflect the old state.
-	NN_GPU_SETBACKGROUND,
-	// Gets the current foreground.
-	// x should store either the color in 0xRRGGBB format or the palette index.
-	// y should be 1 if x is a palette index and 0 if it is a color.
-	NN_GPU_GETFOREGROUND,
-	// Sets the current foreground.
-	// x should store either the color in 0xRRGGBB format or the palette index.
-	// y should be 1 if x is a palette index and 0 if it is a color.
-	// The values x and y should be updated to reflect the old state.
-	NN_GPU_SETFOREGROUND,
-	// Gets the palette color.
-	// x is the index.
-	// y should be set to the color.
-	NN_GPU_GETPALETTECOLOR,
-	// Gets the palette color.
-	// x is the index.
-	// y is the color.
-	NN_GPU_SETPALETTECOLOR,
-	// Gets the maximum depth supported by the GPU and screen.
-	// Valid depth values in OC are 1, 4 and 8, however NN also recognizes 2, 3, 16 and 24.
-	// The result should be stored in x.
-	NN_GPU_MAXDEPTH,
-	// Gets the current depth the screen is displaying at.
-	// The result should be stored in x.
-	NN_GPU_GETDEPTH,
-	// Sets the current depth the screen is displaying at.
-	// The new depth is in x.
-	// This should not change the stored color values of neither the palette nor the characters,
-	// but simply change what their color is translated to graphically.
-	// The old depth should be stored in x.
-	NN_GPU_SETDEPTH,
-	// Gets the maximum resolution supported by the GPU and screen.
-	// Result should be in width and height.
-	NN_GPU_MAXRESOLUTION,
-	// Gets the resolution of the screen.
-	// Result should be in width and height.
-	NN_GPU_GETRESOLUTION,
-	// Sets the resolution of the screen.
-	// The new resolution should be stored in width and height.
-	// If successful, a screen_resized event is implicitly queued.
-	NN_GPU_SETRESOLUTION,
-	// Gets the current screen viewport.
-	// The result should be in width and height.
-	NN_GPU_GETVIEWPORT,
-	// Sets the screen viewport.
-	// The new viewport dimensions are stored in width and height.
-	NN_GPU_SETVIEWPORT,
-	// Gets a character.
-	// The position requested is given in x and y.
-	// The codepoint of the character should be set in [codepoint].
-	// The foreground and background color should be set in [width] and [height].
-	// The palette indexes of the foreground and background should be set
-	// in [dest] and [src] respectively. If the pixel color was not from
-	// the palette, the imaginary -1 palette index can be used.
-	NN_GPU_GET,
-	// Sets a horizontal line of text at a given x, y.
-	// The position is stored in x, y, and is the position of the first character.
-	// The text goes left-to-right on the horizontal line. Anything off-screen is discared.
-	// There is no wrapping.
-	// The text is stored in text, with the size of the text, in bytes, being stored in width.
-	NN_GPU_SET,
-	// like NN_GPU_SET, but the text is set vertically.
-	// This means instead of going from left-to-right on the screen on a horizontal line,
-	// it is up-to-down on a vertical line.
-	NN_GPU_SETVERTICAL,
-	// Copies a portion of the screen to another location.
-	// The rectangle being copied is width x height, and has the top-left corner at x, y.
-	// The destination rectangle is also width x height, but has the top-left corner at x + tx, y + ty.
-	// The copy happens as if it is using an intermediary buffer, thus even if the source and destination
-	// intersect, the order in which characters are copied must not change the result.
-	NN_GPU_COPY,
-	// Fills a rectangle
-	// The rectangle's top-left corner is at x, y, and its dimensions are width x height.
-	// The character it should be filled with has its unicode codepoint stored in codepoint.
-	NN_GPU_FILL,
-
-	// VRAM buffers (always blazing fast)
-	
-	// Should return the current active buffer.
-	// 0 for the screen, or if there is no screen.
-	// The result should be stored in x.
-	NN_GPU_GETACTIVEBUFFER,
-	// Switches the active buffer to a new one, stored in x.
-	NN_GPU_SETACTIVEBUFFER,
-	// Gets a buffer by index in an imaginary list containing all of them.
-	// The index is in x, the buffer is output in y.
-	// If y is 0, the sequence is assumed to end.
-	NN_GPU_BUFFERS,
-	// Allocates a buffer.
-	// The buffer sizes are in width and height, with 0 x 0 meaning max resolution (default).
-	// This consumes exactly width * height VRAM.
-	// The new buffer should be put in x.
-	// If there was not enough VRAM for this, x can be set to 0.
-	NN_GPU_ALLOCBUFFER,
-	// Frees a buffer.
-	// The buffer is stored in x.
-	// This releases the same VRAM that the buffer consumed when allocated.
-	NN_GPU_FREEBUFFER,
-	// Frees all buffers. The free VRAM should be equal to the total VRAM after this.
-	NN_GPU_FREEBUFFERS,
-	// Gets memory info about the GPU.
-	// x should be set to the amount of free VRAM available.
-	NN_GPU_FREEMEM,
-	// Gets the size of a buffer, stored in x.
-	// The size should be stored in width and height.
-	NN_GPU_GETBUFFERSIZE,
-	// Copy a region between buffers or between the screen and buffers.
-	// The destination buffer is stored in dest. If 0, it refers to the screen.
-	// The source buffer is stored in src. If 0, it refers to the screen.
-	// x, y, width and height define the source rectangle, in the same way as in fill, to copy from the source buffer.
-	// tx, ty refer to the top-left corner for the destination rectangle, in the destination buffer. It has the same width
-	// and height as the source rectangle.
-	// Screen-to-screen copies are illegal and checked, no need to worry about handling them.
-	NN_GPU_BITBLT,
-} nn_GPUAction;
-
-typedef struct nn_GPURequest {
-	void *userdata;
-	void *instance;
-	nn_Computer *computer;
-	struct nn_GPU *gpuConf;
-	nn_GPUAction action;
-	int x;
-	int y;
-	int width;
-	int height;
-	union {
-		struct {
-			int tx;
-			int ty;
-		};
-		nn_codepoint codepoint;
-		char *text;
-	};
-	int dest;
-	int src;
-} nn_GPURequest;
+// GPU class
 
 typedef struct nn_GPU {
 	// the minimum between these and the screen's
@@ -1485,12 +1073,8 @@ typedef struct nn_GPU {
 	double energyPerClear;
 } nn_GPU;
 
-typedef nn_Exit nn_GPUHandler(nn_GPURequest *req);
-
 // 1 GPU tier for every screen.
 extern const nn_GPU nn_defaultGPUs[4];
-
-nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata);
 
 // Colors and palettes.
 // Do note that the 
@@ -1518,9 +1102,8 @@ void nn_initPalettes();
 int nn_mapColor(int color, int *palette, size_t len);
 // Expensive.
 // Maps a color within a given depth.
-// ocCompatible only matters for 4-bit, and determines whether to use the OC palette or the MC palette.
 // Invalid depths behave identically to 24-bit, in which case the color is left unchanged.
-int nn_mapDepth(int color, int depth, bool ocCompatible);
+int nn_mapDepth(int color, int depth);
 
 // the name of a depth, if valid.
 // If invalid, NULL is returned, thus this can be used to check

@@ -280,9 +280,15 @@ fail:
 static int luaArch_component_list(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	lua_createtable(L, 64, 0);
-	for(const char *addr = nn_getNextComponent(arch->computer, NULL); addr != NULL; addr = nn_getNextComponent(arch->computer, addr)) {
-		lua_pushstring(L, nn_getComponentType(arch->computer, addr));
-		lua_setfield(L, -2, addr);
+	size_t len = nn_countComponents(arch->computer);
+	const char *comps[len];
+	nn_getComponents(arch->computer, comps);
+	for(size_t i = 0; i < len; i++) {
+		nn_Component *c = nn_getComponent(arch->computer, comps[i]);
+		if(c != NULL) {
+			lua_pushstring(L, nn_getComponentType(nn_getComponent(arch->computer, comps[i])));
+			lua_setfield(L, -2, comps[i]);
+		}
 	}
 	return 1;
 }
@@ -293,22 +299,11 @@ static int luaArch_component_invoke(lua_State *L) {
 	const char *method = luaL_checkstring(L, 2);
 	size_t argc = lua_gettop(L);
 	
-	if(!nn_hasComponent(arch->computer, address)) {
-		lua_pushnil(L);
-		lua_pushstring(L, "no such component");
-		return 2;
-	}
-	if(!nn_hasMethod(arch->computer, address, method)) {
-		lua_pushnil(L);
-		lua_pushstring(L, "no such method");
-		return 2;
-	}
-	
 	nn_clearstack(arch->computer);
 	for(size_t i = 3; i <= argc; i++) {
 		luaArch_luaToNN(arch, L, i);
 	}
-	nn_Exit err = nn_call(arch->computer, address, method);
+	nn_Exit err = nn_invokeComponent(arch->computer, address, method);
 	if(err != NN_OK) {
 		lua_pushnil(L);
 		lua_pushstring(L, nn_getError(arch->computer));
@@ -326,12 +321,13 @@ static int luaArch_component_type(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	const char *address = luaL_checkstring(L, 1);
 
-	if(!nn_hasComponent(arch->computer, address)) {
+	nn_Component *c = nn_getComponent(arch->computer, address);
+	if(c == NULL) {
 		lua_pushnil(L);
 		lua_pushstring(L, "no such component");
 		return 2;
 	}
-	lua_pushstring(L, nn_getComponentType(arch->computer, address));
+	lua_pushstring(L, nn_getComponentType(c));
 	return 1;
 }
 
@@ -340,17 +336,19 @@ static int luaArch_component_doc(lua_State *L) {
 	const char *address = luaL_checkstring(L, 1);
 	const char *method = luaL_checkstring(L, 2);
 
-	if(!nn_hasComponent(arch->computer, address)) {
+	nn_Component *c = nn_getComponent(arch->computer, address);
+	if(c == NULL) {
 		lua_pushnil(L);
 		lua_pushstring(L, "no such component");
 		return 2;
 	}
-	if(!nn_hasMethod(arch->computer, address, method)) {
+	const char *doc = nn_getComponentDoc(c, method);
+	if(doc == NULL) {
 		lua_pushnil(L);
 		lua_pushstring(L, "no such method");
 		return 2;
 	}
-	lua_pushstring(L, nn_getComponentDoc(arch->computer, address, method));
+	lua_pushstring(L, doc);
 	return 1;
 }
 
@@ -358,7 +356,7 @@ static int luaArch_component_slot(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	const char *address = luaL_checkstring(L, 1);
 
-	if(!nn_hasComponent(arch->computer, address)) {
+	if(nn_getComponent(arch->computer, address) == NULL) {
 		lua_pushnil(L);
 		lua_pushstring(L, "no such component");
 		return 2;
@@ -371,18 +369,23 @@ static int luaArch_component_methods(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	const char *address = luaL_checkstring(L, 1);
 
-	if(!nn_hasComponent(arch->computer, address)) {
+	nn_Component *c = nn_getComponent(arch->computer, address);
+
+	if(c == NULL) {
 		lua_pushnil(L);
 		lua_pushstring(L, "no such component");
 		return 2;
 	}
-	const nn_Method *method = nn_nextComponentMethod(arch->computer, address, NULL);
-	lua_createtable(L, 0, 0);
-	for(; method != NULL; method = nn_nextComponentMethod(arch->computer, address, method)) {
-		if(method->flags & NN_FIELD_MASK) continue; // skip
+	size_t methodLen = nn_countComponentMethods(c);
+	const char *methods[methodLen];
+	nn_getComponentMethods(c, methods, &methodLen);
+	lua_createtable(L, 0, methodLen);
+	for(size_t i = 0; i < methodLen; i++) {
+		nn_MethodFlags flags = nn_getComponentMethodFlags(c, methods[i]);
+		if(flags & NN_FIELD_MASK) continue; // skip
 
-		lua_pushboolean(L, (method->flags & NN_DIRECT) != 0);
-		lua_setfield(L, -2, method->name);
+		lua_pushboolean(L, (flags & NN_DIRECT) != 0);
+		lua_setfield(L, -2, methods[i]);
 	}
 	return 1;
 }
@@ -391,24 +394,29 @@ static int luaArch_component_fields(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	const char *address = luaL_checkstring(L, 1);
 
-	if(!nn_hasComponent(arch->computer, address)) {
+	nn_Component *c = nn_getComponent(arch->computer, address);
+
+	if(c == NULL) {
 		lua_pushnil(L);
 		lua_pushstring(L, "no such component");
 		return 2;
 	}
-	const nn_Method *method = nn_nextComponentMethod(arch->computer, address, NULL);
-	lua_createtable(L, 0, 0);
-	for(; method != NULL; method = nn_nextComponentMethod(arch->computer, address, method)) {
-		if((method->flags & NN_FIELD_MASK) == 0) continue; // skip
+	size_t methodLen = nn_countComponentMethods(c);
+	const char *methods[methodLen];
+	nn_getComponentMethods(c, methods, &methodLen);
+	lua_createtable(L, 0, methodLen);
+	for(size_t i = 0; i < methodLen; i++) {
+		nn_MethodFlags flags = nn_getComponentMethodFlags(c, methods[i]);
+		if((flags & NN_FIELD_MASK) == 0) continue; // skip
 
 		lua_createtable(L, 0, 3);
-		lua_pushboolean(L, (method->flags & NN_DIRECT) != 0);
+		lua_pushboolean(L, (flags & NN_DIRECT) != 0);
 		lua_setfield(L, -2, "direct");
-		lua_pushboolean(L, (method->flags & NN_GETTER) != 0);
+		lua_pushboolean(L, (flags & NN_GETTER) != 0);
 		lua_setfield(L, -2, "getter");
-		lua_pushboolean(L, (method->flags & NN_SETTER) != 0);
+		lua_pushboolean(L, (flags & NN_SETTER) != 0);
 		lua_setfield(L, -2, "setter");
-		lua_setfield(L, -2, method->name);
+		lua_setfield(L, -2, methods[i]);
 	}
 	return 1;
 }
@@ -593,7 +601,11 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 			arch = nn_alloc(ctx, sizeof(*arch));
 			arch->freeMem = nn_getTotalMemory(computer) * nn_getMemoryScale(computer);
 			arch->computer = computer;
+#if LUA_VERSION_NUM >= 505L
+			lua_State *L = lua_newstate(luaArch_alloc, arch, rand());
+#else
 			lua_State *L = lua_newstate(luaArch_alloc, arch);
+#endif
 			arch->L = L;
 			req->localState = arch;
 			luaL_openlibs(L);
@@ -613,7 +625,12 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 	case NN_ARCH_TICK:;
 		lua_settop(arch->L, 1);
 		int ret = 0;
+#if LUA_VERSION_NUM >= 504L
 		int res = lua_resume(arch->L, NULL, 0, &ret);
+#else
+		int res = lua_resume(arch->L, NULL, 0);
+		ret = lua_gettop(arch->L);
+#endif
 		//printf("res: %d\n", res);
 		if(res == LUA_OK) {
 			// halted, fuck

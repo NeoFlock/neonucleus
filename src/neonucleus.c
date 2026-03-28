@@ -34,13 +34,13 @@ bool nn_decRef(nn_refc_t *refc) {
 
 typedef atomic_size_t nn_refc_t;
 
-void nn_incRef(nn_refc_t *refc) {
-	atomic_fetch_add(refc, 1);
+void nn_incRef(nn_refc_t *refc, size_t n) {
+	atomic_fetch_add(refc, n);
 }
 
-bool nn_decRef(nn_refc_t *refc) {
-	nn_refc_t old = atomic_fetch_sub(refc, 1);
-	return old == 1;
+bool nn_decRef(nn_refc_t *refc, size_t n) {
+	nn_refc_t old = atomic_fetch_sub(refc, n);
+	return old == n;
 }
 #endif
 
@@ -95,6 +95,7 @@ void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize) 
 	}
 	return ctx->alloc(ctx->state, memory, oldSize, newSize);
 }
+
 
 typedef struct nn_ArenaBlock {
 	// we should make each block be 1 allocation instead of 2
@@ -224,6 +225,7 @@ const char *nn_arstrdup(nn_Arena *arena, const char *s) {
 }
 
 void nn_strfree(nn_Context *ctx, char *s) {
+	if(s == NULL) return;
 	size_t l = nn_strlen(s);
 	nn_free(ctx, s, sizeof(char) * (l+1));
 }
@@ -455,6 +457,21 @@ double nn_randfi(nn_Context *ctx) {
 	return n / (double)ctx->rngMaximum;
 }
 
+void nn_randomUUID(nn_Context *ctx, nn_uuid uuid) {
+	// inaccurate
+	// TODO: make it correct, based off how uuid.lua generates them
+
+	const char *alpha = "0123456789abcdef";
+	for(int i = 0; i < 36; i++) {
+		uuid[i] = alpha[nn_rand(ctx) & 0xF];
+	}
+	uuid[36] = '\0';
+	uuid[8] = '-';
+	uuid[13] = '-';
+	uuid[18] = '-';
+	uuid[23] = '-';
+}
+
 static void *nn_defaultAlloc(void *_, void *memory, size_t oldSize, size_t newSize) {
 #ifndef NN_BAREMETAL
 	if(newSize == 0) {
@@ -632,13 +649,7 @@ typedef struct nn_HashMap {
 	const nn_HashContext *hash;
 } nn_HashMap;
 
-// tells hashmaps to scale the capacity by this much
-#ifndef NN_HASH_MULTIPLIER
-#define NN_HASH_MULTIPLIER 32
-#endif
-
 nn_Exit nn_hashInit(nn_HashMap *map, size_t capacity, nn_Context *ctx, const nn_HashContext *hash) {
-	capacity *= NN_HASH_MULTIPLIER;
 	void *buf = nn_alloc(ctx, hash->entSize * capacity);
 	if(buf == NULL) return NN_ENOMEM;
 	map->buf = buf;
@@ -752,16 +763,27 @@ size_t nn_strhash(const char *s) {
 
 // real stuff
 
-typedef struct nn_ComponentState {
-	nn_Universe *universe;
-	void *userdata;
-	nn_Arena arena;
+typedef struct nn_MethodEntry {
 	const char *name;
-	nn_ComponentHandler *handler;
-	nn_HashMap methods;
-} nn_ComponentState;
+	const char *doc;
+	nn_MethodFlags flags;
+	unsigned int idx;
+} nn_MethodEntry;
 
-static size_t nn_methodHash(nn_HashAction act, nn_Method *slot, nn_Method *ent) {
+typedef struct nn_Component {
+	nn_refc_t refc;
+	nn_Universe *universe;
+	char *address;
+	char *type;
+	char *internalID;
+	void *state;
+	nn_ComponentHandler *handler;
+	nn_Arena methodArena;
+	nn_HashMap methodsMap;
+	size_t methodCount;
+} nn_Component;
+
+static size_t nn_methodHash(nn_HashAction act, nn_MethodEntry *slot, nn_MethodEntry *ent) {
 	switch(act) {
 	case NN_HASH_INIT:
 		slot->name = NULL;
@@ -784,7 +806,7 @@ static size_t nn_methodHash(nn_HashAction act, nn_Method *slot, nn_Method *ent) 
 }
 
 static const nn_HashContext nn_methodHasher = {
-	.entSize = sizeof(nn_Method),
+	.entSize = sizeof(nn_MethodEntry),
 	.handler = (nn_HashHandler *)nn_methodHash,
 };
 
@@ -794,29 +816,27 @@ typedef struct nn_Universe {
 	nn_Context ctx;
 } nn_Universe;
 
-typedef struct nn_Component {
-	char *address;
-	nn_ComponentState *cstate;
+typedef struct nn_ComponentEntry {
+	const char *address;
+	nn_Component *comp;
+	double budgetUsed;
 	int slot;
-	float budgetUsed;
-	void *userdata;
-	void *state;
-} nn_Component;
+} nn_ComponentEntry;
 
-static size_t nn_componentHash(nn_HashAction act, nn_Component *slot, nn_Component *ent) {
+static size_t nn_componentHash(nn_HashAction act, nn_ComponentEntry *slot, nn_ComponentEntry *ent) {
 	switch(act) {
 	case NN_HASH_INIT:
 		slot->address = NULL;
-		slot->cstate = NULL;
+		slot->comp = NULL;
 		break;
 	case NN_HASH_HASH:
 		return nn_strhash(slot->address);
 	case NN_HASH_REMOVE:
-		slot->cstate = NULL;
+		slot->comp = NULL;
 		break;
 	case NN_HASH_CMP:
 		if(slot->address == NULL) return NN_HASH_FREE;
-		if(slot->cstate == NULL) return NN_HASH_REMOVED;
+		if(slot->comp == NULL) return NN_HASH_REMOVED;
 		if(ent == NULL) return NN_HASH_DIFFERENT;
 		return nn_strcmp(slot->address, ent->address) == 0 ? NN_HASH_EQUAL : NN_HASH_DIFFERENT;
 	}
@@ -824,7 +844,7 @@ static size_t nn_componentHash(nn_HashAction act, nn_Component *slot, nn_Compone
 }
 
 static const nn_HashContext nn_componentHasher = {
-	.entSize = sizeof(nn_Component),
+	.entSize = sizeof(nn_ComponentEntry),
 	.handler = (nn_HashHandler *)nn_componentHash,
 };
 
@@ -891,9 +911,6 @@ typedef struct nn_Computer {
 	size_t callBudget;
 	size_t totalCallBudget;
 	nn_HashMap components;
-	size_t deviceInfoCap;
-	size_t deviceInfoLen;
-	nn_DeviceInfo *deviceInfo;
 	double totalEnergy;
 	void *energyState;
 	nn_EnergyHandler *energyHandler;
@@ -922,69 +939,6 @@ nn_Universe *nn_createUniverse(nn_Context *ctx) {
 void nn_destroyUniverse(nn_Universe *universe) {
 	nn_Context ctx = universe->ctx;
 	nn_free(&ctx, universe, sizeof(nn_Universe));
-}
-
-nn_ComponentState *nn_createComponentState(nn_Universe *universe, const char *name, void *userdata, const nn_Method methods[], nn_ComponentHandler *handler) {
-	nn_Context *ctx = &universe->ctx;
-	
-	nn_ComponentState *ctype = nn_alloc(ctx, sizeof(nn_ComponentState));
-	if(ctype == NULL) return NULL;
-	ctype->universe = universe;
-	ctype->userdata = userdata;
-	ctype->handler = handler;
-	ctype->methods.ctx = NULL;
-
-	nn_Arena *arena = &ctype->arena;
-	nn_arinit(arena, ctx);
-
-	const char *namecpy = nn_arstrdup(arena, name);
-	if(namecpy == NULL) goto fail;
-	ctype->name = namecpy;
-
-	size_t methodCount = 0;
-	while(methods[methodCount].name != NULL) methodCount++;
-
-	if(nn_hashInit(&ctype->methods, methodCount, ctx, &nn_methodHasher)) goto fail;
-
-	for(size_t i = 0; i < methodCount; i++) {
-		nn_Method cpy;
-		cpy.flags = methods[i].flags;
-		cpy.name = nn_arstrdup(arena, methods[i].name);
-		if(cpy.name == NULL) goto fail;
-		cpy.docString = nn_arstrdup(arena, methods[i].docString);
-		if(cpy.docString == NULL) goto fail;
-		cpy.idx = methods[i].idx;
-
-		if(!nn_hashPut(&ctype->methods, &cpy)) goto fail;
-	}
-
-	return ctype;
-fail:;
-	 // yes, because of arenas and a bit of hashmap bullshit, we support freeing a "partially initialized state"
-	 nn_destroyComponentState(ctype);
-	 return NULL;
-}
-
-void nn_destroyComponentState(nn_ComponentState *ctype) {
-	if(ctype == NULL) return;
-	nn_Context *ctx = &ctype->universe->ctx;
-
-	nn_ComponentRequest req;
-	req.typeUserdata = ctype->userdata;
-	req.compUserdata = NULL;
-	req.state = NULL;
-	req.computer = NULL;
-	req.compAddress = NULL;
-	req.action = NN_COMP_FREETYPE;
-	req.methodCalled = 0;
-	ctype->handler(&req);
-
-	if(ctype->methods.ctx != NULL) {
-		nn_hashDeinit(&ctype->methods);
-	}
-
-	nn_ardestroy(&ctype->arena);
-	nn_free(ctx, ctype, sizeof(nn_ComponentState));
 }
 
 double nn_default_energyHandler(void *state, nn_Computer *computer, double amount) {
@@ -1035,15 +989,6 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 		return NULL;
 	}
 
-	c->deviceInfoCap = maxDevices;
-	c->deviceInfoLen = 0;
-	c->deviceInfo = nn_alloc(ctx, sizeof(nn_DeviceInfo) * maxDevices);
-	if(c->deviceInfo == NULL) {
-		nn_hashDeinit(&c->components);
-		nn_strfree(ctx, c->address);
-		nn_free(ctx, c, sizeof(nn_Computer));
-		return NULL;
-	}
 	c->totalEnergy = 500;
 	c->energyState = NULL;
 	c->energyHandler = nn_default_energyHandler;
@@ -1061,20 +1006,19 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 }
 
 static void nn_dropValue(nn_Value val);
-static void nn_dropComponent(nn_Computer *computer, nn_Component c);
 
-static nn_Component *nn_getInternalComponent(nn_Computer *computer, const char *address) {
-	nn_Component lookingFor = {
-		.address = (char *)address,
+static nn_ComponentEntry *nn_getInternalComponent(nn_Computer *computer, const char *address) {
+	nn_ComponentEntry lookingFor = {
+		.address = address,
 	};
 	return nn_hashGet(&computer->components, &lookingFor);
 }
 
-static const nn_Method *nn_getInternalMethod(nn_Component *c, const char *method) {
-	nn_Method lookingFor = {
+static const nn_MethodEntry *nn_getInternalMethod(nn_Component *c, const char *method) {
+	nn_MethodEntry lookingFor = {
 		.name = method,
 	};
-	return nn_hashGet(&c->cstate->methods, &lookingFor);
+	return nn_hashGet(&c->methodsMap, &lookingFor);
 }
 
 void nn_destroyComputer(nn_Computer *computer) {
@@ -1092,8 +1036,11 @@ void nn_destroyComputer(nn_Computer *computer) {
 	for(size_t i = 0; i < computer->stackSize; i++) {
 		nn_dropValue(computer->callstack[i]);
 	}
-	for(nn_Component *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
-		nn_dropComponent(computer, *c);
+	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
+		if(c->slot >= 0 || (computer->tmpaddress != NULL && nn_strcmp(computer->tmpaddress, c->address))) {
+			nn_signalComponent(c->comp, computer, NN_CSIGRESET);
+		}
+		nn_dropComponent(c->comp);
 	}
 	for(size_t i = 0; i < computer->signalCount; i++) {
 		nn_Signal s = computer->signals[i];
@@ -1105,7 +1052,6 @@ void nn_destroyComputer(nn_Computer *computer) {
 	}
 
 	nn_hashDeinit(&computer->components);
-	nn_free(ctx, computer->deviceInfo, sizeof(nn_DeviceInfo) * computer->deviceInfoCap);
 	if(computer->tmpaddress != NULL) nn_strfree(ctx, computer->tmpaddress);
 	nn_strfree(ctx, computer->address);
 	nn_free(ctx, computer, sizeof(nn_Computer));
@@ -1395,7 +1341,7 @@ bool nn_isComputerIdle(nn_Computer *computer) {
 }
 
 void nn_addIdleTime(nn_Computer *computer, double time) {
-	//computer->idleTimestamp += time;
+	computer->idleTimestamp += time;
 }
 
 void nn_resetIdleTime(nn_Computer *computer) {
@@ -1443,145 +1389,335 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	return NN_OK;
 }
 
-nn_Exit nn_addComponent(nn_Computer *computer, nn_ComponentState *ctype, const char *address, int slot, void *userdata) {
-	nn_Component c;
-	c.address = nn_strdup(&computer->universe->ctx, address);
-	if(c.address == NULL) return NN_ENOMEM;
-	c.cstate = ctype;
-	c.slot = slot;
-	c.userdata = userdata;
-	c.state = NULL;
-	c.budgetUsed = 0;
+// TODO: every component method src/neonucleus.h:530
+
+static nn_Exit nn_defaultComponent(nn_ComponentRequest *request) {
+	return NN_OK;
+}
+
+nn_Component *nn_createComponent(nn_Universe *universe, const char *address, const char *type) {
+	nn_Context *ctx = &universe->ctx;
+	nn_Component *c = nn_alloc(ctx, sizeof(*c));
+	if(c == NULL) return NULL;
+	nn_arinit(&c->methodArena, ctx);
+	c->universe = universe;
+	c->state = NULL;
+	c->address = NULL;
+	c->internalID = NULL;
+	c->type = NULL;
+	c->refc = 1;
+	c->handler = nn_defaultComponent;
+	c->methodCount = 0;
+	c->methodsMap.ctx = NULL;
+
+	if(address == NULL) {
+		c->address = nn_alloc(ctx, sizeof(nn_uuid));
+		if(c->address == NULL) goto fail;
+		nn_randomUUID(ctx, c->address);
+	} else {
+		c->address = nn_strdup(ctx, address);
+		if(c->address == NULL) goto fail;
+	}
+
+	c->type = nn_strdup(ctx, type);
+	if(c->type == NULL) goto fail;
+
+	c->internalID = nn_strdup(ctx, type);
+	if(c->internalID == NULL) goto fail;
+
+	// cannot fail, as does not actually allocate
+	nn_hashInit(&c->methodsMap, 0, ctx, &nn_methodHasher);
+
+	return c;
+fail:;
+	 nn_ardestroy(&c->methodArena);
+	 if(c->methodsMap.ctx != NULL) nn_hashDeinit(&c->methodsMap);
+	 nn_strfree(ctx, c->address);
+	 nn_strfree(ctx, c->internalID);
+	 nn_strfree(ctx, c->type);
+	 nn_free(ctx, c, sizeof(*c));
+	 return NULL;
+}
+
+void nn_retainComponent(nn_Component *c) {
+	nn_retainComponentN(c, 1);
+}
+
+void nn_retainComponentN(nn_Component *c, size_t n) {
+	nn_incRef(&c->refc, n);
+}
+
+void nn_dropComponent(nn_Component *c) {
+	nn_dropComponentN(c, 1);
+}
+
+void nn_dropComponentN(nn_Component *c, size_t n) {
+	if(!nn_decRef(&c->refc, n)) return;
+	nn_Context *ctx = &c->universe->ctx;
 
 	nn_ComponentRequest req;
-	req.typeUserdata = ctype->userdata;
-	req.compUserdata = userdata;
-	req.state = NULL;
-	req.computer = computer;
-	req.compAddress = address;
-	req.action = NN_COMP_INIT;
-	req.methodCalled = 0;
+	req.state = c->state;
+	req.ctx = ctx;
+	req.computer = NULL;
+	req.action = NN_COMP_DROP;
+	c->handler(&req);
 
-	nn_Exit err = ctype->handler(&req);
-	if(err != NN_OK) {
-		nn_strfree(&computer->universe->ctx, c.address);
-		return err;
+	nn_ardestroy(&c->methodArena);
+	nn_strfree(ctx, c->address);
+	nn_strfree(ctx, c->type);
+	nn_strfree(ctx, c->internalID);
+	nn_hashDeinit(&c->methodsMap);
+}
+
+void nn_setComponentHandler(nn_Component *c, nn_ComponentHandler *handler) {
+	c->handler = handler;
+}
+
+void nn_setComponentState(nn_Component *c, void *state) {
+	c->state = state;
+}
+
+nn_Exit nn_setComponentMethods(nn_Component *c, const nn_Method *methods) {
+	size_t len = 0;
+	while(methods[len].name != NULL) len++;
+	return nn_setComponentMethodsArray(c, methods, len);
+}
+
+nn_Exit nn_setComponentMethodsArray(nn_Component *c, const nn_Method *methods, size_t count) {
+	nn_Context *ctx = &c->universe->ctx;
+	nn_Exit e = nn_hashInit(&c->methodsMap, count, ctx, &nn_methodHasher);
+	if(e) return e;
+	nn_ardestroy(&c->methodArena);
+	nn_arinit(&c->methodArena, ctx);
+	for(size_t i = 0; i < count; i++) {
+		const char *name = nn_arstrdup(&c->methodArena, methods[i].name);
+		if(name == NULL) goto fail;
+		const char *doc = nn_arstrdup(&c->methodArena, methods[i].doc);
+		if(doc == NULL) goto fail;
+
+		nn_MethodEntry method = {
+			.name = name,
+			.doc = doc,
+			.flags = methods[i].flags,
+			.idx = i,
+		};
+		if(!nn_hashPut(&c->methodsMap, &method)) goto fail;
 	}
-	// get the state back!
-	c.state = req.state;
+	c->methodCount = count;
+	return NN_OK;
+fail:
+	nn_hashDeinit(&c->methodsMap);
+	nn_hashInit(&c->methodsMap, 0, ctx, &nn_methodHasher);
+	nn_ardestroy(&c->methodArena);
+	nn_arinit(&c->methodArena, ctx);
+	c->methodCount = 0;
+	return NN_ENOMEM;
+}
 
-	if(!nn_hashPut(&computer->components, &c)) {
-		nn_dropComponent(computer, c);
-		return NN_ELIMIT;
+// Sets an internal type ID, which is meant to be a more precise typename.
+// For example, ncomplib would set ncl-screen for the screen component,
+// so the GPU can confirm it is being bound to a screen it knows how to use.
+nn_Exit nn_setComponentTypeID(nn_Component *c, const char *internalTypeID) {
+	char *newType = nn_strdup(&c->universe->ctx, internalTypeID);
+	if(newType == NULL) return NN_ENOMEM;
+	nn_strfree(&c->universe->ctx, c->internalID);
+	c->internalID = newType;
+	return NN_OK;
+}
+
+void *nn_getComponentState(nn_Component *c) {
+	return c->state;
+}
+
+// counts how many methods are registered. May return too many if some of them are not enabled.
+size_t nn_countComponentMethods(nn_Component *c) {
+	return c->methodCount;
+}
+
+static nn_MethodEntry *nn_getComponentMethodEntry(nn_Component *c, const char *method) {
+	nn_MethodEntry ent = {
+		.name = method,
+	};
+	return nn_hashGet(&c->methodsMap, &ent);
+}
+
+// will fill the methodnames array with the names of the *enabled* methods.
+// Will set *len to the amount of methods.
+void nn_getComponentMethods(nn_Component *c, const char **methodnames, size_t *len) {
+	size_t enabled = 0;
+	nn_HashMap *m = &c->methodsMap;
+
+	for(nn_MethodEntry *ent = nn_hashIterate(m, NULL); ent != NULL; ent = nn_hashIterate(m, ent)) {
+		if(!nn_hasComponentMethod(c, ent->name)) continue;
+		methodnames[enabled] = ent->name;
+		enabled++;
 	}
 
-	if(computer->state == NN_RUNNING) {
-		err = nn_pushstring(computer, "component_added");
-		if(err) return err;
-		err = nn_pushstring(computer, address);
-		if(err) return err;
-		err = nn_pushstring(computer, ctype->name);
-		if(err) return err;
-		err = nn_pushSignal(computer, 3);
-		if(err) return err;
+	*len = enabled;
+}
+
+bool nn_hasComponentMethod(nn_Component *c, const char *method) {
+	nn_MethodEntry *ent = nn_getComponentMethodEntry(c, method);
+	if(ent == NULL) return false;
+
+	nn_ComponentRequest req;
+	req.ctx = &c->universe->ctx;
+	req.computer = NULL;
+	req.state = c->state;
+	req.action = NN_COMP_CHECKMETHOD;
+	req.methodIdx = ent->idx;
+	// by default, yes
+	req.methodEnabled = true;
+	c->handler(&req);
+	return req.methodEnabled;
+}
+
+const char *nn_getComponentDoc(nn_Component *c, const char *method) {
+	nn_MethodEntry *ent = nn_getComponentMethodEntry(c, method);
+	if(ent == NULL) return NULL;
+	return ent->doc;
+}
+
+nn_MethodFlags nn_getComponentMethodFlags(nn_Component *c, const char *method) {
+	nn_MethodEntry *ent = nn_getComponentMethodEntry(c, method);
+	if(ent == NULL) return -1;
+	return ent->flags;
+}
+
+const char *nn_getComponentType(nn_Component *c) {
+	return c->type;
+}
+
+const char *nn_getComponentTypeID(nn_Component *c) {
+	return c->internalID;
+}
+
+static nn_Exit nn_pushComponentAdded(nn_Computer *c, const char *address, const char *type) {
+	nn_Exit e = nn_pushstring(c, "component_added");
+	if(e) return e;
+	e = nn_pushstring(c, address);
+	if(e) return e;
+	e = nn_pushstring(c, type);
+	if(e) return e;
+	return nn_pushSignal(c, 3);
+}
+
+static nn_Exit nn_pushComponentRemoved(nn_Computer *c, const char *address, const char *type) {
+	nn_Exit e = nn_pushstring(c, "component_removed");
+	if(e) return e;
+	e = nn_pushstring(c, address);
+	if(e) return e;
+	e = nn_pushstring(c, type);
+	if(e) return e;
+	return nn_pushSignal(c, 3);
+}
+
+nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot) {
+	if(nn_getComponent(c, comp->address) != NULL) return NN_EBADSTATE;
+
+	nn_ComponentEntry ent = {
+		.address = comp->address,
+		.comp = comp,
+		.slot = slot,
+		.budgetUsed = 0,
+	};
+	if(!nn_hashPut(&c->components, &ent)) return NN_ELIMIT;
+	nn_retainComponent(comp);
+	if(c->state == NN_RUNNING) {
+		return nn_pushComponentAdded(c, comp->address, comp->type);
 	}
 	return NN_OK;
 }
 
+nn_Exit nn_unmountComponent(nn_Computer *c, const char *address) {
+	nn_Component *comp = nn_getComponent(c, address);
+	if(comp == NULL) return NN_OK;
+	nn_ComponentEntry lookingFor = {.address = address};
+	nn_hashRemove(&c->components, &lookingFor);
 
-bool nn_hasComponent(nn_Computer *computer, const char *address) {
-	return nn_getInternalComponent(computer, address) != NULL;
-}
-
-bool nn_hasMethod(nn_Computer *computer, const char *address, const char *method) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) return false;
-	return nn_getInternalMethod(c, method) != NULL;
-}
-
-static void nn_dropComponent(nn_Computer *computer, nn_Component c) {
-	nn_ComponentRequest req;
-	req.typeUserdata = c.cstate->userdata;
-	req.compUserdata = c.userdata;
-	req.state = c.state;
-	req.computer = computer;
-	req.compAddress = c.address;
-	req.action = NN_COMP_DEINIT;
-	req.methodCalled = 0;
-
-	c.cstate->handler(&req);
-	
-	nn_strfree(&computer->universe->ctx, c.address);
-}
-
-nn_Exit nn_removeComponent(nn_Computer *computer, const char *address) {
-	size_t j = 0;
-	nn_Component *pc = nn_getInternalComponent(computer, address);
-	// already removed!
-	if(pc == NULL) return NN_EBADSTATE;
-	// copied cuz hashRemove will invalidate the memory
-	nn_Component c = *pc;
-	nn_dropComponent(computer, c);
-	nn_hashRemove(&computer->components, pc);
-
-	if(computer->state == NN_RUNNING) {
-		nn_Exit err = nn_pushstring(computer, "component_removed");
-		if(err) return err;
-		err = nn_pushstring(computer, address);
-		if(err) return err;
-		// not a UAF because c is on-stack
-		err = nn_pushstring(computer, c.cstate->name);
-		if(err) return err;
-		err = nn_pushSignal(computer, 3);
-		if(err) return err;
+	nn_Exit e = NN_OK;
+	if(c->state == NN_RUNNING) {
+		e = nn_pushComponentRemoved(c, address, comp->type);
 	}
+	nn_dropComponent(comp);
+	return e;
+}
+
+static nn_ComponentEntry *nn_getComponentEntry(nn_Computer *c, const char *address) {
+	nn_ComponentEntry ent = {
+		.address = address,
+	};
+	return nn_hashGet(&c->components, &ent);
+}
+
+nn_Component *nn_getComponent(nn_Computer *c, const char *address) {
+	nn_ComponentEntry *ent = nn_getComponentEntry(c, address);
+	if(ent == NULL) return NULL;
+	return ent->comp;
+}
+
+int nn_getComponentSlot(nn_Computer *c, const char *address) {
+	nn_ComponentEntry *ent = nn_getComponentEntry(c, address);
+	if(ent == NULL) return -1;
+	return ent->slot;
+}
+
+size_t nn_countComponents(nn_Computer *c) {
+	size_t len = 0;
+	for(nn_ComponentEntry *ent = nn_hashIterate(&c->components, NULL); ent != NULL; ent = nn_hashIterate(&c->components, ent)) len++;
+	return len;
+}
+
+void nn_getComponents(nn_Computer *c, const char **components) {
+	size_t i = 0;
+	for(nn_ComponentEntry *ent = nn_hashIterate(&c->components, NULL); ent != NULL; ent = nn_hashIterate(&c->components, ent)) {
+		components[i] = ent->address;
+		i++;
+	}
+}
+
+nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const char *method) {
+	nn_Component *c = nn_getComponent(computer, compAddress);
+	if(c == NULL) {
+		nn_setError(computer, "no such component");
+		return NN_EBADCALL;
+	}
+	if(!nn_hasComponentMethod(c, method)) {
+		nn_setError(computer, "no such method");
+		return NN_EBADCALL;
+	}
+	nn_MethodEntry *m = nn_getComponentMethodEntry(c, method);
+
+	nn_ComponentRequest req;
+	req.ctx = &c->universe->ctx;
+	req.computer = computer;
+	req.state = c->state;
+	req.action = NN_COMP_INVOKE;
+	req.methodIdx = m->idx;
+	req.returnCount = 0;
+	nn_Exit e = c->handler(&req);
+	if(e) return e;
+
+	size_t endOfTrim = computer->stackSize - req.returnCount;
+	for(size_t i = 0; i < endOfTrim; i++) {
+		nn_dropValue(computer->callstack[i]);
+	}
+	for(size_t i = endOfTrim; i < computer->stackSize; i++) {
+		computer->callstack[i - endOfTrim] = computer->callstack[i];
+	}
+	computer->stackSize = req.returnCount;
+
 	return NN_OK;
 }
 
-const char *nn_getComponentType(nn_Computer *computer, const char *address) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) return NULL;
-	return c->cstate->name;
-}
-
-int nn_getComponentSlot(nn_Computer *computer, const char *address) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) return -1;
-	return c->slot;
-}
-
-const nn_Method *nn_nextComponentMethod(nn_Computer *computer, const char *address, const nn_Method *method) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) return NULL;
-	// fuck the const qualifier
-	return nn_hashIterate(&c->cstate->methods, (void *)method);
-}
-
-const char *nn_getNextComponent(nn_Computer *computer, const char *prev) {
-	if(prev == NULL) {
-		nn_Component *c = nn_hashIterate(&computer->components, NULL);
-		if(c == NULL) return NULL;
-		return c->address;
-	}
-	nn_Component *c = nn_getInternalComponent(computer, prev);
-	if(c == NULL) return NULL;
-	c = nn_hashIterate(&computer->components, c);
-	if(c == NULL) return NULL;
-	return c->address;
-}
-
-const char *nn_getComponentDoc(nn_Computer *computer, const char *address, const char *method) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) return NULL;
-	const nn_Method *m = nn_getInternalMethod(c, method);
-	if(m == NULL) return NULL;
-	return m->docString;
-}
-
-void *nn_getComponentUserdata(nn_Computer *computer, const char *address) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) return NULL;
-	return c->userdata;
+nn_Exit nn_signalComponent(nn_Component *component, nn_Computer *computer, const char *signal) {
+	nn_ComponentRequest req;
+	req.ctx = &component->universe->ctx;
+	req.computer = computer;
+	req.state = component->state;
+	req.action = NN_COMP_SIGNAL;
+	req.signal = signal;
+	return component->handler(&req);
 }
 
 static void nn_retainValue(nn_Value val) {
@@ -1626,62 +1762,7 @@ static void nn_dropValue(nn_Value val) {
 	}
 }
 
-nn_Exit nn_call(nn_Computer *computer, const char *address, const char *method) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) {
-		nn_setError(computer, "no such component");
-		return NN_EBADCALL;
-	}
-	const nn_Method *m = nn_getInternalMethod(c, method);
-	if(m == NULL) {
-		nn_setError(computer, "no such method");
-		return NN_EBADCALL;
-	}
-	// minimum cost of a component call
-	if(computer->callBudget > 0) computer->callBudget--;
-	if((m->flags & NN_DIRECT) == NN_INDIRECT) computer->callBudget = 0;
-
-	while(computer->stackSize > 0) {
-		if(!nn_isnull(computer, computer->stackSize-1)) break;
-		nn_pop(computer);
-	}
-	
-	nn_ComponentRequest req;
-	req.typeUserdata = c->cstate->userdata;
-	req.compUserdata = c->userdata;
-	req.state = c->state;
-	req.computer = computer;
-	req.compAddress = address;
-	req.action = NN_COMP_CALL;
-	req.methodCalled = m->idx;
-	// default is to return nothing
-	req.returnCount = 0;
-
-	nn_Exit err = c->cstate->handler(&req);
-	if(err) {
-		if(err != NN_EBADCALL) nn_setErrorFromExit(computer, err);
-		// clear junk
-		nn_clearstack(computer);
-		return err;
-	}
-
-	if(computer->stackSize < req.returnCount) {
-		err = NN_EBELOWSTACK;
-		nn_setErrorFromExit(computer, err);
-		nn_clearstack(computer);
-		return err;
-	}
-
-	size_t endOfTrim = computer->stackSize - req.returnCount;
-	for(size_t i = 0; i < endOfTrim; i++) {
-		nn_dropValue(computer->callstack[i]);
-	}
-	for(size_t i = 0; i < req.returnCount; i++) {
-		computer->callstack[i] = computer->callstack[endOfTrim + i];
-	}
-	computer->stackSize = req.returnCount;
-	return NN_OK;
-}
+// TODO: call
 
 void nn_setCallBudget(nn_Computer *computer, size_t budget) {
 	computer->totalCallBudget = budget;
@@ -1700,7 +1781,7 @@ void nn_resetCallBudget(nn_Computer *computer) {
 }
 
 bool nn_componentsOverused(nn_Computer *computer) {
-	for(nn_Component *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
+	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
 		if(c->budgetUsed >= NN_COMPONENT_CALLBUDGET) return true;
 	}
 	if(computer->totalCallBudget == 0) return false;
@@ -1708,7 +1789,7 @@ bool nn_componentsOverused(nn_Computer *computer) {
 }
 
 void nn_resetComponentBudgets(nn_Computer *computer) {
-	for(nn_Component *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
+	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
 		c->budgetUsed = 0;
 	}
 	computer->callBudget = computer->totalCallBudget;
@@ -1718,7 +1799,7 @@ bool nn_costComponent(nn_Computer *computer, const char *address, double perTick
 }
 
 bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick) {
-	nn_Component *c = nn_getInternalComponent(computer, address);
+	nn_ComponentEntry *c = nn_getInternalComponent(computer, address);
 	if(c == NULL) return false;
 	c->budgetUsed += (NN_COMPONENT_CALLBUDGET * amount) / perTick;
 	return c->budgetUsed >= NN_COMPONENT_CALLBUDGET;
@@ -2120,261 +2201,6 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount) {
 
 // todo: everything
 
-typedef struct nn_EEPROM_state {
-	nn_Universe *universe;
-	nn_EEPROM eeprom;
-	void *userdata;
-	nn_EEPROMHandler *handler;
-} nn_EEPROM_state;
-
-typedef struct nn_VEEPROM_state {
-	nn_Universe *universe;
-	char *code;
-	size_t codelen;
-	char *data;
-	size_t datalen;
-	size_t archlen;
-	size_t labellen;
-	bool isReadonly;
-	char arch[NN_MAX_ARCHNAME];
-	char label[NN_MAX_LABEL];
-} nn_VEEPROM_state;
-
-typedef enum nn_EEPROM_Nums {
-	NN_EENUM_GETSIZE,
-	NN_EENUM_GETDATASIZE,
-	NN_EENUM_GETLABEL,
-	NN_EENUM_SETLABEL,
-	NN_EENUM_GET,
-	NN_EENUM_GETDATA,
-	NN_EENUM_SET,
-	NN_EENUM_SETDATA,
-	NN_EENUM_GETARCH,
-	NN_EENUM_SETARCH,
-	NN_EENUM_ISRO,
-	NN_EENUM_MKRO,
-	NN_EENUM_CHKSUM,
-} nn_EEPROM_Nums;
-
-nn_Exit nn_eeprom_handler(nn_ComponentRequest *req) {
-	nn_EEPROM_state *state = req->typeUserdata;
-	void *instance = req->compUserdata;
-	// NULL for FREETYPE
-	nn_Computer *computer = req->computer;
-	nn_Context ctx = state->universe->ctx;
-
-	nn_EEPROMRequest ereq;
-	ereq.userdata = state->userdata;
-	ereq.instance = instance;
-	ereq.computer = computer;
-	ereq.eepromConf = &state->eeprom;
-
-	int method = req->methodCalled;
-
-	switch(req->action) {
-	case NN_COMP_FREETYPE:
-		ereq.action = NN_EEPROM_FREE;
-		state->handler(&ereq);
-		nn_free(&ctx, state, sizeof(*state));
-		break;
-	case NN_COMP_INIT:
-		return NN_OK;
-	case NN_COMP_DEINIT:
-		ereq.action = NN_EEPROM_DROP;
-		return state->handler(&ereq);
-	case NN_COMP_ENABLED:
-		req->methodEnabled = true;
-		return NN_OK;
-	case NN_COMP_CALL:
-		if(method == NN_EENUM_GETSIZE) {
-			req->returnCount = 1;
-			return nn_pushnumber(computer, state->eeprom.size);
-		}
-		if(method == NN_EENUM_GETDATASIZE) {
-			req->returnCount = 1;
-			return nn_pushnumber(computer, state->eeprom.dataSize);
-		}
-		if(method == NN_EENUM_ISRO) {
-			ereq.action = NN_EEPROM_ISREADONLY;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			req->returnCount = 1;
-			return nn_pushbool(computer, ereq.buflen != 0);
-		}
-		if(method == NN_EENUM_CHKSUM) {
-			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
-			// yup, on-stack.
-			// Perhaps in the future we'll make it heap-allocated.
-			char buf[state->eeprom.size];
-			ereq.action = NN_EEPROM_GET;
-			ereq.buf = buf;
-			ereq.buflen = state->eeprom.size;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			unsigned int chksum = nn_computeCRC32(buf, ereq.buflen);
-			char encoded[8];
-			nn_crc32ChecksumBytes(chksum, encoded);
-			req->returnCount = 1;
-			return nn_pushlstring(computer, encoded, 8);
-		}
-		if(method == NN_EENUM_MKRO) {
-			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
-			// 1st argument is a string, which is the checksum we're meant to have
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			size_t len;
-			const char *desired = nn_tolstring(computer, 0, &len);
-			if(len != 8) {
-				nn_setError(computer, "invalid checksum");
-				return NN_EBADCALL;
-			}
-			// yup, on-stack.
-			// Perhaps in the future we'll make it heap-allocated.
-			char buf[state->eeprom.size];
-			ereq.action = NN_EEPROM_GET;
-			ereq.buf = buf;
-			ereq.buflen = state->eeprom.size;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			unsigned int chksum = nn_computeCRC32(buf, ereq.buflen);
-			char encoded[8];
-			nn_crc32ChecksumBytes(chksum, encoded);
-			if(nn_memcmp(encoded, desired, sizeof(char) * 8)) {
-				nn_setError(computer, "incorrect checksum");
-				return NN_EBADCALL;
-			}
-		
-			ereq.action = NN_EEPROM_MAKEREADONLY;
-			e = state->handler(&ereq);
-			if(e) return e;
-
-			req->returnCount = 1;
-			return nn_pushbool(computer, true);
-		}
-		if(method == NN_EENUM_GETLABEL) {
-			char buf[NN_MAX_LABEL];
-			ereq.action = NN_EEPROM_GETLABEL;
-			ereq.buf = buf;
-			ereq.buflen = NN_MAX_LABEL;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			req->returnCount = 1;
-			if(ereq.buf == NULL) return nn_pushnull(computer);
-			return nn_pushlstring(computer, buf, ereq.buflen);
-		}
-		if(method == NN_EENUM_SETLABEL) {
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			size_t len;
-			const char *s = nn_tolstring(computer, 0, &len);
-			if(len > NN_MAX_LABEL) len = NN_MAX_LABEL;
-			char buf[NN_MAX_LABEL];
-			nn_memcpy(buf, s, sizeof(char) * len);
-			ereq.action = NN_EEPROM_SETLABEL;
-			ereq.buf = buf;
-			ereq.buflen = len;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			req->returnCount = 1;
-			return nn_pushlstring(computer, buf, ereq.buflen);
-		}
-		if(method == NN_EENUM_GET) {
-			nn_removeEnergy(computer, state->eeprom.readEnergyCost);
-			// yup, on-stack.
-			// Perhaps in the future we'll make it heap-allocated.
-			char buf[state->eeprom.size];
-			ereq.action = NN_EEPROM_GET;
-			ereq.buf = buf;
-			ereq.buflen = state->eeprom.size;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			req->returnCount = 1;
-			return nn_pushlstring(computer, buf, ereq.buflen);
-		}
-		if(method == NN_EENUM_GETDATA) {
-			nn_removeEnergy(computer, state->eeprom.readDataEnergyCost);
-			// yup, on-stack.
-			// Perhaps in the future we'll make it heap-allocated.
-			char buf[state->eeprom.dataSize];
-			ereq.action = NN_EEPROM_GETDATA;
-			ereq.buf = buf;
-			ereq.buflen = state->eeprom.dataSize;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			req->returnCount = 1;
-			return nn_pushlstring(computer, buf, ereq.buflen);
-		}
-		if(method == NN_EENUM_GETARCH) {
-			nn_removeEnergy(computer, state->eeprom.readDataEnergyCost);
-			char buf[NN_MAX_ARCHNAME];
-			ereq.action = NN_EEPROM_GETARCH;
-			ereq.buf = buf;
-			ereq.buflen = NN_MAX_ARCHNAME;
-			nn_Exit e = state->handler(&ereq);
-			if(e) return e;
-			req->returnCount = 1;
-			if(ereq.buflen == 0) return nn_pushnull(computer);
-			return nn_pushlstring(computer, buf, ereq.buflen);
-		}
-		if(method == NN_EENUM_SET) {
-			nn_removeEnergy(computer, state->eeprom.writeEnergyCost);
-			nn_addIdleTime(computer, state->eeprom.writeDelay);
-			if(nn_getstacksize(computer) < 1) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			if(!nn_isstring(computer, 0)) {
-				nn_setError(computer, "bad argument #1 (string expected)");
-				return NN_EBADCALL;
-			}
-			size_t len;
-			const char *s = nn_tolstring(computer, 0, &len);
-			if(len > state->eeprom.size) {
-				nn_setError(computer, "not enough space");
-				return NN_EBADCALL;
-			}
-			ereq.action = NN_EEPROM_SET;
-			// DO NOT MODIFY IT!!!!
-			ereq.buf = (char*)s;
-			ereq.buflen = len;
-			return state->handler(&ereq);
-		}
-		if(method == NN_EENUM_SETDATA) {
-			nn_removeEnergy(computer, state->eeprom.writeDataEnergyCost);
-			nn_addIdleTime(computer, state->eeprom.writeDataDelay);
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			size_t len;
-			const char *s = nn_tolstring(computer, 0, &len);
-			if(len > state->eeprom.dataSize) {
-				nn_setError(computer, "not enough space");
-				return NN_EBADCALL;
-			}
-			ereq.action = NN_EEPROM_SETDATA;
-			// DO NOT MODIFY IT!!!!
-			ereq.buf = (char*)s;
-			ereq.buflen = len;
-			return state->handler(&ereq);
-		}
-		if(method == NN_EENUM_SETARCH) {
-			nn_removeEnergy(computer, state->eeprom.writeDataEnergyCost);
-			nn_Exit err = nn_defaultstring(computer, 0, "");
-			if(err) return err;
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			size_t len;
-			const char *s = nn_tolstring(computer, 0, &len);
-			if(len > NN_MAX_ARCHNAME) {
-				nn_setError(computer, "not enough space");
-				return NN_EBADCALL;
-			}
-			ereq.action = NN_EEPROM_SETARCH;
-			// DO NOT MODIFY IT!!!!
-			ereq.buf = (char*)s;
-			ereq.buflen = len;
-			return state->handler(&ereq);
-		}
-		return NN_OK;
-	}
-	return NN_OK;
-}
-
 const nn_EEPROM nn_defaultEEPROMs[4] = {
 	(nn_EEPROM) {
 		.size = 4 * NN_KiB,
@@ -2418,142 +2244,6 @@ const nn_EEPROM nn_defaultEEPROMs[4] = {
 	},
 };
 
-nn_ComponentState *nn_createEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, nn_EEPROMHandler *handler, void *userdata) {
-	nn_Context ctx = universe->ctx;
-	nn_EEPROM_state *state = nn_alloc(&ctx, sizeof(*state));
-	if(state == NULL) return NULL;
-	state->universe = universe;
-	state->eeprom = *eeprom;
-	state->userdata = userdata;
-	state->handler = handler;
-	const nn_Method methods[] = {
-		{"getSize", "function(): number - Get the storage capacity of the EEPROM.", NN_DIRECT, NN_EENUM_GETSIZE},
-		{"getDataSize", "function(): number - Get the storage capacity of the EEPROM data.", NN_DIRECT, NN_EENUM_GETDATASIZE},
-		{"getLabel", "function(): string - Get the EEPROM label", NN_DIRECT, NN_EENUM_GETLABEL},
-		{"setLabel", "function(label: string): string - Set the EEPROM label and return what was actually set, which may be truncated.", NN_INDIRECT, NN_EENUM_SETLABEL},
-		{"get", "function(): string - Get the current EEPROM contents.", NN_DIRECT, NN_EENUM_GET},
-		{"getData", "function(): string - Get the current EEPROM data contents.", NN_DIRECT, NN_EENUM_GETDATA},
-		{"set", "function(data: string) - Set the current EEPROM contents.", NN_DIRECT, NN_EENUM_SET},
-		{"setData", "function(data: string) - Set the current EEPROM data contents.", NN_DIRECT, NN_EENUM_SETDATA},
-		{"getArchitecture", "function(): string - Get the current EEPROM architecture intended.", NN_DIRECT, NN_EENUM_GETARCH},
-		{"setArchitecture", "function(data: string) - Set the current EEPROM architecture intended.", NN_DIRECT, NN_EENUM_SETARCH},
-		{"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT, NN_EENUM_ISRO},
-		{"makeReadonly", "function(checksum: string) - Makes the EEPROM read-only, this cannot be undone.", NN_INDIRECT, NN_EENUM_MKRO},
-		{"getChecksum", "function(): string - Returns a simple checksum of the EEPROM's contents and data.", NN_DIRECT, NN_EENUM_CHKSUM},
-		{NULL, NULL, NN_INDIRECT},
-	};
-	nn_ComponentState *t = nn_createComponentState(universe, "eeprom", state, methods, nn_eeprom_handler);
-	if(t == NULL) {
-		nn_free(&ctx, state, sizeof(*state));
-		return NULL;
-	}
-	return t;
-}
-
-static nn_Exit nn_veeprom_handler(nn_EEPROMRequest *req) {
-	const nn_EEPROM *conf = req->eepromConf;
-	nn_VEEPROM_state *state = req->userdata;
-	nn_Context ctx = state->universe->ctx;
-	switch(req->action) {
-	case NN_EEPROM_DROP:
-		return NN_OK;
-	case NN_EEPROM_FREE:
-		nn_free(&ctx, state->code, sizeof(char) * conf->size);
-		nn_free(&ctx, state->data, sizeof(char) * conf->dataSize);
-		nn_free(&ctx, state, sizeof(*state));
-		return NN_OK;
-	case NN_EEPROM_ISREADONLY:
-		req->buflen = state->isReadonly ? 1 : 0;
-		return NN_OK;
-	case NN_EEPROM_MAKEREADONLY:
-		state->isReadonly = true;
-		return NN_OK;
-	case NN_EEPROM_GET:
-		req->buflen = state->codelen;
-		nn_memcpy(req->buf, state->code, sizeof(char) * state->codelen);
-		return NN_OK;
-	case NN_EEPROM_GETDATA:
-		req->buflen = state->datalen;
-		nn_memcpy(req->buf, state->data, sizeof(char) * state->datalen);
-		return NN_OK;
-	case NN_EEPROM_GETARCH:
-		req->buflen = state->archlen;
-		nn_memcpy(req->buf, state->arch, sizeof(char) * state->archlen);
-		return NN_OK;
-	case NN_EEPROM_GETLABEL:
-		req->buflen = state->labellen;
-		nn_memcpy(req->buf, state->label, sizeof(char) * state->labellen);
-		return NN_OK;
-	case NN_EEPROM_SET:
-		state->codelen = req->buflen;
-		nn_memcpy(state->code, req->buf, sizeof(char) * state->codelen);
-		return NN_OK;
-	case NN_EEPROM_SETDATA:
-		state->datalen = req->buflen;
-		nn_memcpy(state->data, req->buf, sizeof(char) * state->datalen);
-		return NN_OK;
-	case NN_EEPROM_SETARCH:
-		state->archlen = req->buflen;
-		nn_memcpy(state->arch, req->buf, sizeof(char) * state->archlen);
-		return NN_OK;
-	case NN_EEPROM_SETLABEL:
-		state->labellen = req->buflen;
-		nn_memcpy(state->label, req->buf, sizeof(char) * state->labellen);
-		return NN_OK;
-	}
-	return NN_OK;
-}
-
-nn_ComponentState *nn_createVEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const nn_VEEPROM *vmem) {
-	nn_Context ctx = universe->ctx;
-	char *code = NULL;
-	char *data = NULL;
-	size_t archlen = 0;
-	nn_VEEPROM_state *state = nn_alloc(&ctx, sizeof(*state));
-	if(state == NULL) goto fail;
-	state->universe = universe;
-	state->isReadonly = vmem->isReadonly;
-	
-	code = nn_alloc(&ctx, sizeof(char) * eeprom->size);
-	if(code == NULL) goto fail;
-
-	data = nn_alloc(&ctx, sizeof(char) * eeprom->dataSize);
-	if(data == NULL) goto fail;
-
-	state->code = code;
-	state->data = data;
-
-	state->codelen = vmem->codelen;
-	state->datalen = vmem->datalen;
-	state->labellen = vmem->labellen;
-	nn_memcpy(state->code, vmem->code, sizeof(char) * state->codelen);
-	nn_memcpy(state->data, vmem->data, sizeof(char) * state->datalen);
-	nn_memcpy(state->label, vmem->label, sizeof(char) * state->labellen);
-
-	if(vmem->arch != NULL) {
-		archlen = nn_strlen(vmem->arch);
-	}
-	state->archlen = archlen;
-	nn_memcpy(state->arch, vmem->arch, sizeof(char) * archlen);
-
-	nn_ComponentState *ty = nn_createEEPROM(universe, eeprom, nn_veeprom_handler, state);
-	if(ty == NULL) goto fail;
-	return ty;
-fail:;
-	 // remember, freeing NULL is fine!
-	 nn_free(&ctx, code, sizeof(char) * eeprom->size);
-	 nn_free(&ctx, data, sizeof(char) * eeprom->dataSize);
-	 nn_free(&ctx, state, sizeof(*state));
-	 return NULL;
-}
-
-typedef struct nn_Filesystem_state {
-	nn_Universe *universe;
-	void *userdata;
-	nn_FilesystemHandler *handler;
-	nn_Filesystem fs;
-} nn_Filesystem_state;
-
 const nn_Filesystem nn_defaultFilesystems[4] = {
 	(nn_Filesystem) {
 		.spaceTotal = 1 * NN_MiB,
@@ -2595,367 +2285,6 @@ const nn_Filesystem nn_defaultTmpFS = (nn_Filesystem) {
 	.writesPerTick = 512,
 	.dataEnergyCost = 512.0 / NN_MiB,
 };
-
-typedef enum nn_FS_Nums {
-	NN_FSNUM_SPACETOTAL,
-	NN_FSNUM_SPACEUSED,
-	NN_FSNUM_ISRO,
-	NN_FSNUM_GETLABEL,
-	NN_FSNUM_SETLABEL,
-	NN_FSNUM_OPEN,
-	NN_FSNUM_CLOSE,
-	NN_FSNUM_READ,
-	NN_FSNUM_WRITE,
-	NN_FSNUM_SEEK,
-	NN_FSNUM_LIST,
-	NN_FSNUM_EXISTS,
-	NN_FSNUM_SIZE,
-	NN_FSNUM_REMOVE,
-	NN_FSNUM_RENAME,
-	NN_FSNUM_ISDIR,
-	NN_FSNUM_LASTMOD,
-	NN_FSNUM_MKDIR,
-} nn_FS_Nums;
-
-nn_Exit nn_filesystem_handler(nn_ComponentRequest *req) {
-	nn_Filesystem_state *state = req->typeUserdata;
-	void *instance = req->compUserdata;
-	// NULL for FREETYPE
-	nn_Computer *computer = req->computer;
-	nn_Context ctx = state->universe->ctx;
-
-	nn_FilesystemRequest fsreq;
-	fsreq.userdata = state->userdata;
-	fsreq.instance = instance;
-	fsreq.computer = computer;
-	fsreq.fsConf = &state->fs;
-
-	int method = req->methodCalled;
-	nn_Exit err;
-
-	switch(req->action) {
-	case NN_COMP_FREETYPE:
-		fsreq.action = NN_FS_FREE;
-		state->handler(&fsreq);
-		nn_free(&ctx, state, sizeof(*state));
-		break;
-	case NN_COMP_INIT:
-		return NN_OK;
-	case NN_COMP_DEINIT:
-		fsreq.action = NN_FS_DROP;
-		return state->handler(&fsreq);
-	case NN_COMP_ENABLED:
-		req->methodEnabled = true;
-		return NN_OK;
-	case NN_COMP_CALL:
-		if(method == NN_FSNUM_SPACETOTAL) {
-			req->returnCount = 1;
-			return nn_pushnumber(computer, state->fs.spaceTotal);
-		}
-		if(method == NN_FSNUM_SPACEUSED) {
-			fsreq.action = NN_FS_SPACEUSED;
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushnumber(computer, fsreq.size);
-		}
-		if(method == NN_FSNUM_ISRO) {
-			fsreq.action = NN_FS_ISREADONLY;
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushbool(computer, fsreq.size != 0);
-		}
-		if(method == NN_FSNUM_GETLABEL) {
-			char buf[NN_MAX_LABEL];
-			fsreq.action = NN_FS_GETLABEL;
-			fsreq.strarg1 = buf;
-			fsreq.strarg1len = NN_MAX_LABEL;
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
-			return nn_pushlstring(computer, buf, fsreq.strarg1len);
-		}
-		if(method == NN_FSNUM_SETLABEL) {
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			fsreq.action = NN_FS_SETLABEL;
-			// DO NOT MODIFY THE BUFFER!!!
-			fsreq.strarg1 = (char *)nn_tolstring(computer, 0, &fsreq.strarg1len);
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
-			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
-		}
-		if(method == NN_FSNUM_OPEN) {
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			err = nn_defaultstring(computer, 1, "r");
-			if(err) return err;
-			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
-			size_t pathlen;
-			const char *path = nn_tolstring(computer, 0, &pathlen);
-			if(pathlen >= NN_MAX_PATH) {
-				nn_setError(computer, "path too long");
-				return NN_EBADCALL;
-			}
-			char truepath[NN_MAX_PATH];
-			nn_simplifyPath(path, truepath);
-			size_t modelen;
-			const char *mode = nn_tolstring(computer, 1, &modelen);
-			fsreq.action = NN_FS_OPEN;
-			fsreq.strarg1 = truepath;
-			fsreq.strarg1len = nn_strlen(truepath);
-			fsreq.strarg2 = (char *)mode;
-			fsreq.strarg2len = modelen;
-
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushnumber(computer, fsreq.fd);
-		}
-		if(method == NN_FSNUM_CLOSE) {
-			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			fsreq.fd = nn_tointeger(computer, 0);
-			fsreq.action = NN_FS_CLOSE;
-			return state->handler(&fsreq);
-		}
-		if(method == NN_FSNUM_READ) {
-			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
-	 		if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			err = nn_defaultinteger(computer, 1, NN_MAX_READ);
-			if(err) return err;
-			if(nn_checknumber(computer, 1, "bad argument #2 (number expected)")) return NN_EBADCALL;
-			fsreq.action = NN_FS_READ;
-			fsreq.fd = nn_tointeger(computer, 0);
-			double requested = nn_tonumber(computer, 1);
-			// handles infinity consistently
-			if(requested > NN_MAX_READ) requested = NN_MAX_READ;
-			if(requested < 0) requested = 0;
-			char buf[(size_t)requested];
-			fsreq.strarg1 = buf;
-			fsreq.strarg1len = requested;
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			if(fsreq.strarg1 == NULL) return nn_pushnull(computer);
-			nn_removeEnergy(computer, state->fs.dataEnergyCost * fsreq.strarg1len);
-			return nn_pushlstring(computer, fsreq.strarg1, fsreq.strarg1len);
-		}
-		if(method == NN_FSNUM_WRITE) {
-			nn_costComponent(computer, req->compAddress, state->fs.writesPerTick);
-			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
-			fsreq.action = NN_FS_WRITE;
-			fsreq.fd = nn_tointeger(computer, 0);
-			fsreq.strarg1 = (char *)nn_tolstring(computer, 1, &fsreq.strarg1len);
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			nn_removeEnergy(computer, state->fs.dataEnergyCost * fsreq.strarg1len);
-			return nn_pushbool(computer, true);
-		}
-		if(method == NN_FSNUM_SEEK) {
-			nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
-			if(nn_checkinteger(computer, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			err = nn_defaultstring(computer, 1, "cur");
-			if(err) return err;
-			if(nn_checkstring(computer, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
-			err = nn_defaultinteger(computer, 2, 0);
-			if(err) return err;
-			if(nn_checkinteger(computer, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
-			fsreq.action = NN_FS_SEEK;
-			fsreq.fd = nn_tointeger(computer, 0);
-			const char *whence = nn_tostring(computer, 1);
-			fsreq.off = nn_tointeger(computer, 2);
-
-			if(nn_strcmp(whence, "set") == 0) {
-				fsreq.whence = NN_SEEK_SET;
-			} else if(nn_strcmp(whence, "cur") == 0) {
-				fsreq.whence = NN_SEEK_CUR;
-			} else if(nn_strcmp(whence, "end") == 0) {
-				fsreq.whence = NN_SEEK_END;
-			} else {
-				nn_setError(computer, "bad seek whence");
-				return NN_EBADCALL;
-			}
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushnumber(computer, fsreq.off);
-		}
-		if(method == NN_FSNUM_LIST) {
-			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			char truepath[NN_MAX_PATH];
-			size_t pathlen;
-			const char *path = nn_tolstring(computer, 0, &pathlen);
-			if(pathlen >= NN_MAX_PATH) {
-				nn_setError(computer, "path too long");
-				return NN_EBADCALL;
-			}
-			nn_simplifyPath(path, truepath);
-			int dirfd;
-			fsreq.action = NN_FS_OPENDIR;
-			fsreq.strarg1 = truepath;
-			fsreq.strarg1len = nn_strlen(truepath);
-			err = state->handler(&fsreq);
-			if(err) return err;
-			dirfd = fsreq.fd;
-
-			// this sucks hard
-			size_t entryCount = 0;
-			while(1) {
-				char entry[NN_MAX_PATH];
-				fsreq.action = NN_FS_READDIR;
-				fsreq.fd = dirfd;
-				fsreq.strarg1 = entry;
-				fsreq.strarg1len = NN_MAX_PATH;
-
-				err = state->handler(&fsreq);
-				if(err) goto list_fail;
-				if(fsreq.strarg1 == NULL) break;
-
-				if(fsreq.strarg1len == 1 && entry[0] == '.') continue;
-				if(fsreq.strarg1len == 2 && entry[0] == '.' && entry[1] == '.') continue;
-
-				err = nn_pushlstring(computer, entry, fsreq.strarg1len);
-				if(err) goto list_fail;
-				entryCount++;
-			}
-			err = nn_pusharraytable(computer, entryCount);
-			if(err) goto list_fail;
-			req->returnCount = 1;
-			fsreq.action = NN_FS_CLOSEDIR;
-			fsreq.fd = dirfd;
-			state->handler(&fsreq);
-			return NN_OK;
-		list_fail:
-			fsreq.action = NN_FS_CLOSEDIR;
-			fsreq.fd = dirfd;
-			state->handler(&fsreq);
-			return err;
-		}
-		if(method == NN_FSNUM_EXISTS) {
-			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			char truepath[NN_MAX_PATH];
-			size_t pathlen;
-			const char *path = nn_tolstring(computer, 0, &pathlen);
-			if(pathlen >= NN_MAX_PATH) {
-				nn_setError(computer, "path too long");
-				return NN_EBADCALL;
-			}
-			nn_simplifyPath(path, truepath);
-
-			fsreq.action = NN_FS_EXISTS;
-			fsreq.strarg1 = truepath;
-			fsreq.strarg1len = nn_strlen(truepath);
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushbool(computer, fsreq.size != 0);
-		}
-		if(method == NN_FSNUM_SIZE) {
-			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			char truepath[NN_MAX_PATH];
-			size_t pathlen;
-			const char *path = nn_tolstring(computer, 0, &pathlen);
-			if(pathlen >= NN_MAX_PATH) {
-				nn_setError(computer, "path too long");
-				return NN_EBADCALL;
-			}
-			nn_simplifyPath(path, truepath);
-
-			fsreq.action = NN_FS_SIZE;
-			fsreq.strarg1 = truepath;
-			fsreq.strarg1len = nn_strlen(truepath);
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushnumber(computer, fsreq.size);
-		}
-		if(method == NN_FSNUM_LASTMOD) {
-			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			char truepath[NN_MAX_PATH];
-			size_t pathlen;
-			const char *path = nn_tolstring(computer, 0, &pathlen);
-			if(pathlen >= NN_MAX_PATH) {
-				nn_setError(computer, "path too long");
-				return NN_EBADCALL;
-			}
-			nn_simplifyPath(path, truepath);
-
-			fsreq.action = NN_FS_LASTMODIFIED;
-			fsreq.strarg1 = truepath;
-			fsreq.strarg1len = nn_strlen(truepath);
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushnumber(computer, fsreq.size * 1000);
-		}
-		if(method == NN_FSNUM_ISDIR) {
-			//nn_costComponent(computer, req->compAddress, state->fs.readsPerTick);
-			if(nn_checkstring(computer, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			char truepath[NN_MAX_PATH];
-			size_t pathlen;
-			const char *path = nn_tolstring(computer, 0, &pathlen);
-			if(pathlen >= NN_MAX_PATH) {
-				nn_setError(computer, "path too long");
-				return NN_EBADCALL;
-			}
-			nn_simplifyPath(path, truepath);
-
-			fsreq.action = NN_FS_ISDIRECTORY;
-			fsreq.strarg1 = truepath;
-			fsreq.strarg1len = nn_strlen(truepath);
-			err = state->handler(&fsreq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushbool(computer, fsreq.size != 0);
-		}
-	}
-	return NN_OK;
-}
-
-nn_ComponentState *nn_createFilesystem(nn_Universe *universe, const nn_Filesystem *filesystem, nn_FilesystemHandler *handler, void *userdata) {
-	nn_Context ctx = universe->ctx;
-	nn_Filesystem_state *state = nn_alloc(&ctx, sizeof(*state));
-	if(state == NULL) return NULL;
-	state->universe = universe;
-	state->userdata = userdata;
-	state->handler = handler;
-	state->fs = *filesystem;
-	const nn_Method methods[] = {
-		{"spaceTotal", "function(): number - Get the storage capacity of the filesystem.", NN_DIRECT, NN_FSNUM_SPACETOTAL},
-		{"spaceUsed", "function(): number - Get the space used by the files on the drive.", NN_DIRECT, NN_FSNUM_SPACEUSED},
-		{"isReadOnly", "function(): boolean - Returns whether the drive is read-only.", NN_DIRECT, NN_FSNUM_ISRO},
-		{"getLabel", "function(): string - Get the filesystem label.", NN_DIRECT, NN_FSNUM_GETLABEL},
-		{"setLabel", "function(label: string): string - Set the filesystem label and return what was actually set, which may be truncated.", NN_INDIRECT, NN_FSNUM_SETLABEL},
-		{"open", "function(path: string, mode?: string = 'r'): number - Open a file. Valid modes are 'r' (read-only), 'w' (write-only) and 'a' (append-only).", NN_DIRECT, NN_FSNUM_OPEN},
-		{"close", "function(fd: number) - Closes a file.", NN_DIRECT, NN_FSNUM_CLOSE},
-		{"read", "function(fd: number, count?: number): string? - Reads part of a file. If there is no more data, nothing is returned.", NN_DIRECT, NN_FSNUM_READ},
-		{"write", "function(fd: number, data: string): boolean - Writes the data to a file. Returns true on success.", NN_DIRECT, NN_FSNUM_WRITE},
-		{"seek", "function(fd: number, whence: string, offset: number): number - Seeks a file. Valid whences are 'set' (relative to start), 'cur' (relative to current), 'end' (relative to EoF, backwards). Returns the new position.", NN_DIRECT, NN_FSNUM_SEEK},
-		{"list", "function(path: string): string[] - Returns the names of the entries inside of the directory. Directories get a / appended to their names.", NN_DIRECT, NN_FSNUM_LIST},
-		{"exists", "function(path: string): boolean - Checks if there exists an entry at the specified path.", NN_DIRECT, NN_FSNUM_EXISTS},
-		{"size", "function(path: string) - Gets the size of the entry at the specified path.", NN_DIRECT, NN_FSNUM_SIZE},
-		{"remove", "function(path: string): boolean - Removes the entry at the specified path.", NN_DIRECT, NN_FSNUM_REMOVE},
-		{"rename", "function(from: string, to: string): boolean - Renames or moves an entry to a new location.", NN_DIRECT, NN_FSNUM_RENAME},
-		{"isDirectory", "function(path: string): boolean - Checks if the entry at the specified path is a directory.", NN_DIRECT, NN_FSNUM_ISDIR},
-		{"lastModified", "function(path: string): number - Returns the UNIX timestamp of the time the entry was last modified. This is stored in milliseconds, but is always a multiple of 1000.", NN_DIRECT, NN_FSNUM_LASTMOD},
-		{"makeDirectory", "function(path: string): boolean - Creates a directory. Creates parent directories if necessary.", NN_DIRECT, NN_FSNUM_MKDIR},
-		{NULL, NULL, NN_INDIRECT},
-	};
-	nn_ComponentState *t = nn_createComponentState(universe, "filesystem", state, methods, nn_filesystem_handler);
-	if(t == NULL) {
-		nn_free(&ctx, state, sizeof(*state));
-		return NULL;
-	}
-	return t;
-}
 
 const nn_Drive nn_defaultDrives[4] = {
 	(nn_Drive) {
@@ -3000,12 +2329,16 @@ const nn_Drive nn_defaultDrives[4] = {
 	},
 };
 
-typedef struct nn_DriveState {
-	nn_Universe *universe;
-	void *userdata;
-	nn_DriveHandler *handler;
-	nn_Drive drive;
-} nn_DriveState;
+const nn_Drive nn_floppyDrive = {
+	.capacity = 512 * NN_KiB,
+	.sectorSize = 512,
+	.platterCount = 1,
+	.readsPerTick = 5,
+	.writesPerTick = 2,
+	.rpm = 1800,
+	.onlySpinForwards = true,
+	.dataEnergyCost = 128.0 / NN_MiB,
+};
 
 void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, const nn_Drive *drive) {
 	// Check if SSD
@@ -3032,442 +2365,44 @@ void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, c
 	nn_addIdleTime(C, sectorDelta * latencyPerSector);
 }
 
-typedef enum nn_Drive_Nums {
-	NN_DRIVENUM_GETLABEL,
-	NN_DRIVENUM_SETLABEL,
-	NN_DRIVENUM_GETCAPACITY,
-	NN_DRIVENUM_GETPLATTERCOUNT,
-	NN_DRIVENUM_GETSECTORSIZE,
-	NN_DRIVENUM_READSECTOR,
-	NN_DRIVENUM_WRITESECTOR,
-	NN_DRIVENUM_READBYTE,
-	NN_DRIVENUM_READUBYTE,
-	NN_DRIVENUM_WRITEBYTE,
-} nn_Drive_Nums;
-
-nn_Exit nn_drive_handler(nn_ComponentRequest *req) {
-	nn_DriveState *state = req->typeUserdata;
-	void *instance = req->compUserdata;
-	// NULL for FREETYPE
-	nn_Computer *C = req->computer;
-	nn_Context ctx = state->universe->ctx;
-
-	nn_DriveRequest dreq;
-	dreq.userdata = state->userdata;
-	dreq.instance = instance;
-	dreq.computer = C;
-	dreq.driveConf = &state->drive;
-	nn_Drive conf = state->drive;
-
-	int method = req->methodCalled;
-	nn_Exit e;
-
-	size_t maxSectors = conf.capacity / conf.sectorSize;
-
-	switch(req->action) {
-	case NN_COMP_FREETYPE:
-		dreq.action = NN_DRIVE_FREE;
-		state->handler(&dreq);
-		nn_free(&ctx, state, sizeof(*state));
-		return NN_OK;
-	case NN_COMP_INIT:
-		return NN_OK;
-	case NN_COMP_DEINIT:
-		dreq.action = NN_DRIVE_DROP;
-		return state->handler(&dreq);
-	case NN_COMP_ENABLED:
-		req->methodEnabled = true;
-		return NN_OK;
-	case NN_COMP_CALL:
-		if(method == NN_DRIVENUM_GETCAPACITY) {
-			req->returnCount = 1;
-			return nn_pushinteger(C, conf.capacity);
-		}
-		if(method == NN_DRIVENUM_GETSECTORSIZE) {
-			req->returnCount = 1;
-			return nn_pushinteger(C, conf.sectorSize);
-		}
-		if(method == NN_DRIVENUM_GETPLATTERCOUNT) {
-			req->returnCount = 1;
-			return nn_pushinteger(C, conf.platterCount);
-		}
-		if(method == NN_DRIVENUM_GETLABEL) {
-			dreq.action = NN_DRIVE_GETLABEL;
-			dreq.index = NN_MAX_LABEL;
-			char buf[NN_MAX_LABEL];
-			dreq.buf = buf;
-			e = state->handler(&dreq);
-			if(e) return e;
-			req->returnCount = 1;
-			if(dreq.index == 0) return nn_pushnull(C);
-			return nn_pushlstring(C, buf, dreq.index);
-		}
-		if(method == NN_DRIVENUM_SETLABEL) {
-			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			dreq.action = NN_DRIVE_SETLABEL;
-			dreq.buf = (char *)nn_tolstring(C, 0, &dreq.index);
-			e = state->handler(&dreq);
-			if(e) return e;
-			req->returnCount = 1;
-			if(dreq.index == 0) return nn_pushnull(C);
-			return nn_pushlstring(C, dreq.buf, dreq.index);
-		}
-		if(method == NN_DRIVENUM_READSECTOR) {
-			nn_costComponent(C, req->compAddress, conf.readsPerTick);
-			nn_removeEnergy(C, conf.dataEnergyCost * conf.sectorSize);
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			intptr_t sec = nn_tointeger(C, 0);
-			if(sec < 1 || sec > maxSectors) {
-				nn_setError(C, "sector out of bounds");
-				return NN_EBADCALL;
-			}
-
-			dreq.action = NN_DRIVE_GETCURSECTOR;
-			e = state->handler(&dreq);
-			if(e) return e;
-
-			size_t lastSec = dreq.index;
-
-			nn_drive_seekPenalty(C, lastSec, sec, &conf);
-			
-			// stack allocated! May be a problem for big sectors!
-			char buf[conf.sectorSize];
-
-			dreq.action = NN_DRIVE_READSECTOR;
-			dreq.buf = buf;
-			dreq.index = sec;
-			e = state->handler(&dreq);
-			if(e) return e;
-
-			req->returnCount = 1;
-			return nn_pushlstring(C, buf, conf.sectorSize);
-		}
-		if(method == NN_DRIVENUM_WRITESECTOR) {
-			nn_costComponent(C, req->compAddress, conf.writesPerTick);
-			nn_removeEnergy(C, conf.dataEnergyCost * conf.sectorSize);
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
-			intptr_t sec = nn_tointeger(C, 0);
-			if(sec < 1 || sec > maxSectors) {
-				nn_setError(C, "sector out of bounds");
-				return NN_EBADCALL;
-			}
-
-			dreq.action = NN_DRIVE_GETCURSECTOR;
-			e = state->handler(&dreq);
-			if(e) return e;
-
-			size_t lastSec = dreq.index;
-
-			nn_drive_seekPenalty(C, lastSec, sec, &conf);
-			
-			// stack allocated! May be a problem for big sectors!
-			size_t buflen;
-			const char *buf = nn_tolstring(C, 1, &buflen);
-			if(buflen != conf.sectorSize) {
-				nn_setError(C, "bad sector size");
-				return NN_EBADCALL;
-			}
-
-			dreq.action = NN_DRIVE_WRITESECTOR;
-			dreq.buf = (char *)buf;
-			dreq.index = sec;
-			e = state->handler(&dreq);
-			if(e) return e;
-
-			req->returnCount = 1;
-			return nn_pushbool(C, true);
-		}
-		nn_setError(C, "unknown method");
-		return NN_EBADCALL;
-	}
-
-	return NN_OK;
-}
-
-nn_ComponentState *nn_createDrive(nn_Universe *universe, const nn_Drive *drive, nn_DriveHandler *handler, void *userdata) {
-	nn_Context ctx = universe->ctx;
-	nn_DriveState *state = nn_alloc(&ctx, sizeof(*state));
-	if(state == NULL) return NULL;
-	state->universe = universe;
-	state->userdata = userdata;
-	state->handler = handler;
-	state->drive = *drive;
-	const nn_Method methods[] = {
-		{"getLabel", "function(): string - Get the drive label.", NN_DIRECT, NN_DRIVENUM_GETLABEL},
-		{"setLabel", "function(label: string): string - Set the drive label. Returns the new label.", NN_INDIRECT, NN_DRIVENUM_SETLABEL},
-		{"getCapacity", "function(): integer - Get the drive capacity, in bytes.", NN_DIRECT, NN_DRIVENUM_GETCAPACITY},
-		{"getPlatterCount", "function(): integer - Get the platter count", NN_DIRECT, NN_DRIVENUM_GETPLATTERCOUNT},
-		{"getSectorSize", "function(): integer - Get the sector size, in bytes.", NN_DIRECT, NN_DRIVENUM_GETSECTORSIZE},
-		{"readSector", "function(index: integer): string - Returns the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT, NN_DRIVENUM_READSECTOR},
-		{"writeSector", "function(index: integer, data: string): boolean - Changes the contents of the specified sector. Sectors are 1-indexed.", NN_DIRECT, NN_DRIVENUM_WRITESECTOR},
-		{"readByte", "function(index: integer): integer - Reads a single signed byte and returns it. Bytes are 1-indexed.", NN_DIRECT, NN_DRIVENUM_READBYTE},
-		{"readUByte", "function(index: integer): integer - Reads a single unsigned byte and returns it. Bytes are 1-indexed.", NN_DIRECT, NN_DRIVENUM_READUBYTE},
-		{"writeByte", "function(index: integer, value: integer): boolean - Changes a single byte, can be signed or unsigned. Bytes are 1-indexed.", NN_DIRECT, NN_DRIVENUM_WRITEBYTE},
-		{NULL, NULL, NN_INDIRECT},
-	};
-	nn_ComponentState *t = nn_createComponentState(universe, "drive", state, methods, nn_drive_handler);
-	if(t == NULL) {
-		nn_free(&ctx, state, sizeof(*state));
-		return NULL;
-	}
-	return t;
-}
-
-typedef struct nn_VDriveState {
-	nn_Universe *universe;
-	char *data;
-	size_t lastUsedSector;
-	char label[NN_MAX_LABEL];
-	size_t labellen;
-} nn_VDriveState;
-
-static nn_Exit nn_vdrive_handler(nn_DriveRequest *req) {
-	nn_Computer *c = req->computer;
-	nn_VDriveState *state = req->userdata;
-	nn_Context *ctx = &state->universe->ctx;
-	nn_Drive conf = *req->driveConf;
-
-	size_t sectorOff = (req->index - 1) * conf.sectorSize;
-	size_t labelLen = req->index;
-
-	switch(req->action) {
-	case NN_DRIVE_DROP:
-		// no per-state info anyways
-		return NN_OK;
-	case NN_DRIVE_FREE:
-		nn_free(ctx, state->data, conf.capacity);
-		nn_free(ctx, state, sizeof(*state));
-		return NN_OK;
-	case NN_DRIVE_GETLABEL:
-		if(labelLen > state->labellen) labelLen = state->labellen;
-		req->index = labelLen;
-		nn_memcpy(req->buf, state->label, labelLen);
-		return NN_OK;
-	case NN_DRIVE_SETLABEL:
-		if(labelLen > NN_MAX_LABEL) labelLen = NN_MAX_LABEL;
-		state->labellen = labelLen;
-		nn_memcpy(state->label, req->buf, labelLen);
-		return NN_OK;
-	case NN_DRIVE_GETCURSECTOR:
-		req->index = state->lastUsedSector;
-		return NN_OK;
-	case NN_DRIVE_READBYTE:
-		req->byte = state->data[req->index - 1];
-		return NN_OK;
-	case NN_DRIVE_WRITEBYTE:
-		state->data[req->index - 1] = req->byte;
-		return NN_OK;
-	case NN_DRIVE_READSECTOR:
-		state->lastUsedSector = req->index;
-		nn_memcpy(req->buf, state->data + sectorOff, conf.sectorSize);
-		return NN_OK;
-	case NN_DRIVE_WRITESECTOR:
-		state->lastUsedSector = req->index;
-		nn_memcpy(state->data + sectorOff, req->buf, conf.sectorSize);
-		return NN_OK;
-	}
-	return NN_OK;
-}
-
-nn_ComponentState *nn_createVDrive(nn_Universe *universe, const nn_Drive *drive, const nn_VDrive *vdrive) {
-	nn_Context ctx = universe->ctx;
-
-	char *data = NULL;
-	nn_VDriveState *state = NULL;
-
-	data = nn_alloc(&ctx, drive->capacity);
-	if(data == NULL) goto cleanup;
-
-	state = nn_alloc(&ctx, sizeof(*state));
-	if(state == NULL) goto cleanup;
-
-	state->data = data;
-	state->lastUsedSector = 1;
-	state->universe = universe;
-	state->labellen = vdrive->labellen;
-	nn_memcpy(state->label, vdrive->label, vdrive->labellen);
-	nn_memcpy(state->data, vdrive->data, vdrive->datalen);
-	nn_memset(state->data + vdrive->datalen, 0, drive->capacity - vdrive->datalen);
-
-	return nn_createDrive(universe, drive, nn_vdrive_handler, state);
-cleanup:
-	nn_free(&ctx, data, drive->capacity);
-	nn_free(&ctx, state, sizeof(*state));
-	return NULL;
-}
-
 const nn_ScreenConfig nn_defaultScreens[4] = {
 	(nn_ScreenConfig) {
 		.maxWidth = 50,
 		.maxHeight = 16,
 		.maxDepth = 1,
+		.defaultPalette = NULL,
 		.paletteColors = 0,
+		.editableColors = 0,
 		.features = NN_SCRF_NONE,
 	},
 	(nn_ScreenConfig) {
 		.maxWidth = 80,
 		.maxHeight = 25,
 		.maxDepth = 4,
+		.defaultPalette = nn_ocpalette4,
 		.paletteColors = 16,
+		.editableColors = 0,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED,
 	},
 	(nn_ScreenConfig) {
 		.maxWidth = 160,
 		.maxHeight = 50,
 		.maxDepth = 8,
+		.defaultPalette = nn_ocpalette8,
 		.paletteColors = 256,
+		.editableColors = 16,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE | NN_SCRF_EDITABLECOLORS,
 	},
 	(nn_ScreenConfig) {
 		.maxWidth = 240,
 		.maxHeight = 80,
 		.maxDepth = 16,
+		.defaultPalette = nn_ocpalette8,
 		.paletteColors = 256,
+		.editableColors = 256,
 		.features = NN_SCRF_NONE | NN_SCRF_EDITABLECOLORS,
 	},
 };
-
-typedef struct nn_Screen_state {
-	nn_Universe *universe;
-	void *userdata;
-	nn_ScreenHandler *handler;
-} nn_Screen_state;
-
-typedef enum nn_Screen_Nums {
-	NN_SCRNUM_ISON,
-	NN_SCRNUM_TURNON,
-	NN_SCRNUM_TURNOFF,
-	NN_SCRNUM_GETASPECTRATIO,
-	NN_SCRNUM_GETKEYBOARDS,
-	NN_SCRNUM_SETPRECISE,
-	NN_SCRNUM_ISPRECISE,
-	NN_SCRNUM_SETTMINVERTED,
-	NN_SCRNUM_ISTMINVERTED,
-} nn_Screen_Nums;
-
-static nn_Exit nn_screen_handler(nn_ComponentRequest *req) {
-	nn_Screen_state *state = req->typeUserdata;
-	nn_Context ctx = state->universe->ctx;
-
-	nn_Computer *C = req->computer;
-
-	nn_ScreenRequest scrreq;
-	scrreq.computer = C;
-	scrreq.userdata = state->userdata;
-	scrreq.instance = req->compUserdata;
-
-	int method = req->methodCalled;
-	nn_Exit e;
-	
-	switch(req->action) {
-	case NN_COMP_FREETYPE:
-		scrreq.action = NN_SCR_FREE;
-		state->handler(&scrreq);
-		nn_free(&ctx, state, sizeof(*state));
-		return NN_OK;
-	case NN_COMP_DEINIT:
-		scrreq.action = NN_SCR_DROP;
-		return state->handler(&scrreq);
-	case NN_COMP_INIT:
-		return NN_OK;
-	case NN_COMP_ENABLED:
-		req->methodEnabled = true;
-		return NN_OK;
-	case NN_COMP_CALL:
-		if(method == NN_SCRNUM_ISON) {
-			scrreq.action = NN_SCR_ISON;
-			e = state->handler(&scrreq);
-			if(e) return e;
-			req->returnCount = 1;
-			return nn_pushbool(C, scrreq.w != 0);
-		}
-		if(method == NN_SCRNUM_ISPRECISE) {
-			scrreq.action = NN_SCR_ISPRECISE;
-			e = state->handler(&scrreq);
-			if(e) return e;
-			req->returnCount = 1;
-			return nn_pushbool(C, scrreq.w != 0);
-		}
-		if(method == NN_SCRNUM_ISTMINVERTED) {
-			scrreq.action = NN_SCR_ISTOUCHINVERTED;
-			e = state->handler(&scrreq);
-			if(e) return e;
-			req->returnCount = 1;
-			return nn_pushbool(C, scrreq.w != 0);
-		}
-		if(method == NN_SCRNUM_GETASPECTRATIO) {
-			scrreq.action = NN_SCR_GETASPECTRATIO;
-			e = state->handler(&scrreq);
-			if(e) return e;
-			req->returnCount = 2;
-			e = nn_pushinteger(C, scrreq.w);
-			if(e) return e;
-			return nn_pushinteger(C, scrreq.h);
-		}
-		if(method == NN_SCRNUM_GETKEYBOARDS) {
-			char buf[NN_MAX_ADDRESS];
-			size_t kbCount = 0;
-			while(true) {
-				scrreq.action = NN_SCR_GETKEYBOARD;
-				scrreq.keyboard = buf;
-				scrreq.w = sizeof(buf);
-				scrreq.h = kbCount;
-				e = state->handler(&scrreq);
-				if(e) return e;
-				if(scrreq.keyboard == NULL) break;
-				e = nn_pushlstring(C, buf, scrreq.w);
-				if(e) return e;
-				kbCount++;
-			}
-			req->returnCount = 1;
-			return nn_pusharraytable(C, kbCount);
-		}
-		nn_setError(C, "method not implemented yet");
-		return NN_EBADCALL;
-	}
-	return NN_OK;
-}
-
-nn_ComponentState *nn_createScreen(nn_Universe *universe, nn_ScreenHandler *handler, void *userdata) {
-	nn_Context ctx = universe->ctx;
-	nn_Screen_state *state = nn_alloc(&ctx, sizeof(*state));
-	if(state == NULL) return NULL;
-	state->handler = handler;
-	state->universe = universe;
-	state->userdata = userdata;
-
-	const nn_Method methods[] = {
-		{"isOn", "function(): boolean - Returns whether the screen is on", NN_DIRECT, NN_SCRNUM_ISON},
-		{"turnOn", "function(): boolean, boolean - Turns the screen on. Returns whether the screen is was off and the new power state.", NN_DIRECT, NN_SCRNUM_TURNON},
-		{"turnOff", "function(): boolean, boolean - Turns the screen off. Returns whether the screen is was on and the new power state.", NN_DIRECT, NN_SCRNUM_TURNOFF},
-		{"getAspectRatio", "function(): number, number - Returns how large the screen is, typically in blocks.", NN_DIRECT, NN_SCRNUM_GETASPECTRATIO},
-		{"getKeyboards", "function(): string[] - Returns a list of keyboards attached to this screen.", NN_DIRECT, NN_SCRNUM_GETKEYBOARDS},
-		{"setPrecise", "function(enabled: boolean): boolean - Enable or disable precise mode (sub-pixel precision in touch events).", NN_DIRECT, NN_SCRNUM_SETPRECISE},
-		{"isPrecise", "function(): boolean - Checks if precise mode is enabled.", NN_DIRECT, NN_SCRNUM_ISPRECISE},
-		{"setTouchModeInverted", "function(enabled: boolean): boolean - Enable or disable inverted touch mode (alters player interactions)", NN_DIRECT, NN_SCRNUM_SETTMINVERTED},
-		{"isTouchModeInverted", "function(): boolean - Checks if inverted touch mode is enabled.", NN_DIRECT, NN_SCRNUM_ISTMINVERTED},
-		{NULL, NULL, NN_INDIRECT},
-	};
-	nn_ComponentState *t = nn_createComponentState(universe, "screen", state, methods, nn_screen_handler);
-	if(t == NULL) {
-		nn_free(&ctx, state, sizeof(*state));
-		return NULL;
-	}
-	return t;
-}
-
-static nn_Exit nn_keyboard_handler(nn_ComponentRequest *req) {
-	(void)req;
-	return NN_OK;
-}
-
-nn_ComponentState *nn_createKeyboard(nn_Universe *universe) {
-	const nn_Method methods[] = {
-		{NULL, NULL, NN_INDIRECT},
-	};
-	return nn_createComponentState(universe, "keyboard", NULL, methods, nn_keyboard_handler);
-}
 
 const nn_GPU nn_defaultGPUs[4] = {
 	(nn_GPU) {
@@ -3524,408 +2459,6 @@ const nn_GPU nn_defaultGPUs[4] = {
 	},
 };
 
-typedef struct nn_GPU_state {
-	void *userdata;
-	nn_GPUHandler *handler;
-	nn_Universe *universe;
-	nn_GPU gpu;
-} nn_GPU_state;
-
-typedef enum nn_GPU_Nums {
-	NN_GPUNUM_BIND,
-	NN_GPUNUM_UNBIND,
-	NN_GPUNUM_GETSCREEN,
-	NN_GPUNUM_GETBACKGROUND,
-	NN_GPUNUM_GETFOREGROUND,
-	NN_GPUNUM_SETBACKGROUND,
-	NN_GPUNUM_SETFOREGROUND,
-	NN_GPUNUM_GETPALETTECOLOR,
-	NN_GPUNUM_SETPALETTECOLOR,
-	NN_GPUNUM_MAXDEPTH,
-	NN_GPUNUM_GETDEPTH,
-	NN_GPUNUM_SETDEPTH,
-	NN_GPUNUM_MAXRESOLUTION,
-	NN_GPUNUM_GETRESOLUTION,
-	NN_GPUNUM_SETRESOLUTION,
-	NN_GPUNUM_GETVIEWPORT,
-	NN_GPUNUM_SETVIEWPORT,
-	NN_GPUNUM_GET,
-	NN_GPUNUM_SET,
-	NN_GPUNUM_COPY,
-	NN_GPUNUM_FILL,
-	NN_GPUNUM_FREEMEM,
-	NN_GPUNUM_TOTALMEM,
-	NN_GPUNUM_GETACTIVEBUFFER,
-	NN_GPUNUM_SETACTIVEBUFFER,
-	NN_GPUNUM_BUFFERS,
-	NN_GPUNUM_GETBUFFERSIZE,
-	NN_GPUNUM_ALLOCATEBUFFER,
-	NN_GPUNUM_FREEBUFFER,
-	NN_GPUNUM_FREEALLBUFFERS,
-	NN_GPUNUM_BITBLT,
-} nn_GPU_NUms;
-
-nn_Exit nn_gpu_handler(nn_ComponentRequest *req) {
-	nn_Computer *C = req->computer;
-	nn_GPU_state *state = req->typeUserdata;
-	nn_Context ctx = state->universe->ctx;
-	nn_GPU conf = state->gpu;
-
-	nn_GPURequest greq;
-	greq.computer = C;
-	greq.userdata = state->userdata;
-	greq.instance = req->compUserdata;
-	greq.gpuConf = &state->gpu;
-
-	int method = req->methodCalled;
-	nn_Exit err;
-
-	switch(req->action) {
-	case NN_COMP_FREETYPE:
-		greq.action = NN_GPU_FREE;
-		state->handler(&greq);
-		nn_free(&ctx, state, sizeof(*state));
-		return NN_OK;
-	case NN_COMP_INIT:
-		return NN_OK;
-	case NN_COMP_DEINIT:
-		greq.action = NN_GPU_DROP;
-		return state->handler(&greq);
-	case NN_COMP_ENABLED:
-		req->methodEnabled = true;
-		return NN_OK;
-	case NN_COMP_CALL:
-		// TODO: completely rewrite this buggy mess
-		if(method == NN_GPUNUM_BIND) {
-			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
-			err = nn_defaultboolean(C, 1, false);
-			if(err) return err;
-			if(nn_checkboolean(C, 1, "bad argument #2 (bool expected)")) return NN_EBADCALL;
-			greq.action = NN_GPU_BIND;
-			size_t len;
-			greq.text = (char *)nn_tolstring(C, 0, &len);
-			greq.width = len;
-			greq.x = nn_toboolean(C, 1) ? 1 : 0;
-			err = state->handler(&greq);
-			if(err) return err;
-			return nn_pushbool(C, true);
-		}
-		if(method == NN_GPUNUM_UNBIND) {
-			greq.action = NN_GPU_UNBIND;
-			err = state->handler(&greq);
-			if(err) return err;
-			return nn_pushbool(C, true);
-		}
-		if(method == NN_GPUNUM_GETSCREEN) {
-			char buf[NN_MAX_ADDRESS];
-			greq.action = NN_GPU_GETSCREEN;
-			greq.text = buf;
-			greq.width = NN_MAX_ADDRESS;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 1;
-			if(greq.text == NULL) return nn_pushnull(C);
-			return nn_pushlstring(C, greq.text, greq.width);
-		}
-		if(method == NN_GPUNUM_GETRESOLUTION) {
-			greq.action = NN_GPU_GETRESOLUTION;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.width);
-			if(err) return err;
-			return nn_pushinteger(C, greq.height);
-		}
-		if(method == NN_GPUNUM_SET) {
-			nn_costComponent(C, req->compAddress, conf.setPerTick);
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkstring(C, 2, "bad argument #3 (string expected)")) return NN_EBADCALL;
-			err = nn_defaultboolean(C, 3, false);
-			if(err) return err;
-			if(nn_checkboolean(C, 3, "bad argument #4 (boolean expected)")) return NN_EBADCALL;
-			greq.action = nn_toboolean(C, 3) ? NN_GPU_SETVERTICAL : NN_GPU_SET;
-			size_t len;
-			greq.text = (char *)nn_tolstring(C, 2, &len);
-			if(len > conf.maxWidth) len = conf.maxWidth;
-			// assumes no spaces
-			nn_removeEnergy(C, conf.energyPerWrite * len);
-			greq.width = len;
-			greq.x = nn_tointeger(C, 0);
-			greq.y = nn_tointeger(C, 1);
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushbool(C, true);
-		}
-		if(method == NN_GPUNUM_GET) {
-			nn_costComponent(C, req->compAddress, conf.setPerTick);
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
-			greq.action = NN_GPU_GET;
-			greq.x = nn_tointeger(C, 0);
-			greq.y = nn_tointeger(C, 1);
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 5;
-			char buf[NN_MAX_UNICODE_BUFFER];
-			size_t len = nn_unicode_codepointToChar(buf, greq.codepoint);
-			err = nn_pushlstring(C, buf, len);
-			if(err) return err;
-			err = nn_pushinteger(C, greq.width);
-			if(err) return err;
-			err = nn_pushinteger(C, greq.height);
-			if(err) return err;
-			if(greq.dest == -1) err = nn_pushnull(C);
-			else err = nn_pushinteger(C, greq.dest);
-			if(err) return err;
-			if(greq.src == -1) err = nn_pushnull(C);
-			else err = nn_pushinteger(C, greq.src);
-			if(err) return err;
-			return NN_OK;
-		}
-		if(method == NN_GPUNUM_FILL) {
-			nn_costComponent(C, req->compAddress, conf.fillPerTick);
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 3, "bad argument #4 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkstring(C, 4, "bad argument #5 (string expected)")) return NN_EBADCALL;
-			greq.action = NN_GPU_FILL;
-			size_t len;
-			const char *text = nn_tolstring(C, 4, &len);
-			if(nn_unicode_validateFirstChar(text, len) == 0) {
-				nn_setError(C, "invalid UTF-8 character");
-				return NN_EBADCALL;
-			}
-			greq.codepoint = nn_unicode_firstCodepoint(text);
-			greq.x = nn_tointeger(C, 0);
-			greq.y = nn_tointeger(C, 1);
-			greq.width = nn_tointeger(C, 2);
-			greq.height = nn_tointeger(C, 3);
-			if(greq.width > conf.maxWidth) greq.width = conf.maxWidth;
-			if(greq.height > conf.maxHeight) greq.height = conf.maxHeight;
-			// no free energy for you
-			if(greq.width < 0) greq.width = 0;
-			if(greq.height < 0) greq.height = 0;
-
-			// assumes no spaces
-			nn_removeEnergy(C, conf.energyPerClear * greq.width * greq.height);
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushbool(C, true);
-		}
-		if(method == NN_GPUNUM_COPY) {
-			nn_costComponent(C, req->compAddress, conf.copyPerTick);
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 3, "bad argument #4 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 4, "bad argument #5 (integer expected)")) return NN_EBADCALL;
-			if(nn_checkinteger(C, 5, "bad argument #6 (integer expected)")) return NN_EBADCALL;
-			greq.action = NN_GPU_COPY;
-			greq.x = nn_tointeger(C, 0);
-			greq.y = nn_tointeger(C, 1);
-			greq.width = nn_tointeger(C, 2);
-			greq.height = nn_tointeger(C, 3);
-			greq.tx = nn_tointeger(C, 4);
-			greq.ty = nn_tointeger(C, 5);
-			if(greq.width > conf.maxWidth) greq.width = conf.maxWidth;
-			if(greq.height > conf.maxHeight) greq.height = conf.maxHeight;
-			// no free energy for you
-			if(greq.width < 0) greq.width = 0;
-			if(greq.height < 0) greq.height = 0;
-
-			if(greq.codepoint == ' ') nn_removeEnergy(C, conf.energyPerWrite * greq.width * greq.height);
-			else nn_removeEnergy(C, conf.energyPerClear * greq.width * greq.height);
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushbool(C, true);
-		}
-		if(method == NN_GPUNUM_GETDEPTH) {
-			greq.action = NN_GPU_GETDEPTH;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushinteger(C, greq.x);
-		}
-		if(method == NN_GPUNUM_MAXDEPTH) {
-			greq.action = NN_GPU_MAXDEPTH;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushinteger(C, greq.x);
-		}
-		if(method == NN_GPUNUM_SETDEPTH) {
-			if(nn_checkinteger(C, 0, "bad argument #1 (bitdepth expected)")) return NN_EBADCALL;
-			greq.action = NN_GPU_SETDEPTH;
-			err = state->handler(&greq);
-			greq.x = nn_tointeger(C, 0);
-			if(nn_depthName(greq.x) == NULL) {
-				nn_setError(C, "bad depth");
-				return NN_EBADCALL;
-			}
-			if(err) return err;
-			req->returnCount = 1;
-			return nn_pushstring(C, nn_depthName(greq.x));
-		}
-		if(method == NN_GPUNUM_GETVIEWPORT) {
-			greq.action = NN_GPU_GETVIEWPORT;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.width);
-			if(err) return err;
-			return nn_pushinteger(C, greq.height);
-		}
-		if(method == NN_GPUNUM_GETRESOLUTION) {
-			greq.action = NN_GPU_GETRESOLUTION;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.width);
-			if(err) return err;
-			return nn_pushinteger(C, greq.height);
-		}
-		if(method == NN_GPUNUM_MAXRESOLUTION) {
-			greq.action = NN_GPU_MAXRESOLUTION;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.width);
-			if(err) return err;
-			return nn_pushinteger(C, greq.height);
-		}
-		if(method == NN_GPUNUM_SETFOREGROUND) {
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			err = nn_defaultboolean(C, 1, false);
-			if(err) return err;
-			if(nn_checkboolean(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
-			greq.action = NN_GPU_SETFOREGROUND;
-			greq.x = nn_tointeger(C, 0);
-			greq.y = nn_toboolean(C, 1) ? 1 : 0;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.x);
-			if(err) return err;
-			err = nn_pushbool(C, greq.y != 0);
-			if(err) return err;
-			return NN_OK;
-		}
-		if(method == NN_GPUNUM_GETFOREGROUND) {
-			greq.action = NN_GPU_GETFOREGROUND;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.x);
-			if(err) return err;
-			err = nn_pushbool(C, greq.y != 0);
-			if(err) return err;
-			return NN_OK;
-		}
-		if(method == NN_GPUNUM_SETBACKGROUND) {
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			err = nn_defaultboolean(C, 1, false);
-			if(err) return err;
-			if(nn_checkboolean(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
-			greq.action = NN_GPU_SETBACKGROUND;
-			greq.x = nn_tointeger(C, 0);
-			greq.y = nn_toboolean(C, 1) ? 1 : 0;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.x);
-			if(err) return err;
-			err = nn_pushbool(C, greq.y != 0);
-			if(err) return err;
-			return NN_OK;
-		}
-		if(method == NN_GPUNUM_GETBACKGROUND) {
-			greq.action = NN_GPU_GETBACKGROUND;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.x);
-			if(err) return err;
-			err = nn_pushbool(C, greq.y != 0);
-			if(err) return err;
-			return NN_OK;
-		}
-		// VRAM shenanigans
-		if(method == NN_GPUNUM_GETBUFFERSIZE) {
-			err = nn_defaultinteger(C, 0, 0);
-			if(err) return err;
-			if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
-			greq.x = nn_tointeger(C, 0);
-			greq.action = greq.x == 0 ? NN_GPU_GETRESOLUTION : NN_GPU_GETBUFFERSIZE;
-			err = state->handler(&greq);
-			if(err) return err;
-			req->returnCount = 2;
-			err = nn_pushinteger(C, greq.width);
-			if(err) return err;
-			return nn_pushinteger(C, greq.height);
-		}
-		nn_setError(C, "method not yet implemented");
-		return NN_EBADCALL;
-	}
-	return NN_OK;
-}
-
-nn_ComponentState *nn_createGPU(nn_Universe *universe, const nn_GPU *gpu, nn_GPUHandler *handler, void *userdata) {
-	nn_Context ctx = universe->ctx;
-	nn_GPU_state *state = nn_alloc(&ctx, sizeof(*state));
-	if(state == NULL) return NULL;
-	state->handler = handler;
-	state->universe = universe;
-	state->userdata = userdata;
-	state->gpu = *gpu;
-
-	const nn_Method methods[] = {
-		{"bind", "function(address: string, reset?: boolean) - Bind the GPU to a screen.", NN_INDIRECT, NN_GPUNUM_BIND},
-		{"unbind", "function() - Unbind the GPU, if bound.", NN_INDIRECT, NN_GPUNUM_UNBIND},
-		{"getScreen", "function(): string? - Get the screen address, if any.", NN_DIRECT, NN_GPUNUM_GETSCREEN},
-		{"getBackground", "function(): integer, boolean - Get the current background color, and whether it is a palette index.", NN_DIRECT, NN_GPUNUM_GETBACKGROUND},
-		{"getForeground", "function(): integer, boolean - Get the current foreground color, and whether it is a palette index.", NN_DIRECT, NN_GPUNUM_GETFOREGROUND},
-		{"setBackground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current background color. Returns the old background color.", NN_DIRECT, NN_GPUNUM_SETBACKGROUND},
-		{"setForeground", "function(color: integer, isPalette?: boolean): integer, boolean - Set the current foreground color. Returns the old foreground color.", NN_DIRECT, NN_GPUNUM_SETFOREGROUND},
-		{"getPaletteColor", "function(index: integer): integer - Get a color from the palette.", NN_DIRECT, NN_GPUNUM_GETPALETTECOLOR},
-		{"setPaletteColor", "function(index: integer, color: integer): integer - Change a color from the palette. Returns the old one.", NN_DIRECT, NN_GPUNUM_SETPALETTECOLOR},
-		{"maxDepth", "function(): integer - Returns the maximum depth supported.", NN_DIRECT, NN_GPUNUM_MAXDEPTH},
-		{"getDepth", "function(): integer - Returns the current depth used.", NN_DIRECT, NN_GPUNUM_GETDEPTH},
-		{"setDepth", "function(depth: integer): string - Change the current depth. Returns the name of the old one.", NN_DIRECT, NN_GPUNUM_SETDEPTH},
-		{"maxResolution", "function(): integer, integer - Returns the maximum working resolution.", NN_DIRECT, NN_GPUNUM_MAXRESOLUTION},
-		{"getResolution", "function(): integer, integer - Returns the current resolution.", NN_DIRECT, NN_GPUNUM_GETRESOLUTION},
-		{"setResolution", "function(w: integer, h: integer): boolean - Changes the current resolution.", NN_DIRECT, NN_GPUNUM_SETRESOLUTION},
-		{"getViewport", "function(): integer, integer - Returns the current viewport resolution.", NN_DIRECT, NN_GPUNUM_GETVIEWPORT},
-		{"setViewport", "function(w: integer, h: integer): boolean - Changes the current viewport resolution.", NN_DIRECT, NN_GPUNUM_SETVIEWPORT},
-		{"get", "function(x: integer, y: integer): string, integer, integer, integer?, integer? - Gets information about a character. Returns the character, foreground color, background color, foreground palette index (if applicable), background palette index (if applicable).", NN_DIRECT, NN_GPUNUM_GET},
-		{"set", "function(x: integer, y: integer, value: string, vertical?: boolean): boolean - Writes a string to the screen. The string is simply copied to the buffer, escapes and special characters are not given special treatment.", NN_DIRECT, NN_GPUNUM_SET},
-		{"copy", "function(x: integer, y: integer, width: integer, height: integer, dx: integer, dy: integer) - Copies a rectangle on the screen buffer to a new position. The new position is x + dx, y + dy, thus dx and dy determine the translation of the copy.", NN_DIRECT, NN_GPUNUM_COPY},
-		{"fill", "function(x: integer, y: integer, width: integer, height: integer, char: string): boolean - Fills a rectangle on the screen buffer. Returns true on success, false otherwise.", NN_DIRECT, NN_GPUNUM_FILL},
-		// TODO: vram buffers
-		{"freeMemory", "function(): integer - Returns the amount of free VRAM remaining.", NN_DIRECT, NN_GPUNUM_FREEMEM},
-		{"totalMemory", "function(): integer - Returns the total amount of VRAM usable.", NN_DIRECT, NN_GPUNUM_TOTALMEM},
-		{"getActiveBuffer", "function(): integer - Returns the current buffer. 0 means the screen.", NN_DIRECT, NN_GPUNUM_GETACTIVEBUFFER},
-		{"setActiveBuffer", "function(buf: integer): integer - Switches to another buffer. 0 means the screen.", NN_DIRECT, NN_GPUNUM_SETACTIVEBUFFER},
-		{"buffers", "function(): integer[] - Returns a list of all allocated buffers, except 0, which is reserved for the screen.", NN_DIRECT, NN_GPUNUM_BUFFERS},
-		{"getBufferSize", "function(buf?: integer): integer, integer - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT, NN_GPUNUM_GETBUFFERSIZE},
-		{"allocateBuffer", "function(width?: integer, height?: integer): integer - Allocates a new buffer of a specific size, defaulting to the GPU's maximum resolution.", NN_DIRECT, NN_GPUNUM_ALLOCATEBUFFER},
-		{"freeBuffer", "function(buffer?: integer): boolean - Frees a buffer, defaulting to the current one. If the current one is freed, it will switch to the screen.", NN_DIRECT, NN_GPUNUM_FREEBUFFER},
-		{"freeAllBuffers", "function() - Frees every buffer and switches to the screen. This cannot fail.", NN_DIRECT, NN_GPUNUM_FREEALLBUFFERS},
-		{"bitblt", "function(dest?: integer, col?: integer, row?: integer, width?: integer, height?: integer, src?: integer, fromCol?: integer, fromRow?: integer): boolean - Returns the size of the requested buffer. By default, it returns the size of the current current one.", NN_DIRECT, NN_GPUNUM_BITBLT},
-		{NULL, NULL, NN_INDIRECT},
-	};
-	nn_ComponentState *t = nn_createComponentState(universe, "gpu", state, methods, nn_gpu_handler);
-	if(t == NULL) {
-		nn_free(&ctx, state, sizeof(*state));
-		return NULL;
-	}
-	return t;
-}
-
 int nn_palette2[4] = {
 	0x000000,
 	0x444444,
@@ -3962,26 +2495,6 @@ int nn_ocpalette4[16] = {
 	0x663300, // brown
 	0x336600, // green
 	0xFF3333, // red
-	0x000000, // black
-};
-
-// The Minecraft 4-bit palette, using dye colors.
-int nn_mcpalette4[16] = {
-	0xFFFFFF, // white
-	0xF9801D, // orange
-	0xC74EBD, // magenta
-	0x3AB3DA, // lightblue
-	0xFED83D, // yellow
-	0x80C71F, // lime
-	0xF38BAA, // pink
-	0x474F52, // gray
-	0x9D9D97, // silver
-	0x169C9C, // cyan
-	0x8932B8, // purple
-	0x3C44AA, // blue
-	0x835432, // brown
-	0x5E7C16, // green
-	0xB02E26, // red
 	0x000000, // black
 };
 
@@ -4023,16 +2536,50 @@ void nn_initPalettes() {
     nn_ocpalette8[15] = 0xF0F0F0;
 }
 
-int nn_mapColor(int color, int *palette, size_t len) {
-	// TODO: color mapping
-	(void)palette;
-	(void)len;
-	return color;
+static void nn_splitColor(int color, double *r, double *g, double *b) {
+	int _r = (color >> 16) & 0xFF;
+	int _g = (color >> 8) & 0xFF;
+	int _b = (color >> 0) & 0xFF;
+
+	*r = (double)_r / 255;
+	*g = (double)_g / 255;
+	*b = (double)_b / 255;
 }
 
-int nn_mapDepth(int color, int depth, bool ocCompatible) {
+static double nn_colorLuminance(int color) {
+	double r, g, b;
+	nn_splitColor(color, &r, &g, &b);
+	// taken from https://stackoverflow.com/questions/687261/converting-rgb-to-grayscale-intensity
+	return r * 0.2126 + g * 0.7152 + b * 0.0722;
+}
+
+static double nn_colorDistance(int a, int b) {
+	double n = nn_colorLuminance(a) - nn_colorLuminance(b);
+	if(n < 0) n = -n;
+	return n;
+}
+
+int nn_mapColor(int color, int *palette, size_t len) {
+	int bestColor = color;
+	// maximum distance, the one between white and black, is ~1.0 so this is way higher
+	double bestDist = 100000;
+	for(size_t i = 0; i < len; i++) {
+		int entry = palette[i];
+		double dist = nn_colorDistance(color, entry);
+		if(dist < bestDist) {
+			bestDist = dist;
+			bestColor = entry;
+		}
+	}
+	return bestColor;
+}
+
+int nn_mapDepth(int color, int depth) {
 	if(depth == 1) return color == 0 ? 0 : 0xFFFFFF;
 	// TODO: map the other depths
+	if(depth == 4) return nn_mapColor(color, nn_ocpalette4, 16);
+	if(depth == 8) return nn_mapColor(color, nn_ocpalette8, 256);
+	if(depth == 16) return color & 0xF0FFF0;
 	return color;
 }
 
@@ -4550,4 +3097,209 @@ nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, co
 	err = nn_pushlstring(computer, clipboard, len);
 	if(err) return err;
 	return nn_pushSignal(computer, 3);
+}
+
+typedef enum nn_EENum {
+	NN_EENUM_GETSIZE,
+	NN_EENUM_GETDATASIZE,
+	NN_EENUM_GET,
+	NN_EENUM_GETDATA,
+	NN_EENUM_GETLABEL,
+	NN_EENUM_GETARCH,
+	NN_EENUM_SET,
+	NN_EENUM_SETDATA,
+	NN_EENUM_SETLABEL,
+	NN_EENUM_SETARCH,
+	
+	NN_EENUM_COUNT,
+} nn_EENum;
+
+typedef struct nn_EEState {
+	nn_Context *ctx;
+	nn_EEPROM eeprom;
+	void *state;
+	nn_EEPROMHandler *handler;
+} nn_EEState;
+
+static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
+	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+	nn_EEState *state = req->state;
+	nn_EEPROMRequest ereq;
+	ereq.ctx = req->ctx;
+	ereq.computer = req->computer;
+	ereq.state = state->state;
+	ereq.eeprom = &state->eeprom;
+	nn_EEPROM eeprom = state->eeprom;
+	if(req->action == NN_COMP_DROP) {
+		ereq.action = NN_EEPROM_DROP;
+		state->handler(&ereq);
+		nn_free(req->ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+	nn_Computer *C = req->computer;
+	nn_EENum method = req->methodIdx;
+	nn_Exit e = NN_OK;
+	if(method == NN_EENUM_GETSIZE) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, eeprom.size);
+	}
+	if(method == NN_EENUM_GETDATASIZE) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, eeprom.dataSize);
+	}
+	if(method == NN_EENUM_GET) {
+		ereq.action = NN_EEPROM_GET;
+		char buf[eeprom.size];
+		ereq.buf = buf;
+		ereq.buflen = eeprom.size;
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushlstring(C, ereq.buf, ereq.buflen);
+	}
+	if(method == NN_EENUM_GETDATA) {
+		ereq.action = NN_EEPROM_GETDATA;
+		char buf[eeprom.size];
+		ereq.buf = buf;
+		ereq.buflen = eeprom.size;
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushlstring(C, ereq.buf, ereq.buflen);
+	}
+	if(method == NN_EENUM_GETLABEL) {
+		ereq.action = NN_EEPROM_GETLABEL;
+		char buf[NN_MAX_LABEL];
+		ereq.buf = buf;
+		ereq.buflen = NN_MAX_LABEL;
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		if(ereq.buflen == 0) return nn_pushnull(C);
+		return nn_pushlstring(C, ereq.buf, ereq.buflen);
+	}
+	if(method == NN_EENUM_GETARCH) {
+		ereq.action = NN_EEPROM_GETARCH;
+		char buf[NN_MAX_ARCHNAME];
+		ereq.buf = buf;
+		ereq.buflen = NN_MAX_ARCHNAME;
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		if(ereq.buflen == 0) return nn_pushnull(C);
+		return nn_pushlstring(C, ereq.buf, ereq.buflen);
+	}
+	return NN_OK;
+}
+
+nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const nn_EEPROM *eeprom, void *state, nn_EEPROMHandler *handler) {
+	nn_Component *c = nn_createComponent(universe, address, "eeprom");
+	if(c == NULL) return NULL;
+	const nn_Method methods[NN_EENUM_COUNT] = {
+		[NN_EENUM_GETSIZE] = {"getSize", "function(): integer - Get maximum code size", NN_DIRECT},
+		[NN_EENUM_GETDATASIZE] = {"getDataSize", "function(): integer - Get maximum data size", NN_DIRECT},
+		[NN_EENUM_GET] = {"get", "function(): string - Get the code stored on the eeprom", NN_DIRECT},
+		[NN_EENUM_GETDATA] = {"getData", "function(): string - Get the data stored on the eeprom", NN_DIRECT},
+		[NN_EENUM_GETLABEL] = {"getLabel", "function(): string? - Get the label stored on the eeprom, if any", NN_DIRECT},
+		[NN_EENUM_GETARCH] = {"getArchitecture", "function(): string? - Get the desired architecture stored on the eeprom, if any", NN_DIRECT},
+		[NN_EENUM_SET] = {"set", "function(code: string) - Set the code on the EEPROM", NN_DIRECT},
+		[NN_EENUM_SETDATA] = {"setData", "function(data: string) - Set the data on the EEPROM", NN_DIRECT},
+		[NN_EENUM_SETLABEL] = {"setLabel", "function(label?: string) - Set the label", NN_DIRECT},
+		[NN_EENUM_SETARCH] = {"setArchitecture", "function(arch?: string) - Set the desired architecture", NN_DIRECT},
+	};
+	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_EENUM_COUNT);
+	if(e) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	nn_Context *ctx = &universe->ctx;
+	nn_EEState *eestate = nn_alloc(ctx, sizeof(*eestate));
+	if(eestate == NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	eestate->ctx = ctx;
+	eestate->eeprom = *eeprom;
+	eestate->state = state;
+	eestate->handler = handler;
+	nn_setComponentState(c, eestate);
+	nn_setComponentHandler(c, nn_eepromHandler);
+	return c;
+}
+
+typedef struct nn_VEEState {
+	char *code;
+	size_t codelen;
+	char *data;
+	size_t datalen;
+	char label[NN_MAX_LABEL];
+	size_t labellen;
+	char arch[NN_MAX_ARCHNAME];
+	size_t archlen;
+} nn_VEEState;
+
+static nn_Exit nn_veepromHandler(nn_EEPROMRequest *request) {
+	nn_VEEState *state = request->state;
+	nn_Computer *C = request->computer;
+	const nn_EEPROM *eeprom = request->eeprom;
+	nn_Context *ctx = request->ctx;
+	if(request->action == NN_EEPROM_DROP) {
+		nn_free(ctx, state->code, eeprom->size);
+		nn_free(ctx, state->data, eeprom->dataSize);
+		return NN_OK;
+	}
+	if(request->action == NN_EEPROM_GET) {
+		nn_memcpy(request->buf, state->code, state->codelen);
+		request->buflen = state->codelen;
+		return NN_OK;
+	}
+	if(request->action == NN_EEPROM_GETDATA) {
+		nn_memcpy(request->buf, state->data, state->datalen);
+		request->buflen = state->datalen;
+		return NN_OK;
+	}
+	if(request->action == NN_EEPROM_GETLABEL) {
+		nn_memcpy(request->buf, state->label, state->labellen);
+		request->buflen = state->labellen;
+		return NN_OK;
+	}
+	if(request->action == NN_EEPROM_GETARCH) {
+		nn_memcpy(request->buf, state->arch, state->archlen);
+		request->buflen = state->archlen;
+		return NN_OK;
+	}
+	return NN_OK;
+}
+
+nn_Component *nn_createVEEPROM(nn_Universe *universe, const char *address, const nn_VEEPROM *veeprom, const nn_EEPROM *eeprom) {
+	nn_Context *ctx = &universe->ctx;
+	char *code = NULL;
+	char *data = NULL;
+	nn_VEEState *state = NULL;
+
+	code = nn_alloc(ctx, eeprom->size);
+	if(code == NULL) goto fail;
+	data = nn_alloc(ctx, eeprom->dataSize);
+	if(data == NULL) goto fail;
+	state = nn_alloc(ctx, sizeof(*state));
+	if(state == NULL) goto fail;
+
+	state->code = code;
+	nn_memcpy(code, veeprom->code, veeprom->codelen);
+	state->codelen = veeprom->codelen;
+	state->data = data;
+	nn_memcpy(data, veeprom->data, veeprom->datalen);
+	state->datalen = veeprom->datalen;
+
+	nn_Component *c = nn_createEEPROM(universe, address, eeprom, state, nn_veepromHandler);
+	if(c == NULL) goto fail;
+
+	return c;
+
+fail:
+	nn_free(ctx, code, eeprom->size);
+	nn_free(ctx, data, eeprom->dataSize);
+	nn_free(ctx, state, sizeof(*state));
+	return NULL;
 }
