@@ -4,6 +4,7 @@
 // Error handling has been omitted in most places.
 
 #include "neonucleus.h"
+#include "ncomplib.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -375,35 +376,15 @@ int main(int argc, char **argv) {
 		.arch = NULL,
 		.isReadonly = false,
 	};
+
+	printf("%zu bytes logically used by OpenOS\n", ncl_spaceUsedIn(ncl_defaultFS, "data/OpenOS"));
+	printf("%zu bytes physically used by OpenOS\n", ncl_spaceUsedBy(ncl_defaultFS, "data/OpenOS"));
 	
 	nn_Component *eepromCard = nn_createVEEPROM(u, "eeprom", &veeprom, &nn_defaultEEPROMs[3]);
 
 	size_t ramTotal = 0;
 	ramTotal += nn_ramSizes[5];
-
-	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
-	if(showStats) {
-		// collects stats
-		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
-	}
-
-	// default for 64-bit, we just assume we're 64-bit.
-	nn_setMemoryScale(c, 1.8);
 	
-	nn_setArchitecture(c, &arch);
-	nn_addSupportedArchitecture(c, &arch);
-
-	nn_mountComponent(c, ocelotCard, -1);
-	nn_mountComponent(c, eepromCard, 0);
-
-	const char *driveData = "error('unmanaged drive')";
-	nn_VDrive vdrive = {
-		.data = driveData,
-		.datalen = strlen(driveData),
-		.label = "",
-		.labellen = 0,
-	};
-
 	SetExitKey(KEY_NULL);
 
 	Font font = LoadFont("unscii-16-full.ttf");
@@ -412,12 +393,39 @@ int main(int argc, char **argv) {
 	if(getenv("NN_TICKDELAY") != NULL) {
 		tickDelay = atof(getenv("NN_TICKDELAY"));
 	}
-
+	
+	const char *driveData = "error('unmanaged drive')";
+	nn_VDrive vdrive = {
+		.data = driveData,
+		.datalen = strlen(driveData),
+		.label = "",
+		.labellen = 0,
+	};
+	
 	struct {int key; nn_codepoint unicode;} keybuf[512];
 	memset(keybuf, 0, sizeof(keybuf));
 	size_t keycap = sizeof(keybuf) / sizeof(keybuf[0]);
 
 	double nextTick = 0;
+	double nextSecond = 0;
+	double wattage = 0;
+
+
+restart:;
+	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
+	if(showStats) {
+		// collects stats
+		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
+	}
+
+	// default for 64-bit
+	if(sizeof(void *) > 4) nn_setMemoryScale(c, 1.8);
+	
+	nn_setArchitecture(c, &arch);
+	nn_addSupportedArchitecture(c, &arch);
+
+	nn_mountComponent(c, ocelotCard, -1);
+	nn_mountComponent(c, eepromCard, 0);
 
 	while(true) {
 		if(WindowShouldClose()) break;
@@ -431,8 +439,6 @@ int main(int argc, char **argv) {
 			statY += 20;
 		}
 		if(showStats) {
-			double wattage = accumulatedEnergyCost;
-			if(tickDelay > 0) wattage /= tickDelay;
 			double memUsagePercent = (double)nn_getUsedMemory(c) * 100 / nn_getTotalMemory(c);
 			DrawText(TextFormat("power usage: %.2f W", wattage), 10, statY, 20, GREEN);
 			statY += 20;
@@ -481,6 +487,12 @@ int main(int argc, char **argv) {
 
 		double tickNow = GetTime();
 
+		if(tickNow >= nextSecond) {
+			nextSecond = tickNow + 1;
+			wattage = accumulatedEnergyCost;
+			accumulatedEnergyCost = 0;
+		}
+
 		if(tickNow >= nextTick) {
 			accumulatedEnergyCost = 0;
 			nextTick = tickNow + tickDelay;
@@ -511,7 +523,8 @@ int main(int argc, char **argv) {
 			}
 			if(state == NN_RESTART) {
 				printf("restart requested\n");
-				goto cleanup;
+				nn_destroyComputer(c);
+				goto restart;
 			}
 		}
 	}

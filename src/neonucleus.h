@@ -50,13 +50,13 @@ extern "C" {
 #define NN_MAX_PATH 256
 // the maximum amount of bytes which can be read from a file.
 // You are given a buffer you are meant to fill at least partially, this is simply the limit of that buffer's size.
-#define NN_MAX_READ 65536
+#define NN_MAX_READ 8192
 // the maximum size of a label
 #define NN_MAX_LABEL 256
 // maximum size of a wakeup message
 #define NN_MAX_WAKEUPMSG 2048
 // the maximum amount of file descriptors that can be open simultaneously
-#define NN_MAX_OPENFILES 128
+#define NN_MAX_OPENFILES 16
 // the maximum amount of userdata that can be sent simultaneously.
 #define NN_MAX_USERDATA 64
 // maximum size of a signal, computed the same as modem packet costs.
@@ -226,6 +226,22 @@ void nn_initContext(nn_Context *ctx);
 void *nn_alloc(nn_Context *ctx, size_t size);
 void nn_free(nn_Context *ctx, void *memory, size_t size);
 void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize);
+
+char *nn_strdup(nn_Context *ctx, const char *s);
+void nn_strfree(nn_Context *ctx, char *s);
+
+typedef struct nn_Lock nn_Lock;
+
+nn_Lock *nn_createLock(nn_Context *ctx);
+void nn_destroyLock(nn_Context *ctx, nn_Lock *lock);
+void nn_lock(nn_Context *ctx, nn_Lock *lock);
+void nn_unlock(nn_Context *ctx, nn_Lock *lock);
+
+double nn_currentTime(nn_Context *ctx);
+
+size_t nn_rand(nn_Context *ctx);
+double nn_randf(nn_Context *ctx);
+double nn_randfi(nn_Context *ctx);
 
 typedef char nn_uuid[37];
 void nn_randomUUID(nn_Context *ctx, nn_uuid uuid);
@@ -895,15 +911,113 @@ typedef struct nn_Filesystem {
 	// the maximum capacity of the filesystem
 	size_t spaceTotal;
 	// how many read calls can be done per tick
-	// list, exists, size, lastModified, isDirectory, seek also count as reads.
+	// seek also count as reads.
 	double readsPerTick;
 	// how many write calls can be done per tick
-	// makeDirectory, open, remove and rename also count as writes.
 	double writesPerTick;
 	// The energy cost of an actual read/write.
 	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
 	double dataEnergyCost;
 } nn_Filesystem;
+
+typedef enum nn_FSAction {
+	NN_FS_DROP,
+	
+	// drive metadata
+	NN_FS_SPACEUSED,
+	NN_FS_GETLABEL,
+	NN_FS_SETLABEL,
+	NN_FS_ISRO,
+
+	// for file I/O
+	NN_FS_OPEN,
+	NN_FS_READ,
+	NN_FS_WRITE,
+	NN_FS_SEEK,
+	NN_FS_CLOSE,
+
+	// for list
+	NN_FS_OPENDIR,
+	NN_FS_READDIR,
+	NN_FS_CLOSEDIR,
+
+	// checking metadata
+	NN_FS_STAT,
+	// make directory, recursively
+	NN_FS_MKDIR,
+	
+	// rename, if renamed to NULL then remove
+	NN_FS_RENAME,
+} nn_FSAction;
+
+typedef enum nn_FSWhence {
+	NN_SEEK_SET,
+	NN_SEEK_CUR,
+	NN_SEEK_END,
+} nn_FSWhence;
+
+typedef struct nn_FSRequest {
+	nn_Context *ctx;
+	nn_Computer *computer;
+	void *state;
+	const nn_Filesystem *fs;
+	nn_FSAction action;
+	int fd;
+	union {
+		struct {
+			const char *path;
+			const char *mode;
+		} open;
+		struct {
+			char *buf;
+			size_t len;
+		} read;
+		struct {
+			const char *buf;
+			size_t len;
+		} write;
+		struct {
+			nn_FSWhence whence;
+			// set to new offset
+			int off;
+		} seek;
+		const char *opendir;
+		struct {
+			char *buf;
+			// set to length of entry name
+			size_t len;
+		} readdir;
+		struct {
+			// set to NULL if missing
+			const char *path;
+			// whether it is a directory
+			bool isDirectory;
+			// in seconds. Result will be multiplied by 1000.
+			// This is because OpenOS code is garbage.
+			size_t lastModified;
+			// size. 0 for directories.
+			size_t size;
+		} stat;
+		struct {
+			const char *from;
+			// if NULL, delete from, recursively.
+			const char *to;
+		} rename;
+		const char *mkdir;
+		struct {
+			const char *buf;
+			size_t len;
+		} setlabel;
+		struct {
+			char *buf;
+			size_t len;
+		} getlabel;
+		bool isReadonly;
+		size_t spaceUsed;
+	};
+} nn_FSRequest;
+
+typedef nn_Exit (nn_FSHandler)(nn_FSRequest *request);
 
 // 4 Tiers.
 // 0 - Tier 1 equivalent
@@ -949,6 +1063,9 @@ typedef struct nn_VFilesystem {
 	// the flat array of the filesystem. See nn_VFileNode for details.
 	nn_VFileNode *image;
 } nn_VFilesystem;
+
+nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, const nn_Filesystem *fs, void *state, nn_FSHandler *handler);
+nn_Component *nn_createVFilesystem(nn_Universe *universe, const char *address, const nn_VFilesystem *vfs, const nn_Filesystem *fs);
 
 // Drive class
 

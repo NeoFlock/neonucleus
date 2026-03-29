@@ -1688,6 +1688,11 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 	}
 	nn_MethodEntry *m = nn_getComponentMethodEntry(c, method);
 
+	while(nn_getstacksize(computer) > 0) {
+		if(!nn_isnull(computer, nn_getstacksize(computer) - 1)) break;
+		nn_pop(computer);
+	}
+
 	nn_ComponentRequest req;
 	req.ctx = &c->universe->ctx;
 	req.computer = computer;
@@ -1696,7 +1701,10 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 	req.methodIdx = m->idx;
 	req.returnCount = 0;
 	nn_Exit e = c->handler(&req);
-	if(e) return e;
+	if(e) {
+		nn_clearstack(computer);
+		return e;
+	}
 
 	size_t endOfTrim = computer->stackSize - req.returnCount;
 	for(size_t i = 0; i < endOfTrim; i++) {
@@ -3190,7 +3198,8 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 		if(ereq.buflen == 0) return nn_pushnull(C);
 		return nn_pushlstring(C, ereq.buf, ereq.buflen);
 	}
-	return NN_OK;
+	nn_setError(C, "not implemented yet");
+	return NN_EBADCALL;
 }
 
 nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const nn_EEPROM *eeprom, void *state, nn_EEPROMHandler *handler) {
@@ -3302,4 +3311,375 @@ fail:
 	nn_free(ctx, data, eeprom->dataSize);
 	nn_free(ctx, state, sizeof(*state));
 	return NULL;
+}
+
+typedef enum nn_FSNum {
+	// drive stuff
+	NN_FSNUM_SPACETOTAL,
+	NN_FSNUM_SPACEUSED,
+	NN_FSNUM_GETLABEL,
+	NN_FSNUM_SETLABEL,
+	NN_FSNUM_ISRO,
+
+	// file I/O
+	NN_FSNUM_OPEN,
+	NN_FSNUM_READ,
+	NN_FSNUM_WRITE,
+	NN_FSNUM_SEEK,
+	NN_FSNUM_CLOSE,
+
+	// metadata
+	NN_FSNUM_LIST,
+	NN_FSNUM_EXISTS,
+	NN_FSNUM_ISDIR,
+	NN_FSNUM_SIZE,
+	NN_FSNUM_LASTMODIFIED,
+
+	// exotic
+	NN_FSNUM_MKDIR,
+	NN_FSNUM_REMOVE,
+	NN_FSNUM_RENAME,
+
+	NN_FSNUM_COUNT,
+} nn_FSNum;
+
+typedef struct nn_FSState {
+	nn_Context *ctx;
+	nn_Filesystem fs;
+	void *state;
+	nn_FSHandler *handler;
+} nn_FSState;
+
+static nn_Exit nn_fsPathCheck(nn_Computer *C, char buf[NN_MAX_PATH], const char *path) {
+	size_t l = nn_strlen(path);
+	if(l >= NN_MAX_PATH) {
+		nn_setError(C, "path too long");
+		return NN_EBADCALL;
+	}
+	nn_simplifyPath(path, buf);
+	return NN_OK;
+}
+
+static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
+	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+	nn_FSState *state = req->state;
+	nn_FSRequest freq;
+	freq.ctx = req->ctx;
+	freq.computer = req->computer;
+	freq.state = state->state;
+	freq.fs = &state->fs;
+	if(req->action == NN_COMP_DROP) {
+		freq.action = NN_FS_DROP;
+		state->handler(&freq);
+		nn_free(req->ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+	nn_Computer *C = req->computer;
+	nn_FSNum method = req->methodIdx;
+	nn_Exit e = NN_OK;
+	if(method == NN_FSNUM_SPACETOTAL) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, state->fs.spaceTotal);
+	}
+	if(method == NN_FSNUM_SPACEUSED) {
+		freq.action = NN_FS_SPACEUSED;
+		freq.spaceUsed = 0;
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushinteger(C, freq.spaceUsed);
+	}
+	if(method == NN_FSNUM_GETLABEL) {
+		char buf[NN_MAX_LABEL];
+		freq.action = NN_FS_GETLABEL;
+		freq.getlabel.buf = buf;
+		freq.getlabel.len = NN_MAX_LABEL;
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		if(freq.getlabel.len == 0) return nn_pushnull(C);
+		return nn_pushlstring(C, freq.getlabel.buf, freq.getlabel.len);
+	}
+	if(method == NN_FSNUM_SETLABEL) {
+		e = nn_defaultstring(C, 0, "");
+		if(e) return e;
+		if(nn_checkstring(C, 0, "bad argument #1 (label expected)")) return NN_EBADCALL;
+		freq.action = NN_FS_SETLABEL;
+		freq.setlabel.buf = nn_tolstring(C, 0, &freq.setlabel.len);
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		if(freq.setlabel.len == 0) return nn_pushnull(C);
+		return nn_pushlstring(C, freq.setlabel.buf, freq.setlabel.len);
+	}
+	if(method == NN_FSNUM_ISRO) {
+		freq.action = NN_FS_ISRO;
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, freq.isReadonly);
+	}
+	if(method == NN_FSNUM_OPEN) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		e = nn_defaultstring(C, 1, "r");
+		if(e) return e;
+		if(nn_checkstring(C, 1, "bad argument #2 (mode expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_OPEN;
+		freq.open.path = truepath;
+		freq.open.mode = nn_tostring(C, 1);
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushinteger(C, freq.fd);
+	}
+	if(method == NN_FSNUM_READ) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
+		e = nn_defaultinteger(C, 1, NN_MAX_READ);
+		if(e) return e;
+		if(nn_checknumber(C, 1, "bad argument #2 (number expected)")) return NN_EBADCALL;
+		double requested = nn_tonumber(C, 1);
+		if(requested > NN_MAX_READ) requested = NN_MAX_READ;
+		freq.action = NN_FS_CLOSE;
+		freq.fd = nn_tointeger(C, 0);
+		char buf[NN_MAX_READ];
+		freq.read.buf = buf;
+		freq.read.len = requested;
+		e = state->handler(&freq);
+		if(e) return e;
+		if(freq.read.buf == NULL) return NN_OK;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_FSNUM_WRITE) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
+		freq.action = NN_FS_WRITE;
+		freq.fd = nn_tointeger(C, 0);
+		freq.write.buf = nn_tolstring(C, 1, &freq.write.len);
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_FSNUM_SEEK) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
+		e = nn_defaultstring(C, 1, "cur");
+		if(e) return e;
+		if(nn_checkinteger(C, 1, "bad argument #2 (whence expected)")) return NN_EBADCALL;
+		e = nn_defaultinteger(C, 2, 0);
+		if(e) return e;
+		if(nn_checkinteger(C, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
+		const char *whence = nn_tostring(C, 1);
+		nn_FSWhence seek = NN_SEEK_SET;
+		if(nn_strcmp(whence, "set") == 0) {
+			seek = NN_SEEK_SET;
+		}
+		if(nn_strcmp(whence, "cur") == 0) {
+			seek = NN_SEEK_CUR;
+		}
+		if(nn_strcmp(whence, "end") == 0) {
+			seek = NN_SEEK_END;
+		}
+		freq.action = NN_FS_CLOSE;
+		freq.fd = nn_tointeger(C, 0);
+		freq.seek.whence = seek;
+		freq.seek.off = nn_tointeger(C, 2);
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_FSNUM_CLOSE) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
+		freq.action = NN_FS_CLOSE;
+		freq.fd = nn_tointeger(C, 0);
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_FSNUM_LIST) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_OPENDIR;
+		freq.opendir = truepath;
+		e = state->handler(&freq);
+		if(e) return e;
+		int dirfd = freq.fd;
+		size_t entCount = 0;
+		while(true) {
+			char name[NN_MAX_PATH];
+			freq.action = NN_FS_READDIR;
+			freq.fd = dirfd;
+			freq.readdir.buf = name;
+			freq.readdir.len = NN_MAX_PATH;
+			e = state->handler(&freq);
+			if(e) goto done;
+			if(freq.readdir.buf == NULL) break;
+			if(nn_isLiterallyJust(freq.readdir.buf, freq.readdir.len, '.')) continue;
+			e = nn_pushlstring(C, freq.readdir.buf, freq.readdir.len);
+			if(e) goto done;
+			entCount++;
+		}
+done:;
+		freq.action = NN_FS_CLOSEDIR;
+		freq.fd = dirfd;
+		state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pusharraytable(C, entCount);
+	}
+	if(method == NN_FSNUM_EXISTS) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_STAT;
+		freq.stat.path = truepath;
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, freq.stat.path != NULL);
+	}
+	if(method == NN_FSNUM_ISDIR) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_STAT;
+		freq.stat.path = truepath;
+		e = state->handler(&freq);
+		if(e) return e;
+		if(freq.stat.path == NULL) {
+			nn_setError(C, "no such file or directory");
+			return NN_EBADCALL;
+		}
+		req->returnCount = 1;
+		return nn_pushbool(C, freq.stat.isDirectory);
+	}
+	if(method == NN_FSNUM_SIZE) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_STAT;
+		freq.stat.path = truepath;
+		e = state->handler(&freq);
+		if(e) return e;
+		if(freq.stat.path == NULL) {
+			nn_setError(C, "no such file or directory");
+			return NN_EBADCALL;
+		}
+		req->returnCount = 1;
+		return nn_pushinteger(C, freq.stat.size);
+	}
+	if(method == NN_FSNUM_LASTMODIFIED) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_STAT;
+		freq.stat.path = truepath;
+		e = state->handler(&freq);
+		if(e) return e;
+		if(freq.stat.path == NULL) {
+			nn_setError(C, "no such file or directory");
+			return NN_EBADCALL;
+		}
+		req->returnCount = 1;
+		return nn_pushinteger(C, freq.stat.lastModified * 1000);
+	}
+	if(method == NN_FSNUM_MKDIR) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_MKDIR;
+		freq.mkdir = truepath;
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_FSNUM_REMOVE) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		char truepath[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truepath, nn_tostring(C, 0));
+		if(e) return e;
+		freq.action = NN_FS_RENAME;
+		freq.rename.from = truepath;
+		freq.rename.to = NULL;
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_FSNUM_RENAME) {
+		if(nn_checkstring(C, 0, "bad argument #1 (path expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 1, "bad argument #2 (path expected)")) return NN_EBADCALL;
+		char truefrom[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, truefrom, nn_tostring(C, 0));
+		if(e) return e;
+		char trueto[NN_MAX_PATH];
+		e = nn_fsPathCheck(C, trueto, nn_tostring(C, 1));
+		if(e) return e;
+		freq.action = NN_FS_RENAME;
+		freq.rename.from = truefrom;
+		freq.rename.to = trueto;
+		e = state->handler(&freq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	nn_setError(C, "not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, const nn_Filesystem *fs, void *state, nn_FSHandler *handler) {
+	nn_Component *c = nn_createComponent(universe, address, "filesystem");
+	if(c == NULL) return NULL;
+	const nn_Method methods[NN_FSNUM_COUNT] = {
+		[NN_FSNUM_SPACETOTAL] = {"spaceTotal", "function(): integer - Capacity of the drive", NN_DIRECT},
+		[NN_FSNUM_SPACEUSED] = {"spaceUsed", "function(): integer - Amount of space used", NN_DIRECT},
+		[NN_FSNUM_GETLABEL] = {"getLabel", "function(): string? - Gets the label of the drive, if any", NN_DIRECT},
+		[NN_FSNUM_SETLABEL] = {"setLabel", "function(label?: string): string - Sets the label of the drive. Returns the new label, which may be truncated", NN_DIRECT},
+		[NN_FSNUM_ISRO] = {"isReadOnly", "function(): boolean - Returns whether the drive is read-only", NN_DIRECT},
+		[NN_FSNUM_OPEN] = {"open", "function(path: string, mode?: 'r'|'w'|'a'): integer - Open a file", NN_DIRECT},
+		[NN_FSNUM_READ] = {"read", "function(fd: integer, len?: integer): string? - Read from a file, returns nothing on EoF", NN_DIRECT},
+		[NN_FSNUM_WRITE] = {"write", "function(fd: integer, data: string): boolean - Writes to a file, returns whether the operation succeeded", NN_DIRECT},
+		[NN_FSNUM_SEEK] = {"seek", "function(fd: integer, whence?: 'set'|'cur'|'end', off?: integer): integer - Seeks a file, returns new position", NN_DIRECT},
+		[NN_FSNUM_CLOSE] = {"close", "function(fd: integer): boolean - Close a file", NN_DIRECT},
+		[NN_FSNUM_LIST] = {"list", "function(path: string): string[] - Returns the entries in a directory", NN_DIRECT},
+		[NN_FSNUM_EXISTS] = {"exists", "function(path: string): boolean - Returns whether an entry exists", NN_DIRECT},
+		[NN_FSNUM_ISDIR] = {"isDirectory", "function(path: string): boolean - Returns whether an entry is a directory", NN_DIRECT},
+		[NN_FSNUM_SIZE] = {"size", "function(path: string): integer - Returns the size of an entry", NN_DIRECT},
+		[NN_FSNUM_LASTMODIFIED] = {"lastModified", "function(path: string): integer - Returns the UNIX timestamp of the last modified time", NN_DIRECT},
+		[NN_FSNUM_MKDIR] = {"makeDirectory", "function(path: string): boolean - Create a directory, recursively. Does not fail if directory already exists", NN_DIRECT},
+		[NN_FSNUM_REMOVE] = {"remove", "function(path: string): boolean - Recursively deletes an entry", NN_DIRECT},
+		[NN_FSNUM_RENAME] = {"rename", "function(from: string, to: string): boolean - Renames/moves an entry", NN_DIRECT},
+	};
+	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_FSNUM_COUNT);
+	if(e) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	nn_Context *ctx = &universe->ctx;
+	nn_FSState *fsstate = nn_alloc(ctx, sizeof(*fsstate));
+	if(fsstate == NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	fsstate->ctx = ctx;
+	fsstate->fs = *fs;
+	fsstate->state = state;
+	fsstate->handler = handler;
+	nn_setComponentState(c, fsstate);
+	nn_setComponentHandler(c, nn_fsHandler);
+	return c;
 }

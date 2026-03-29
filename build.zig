@@ -23,7 +23,7 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
     dataMod.addCSourceFiles(.{
         .files = &[_][]const u8{
             "src/neonucleus.c",
-            "src/ncomplib.h",
+            "src/ncomplib.c",
         },
         .flags = &.{
             if (opts.baremetal) "-DNN_BAREMETAL" else "",
