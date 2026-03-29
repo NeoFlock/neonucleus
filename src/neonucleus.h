@@ -879,7 +879,10 @@ typedef struct nn_EEPROMRequest {
 	void *state;
 	const nn_EEPROM *eeprom;
 	nn_EEPROMAction action;
-	char *buf;
+	union {
+		char *buf;
+		const char *robuf;
+	};
 	size_t buflen;
 } nn_EEPROMRequest;
 
