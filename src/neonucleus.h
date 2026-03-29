@@ -1051,6 +1051,8 @@ typedef struct nn_VFilesystem {
 	const char *label;
 	size_t labellen;
 	bool isReadOnly;
+	// cost of a file entry when computed the spaceUsed
+	size_t fileCost;
 	// The maximum amount of directory entries. This is used to pre-allocate an array.
 	// It also helps against memory hogging attacks.
 	size_t maxDirEntries;
