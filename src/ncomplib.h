@@ -48,6 +48,8 @@ typedef enum ncl_VFSAction {
 
 	// non-recursively remove entry
 	NCL_VFS_REMOVE,
+	// non-recursively make directory
+	NCL_VFS_MKDIR,
 
 	NCL_VFS_STAT,
 } ncl_VFSAction;
@@ -92,6 +94,7 @@ typedef struct ncl_VFSRequest {
 		} readdir;
 		void *closedir;
 		const char *remove;
+		const char *mkdir;
 		struct {
 			// set to NULL if missing
 			const char *path;
@@ -138,8 +141,13 @@ size_t ncl_spaceUsedIn(ncl_VFS vfs, const char *path);
 // gets the real space used
 size_t ncl_spaceUsedBy(ncl_VFS vfs, const char *path);
 
+bool ncl_exists(ncl_VFS vfs, const char *path);
+
 bool ncl_remove(ncl_VFS vfs, const char *path);
 bool ncl_removeRecursive(ncl_VFS vfs, const char *path);
+
+bool ncl_mkdir(ncl_VFS vfs, const char *path);
+bool ncl_mkdirRecursive(ncl_VFS vfs, const char *path);
 
 typedef struct ncl_EncodedState {
 	char *buf;

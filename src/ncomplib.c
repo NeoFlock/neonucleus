@@ -107,6 +107,11 @@ bool ncl_defaultHandler(ncl_VFSRequest *request) {
 		stat->lastModified = s.st_mtime;
 		return true;
 	}
+	if(request->action == NCL_VFS_MKDIR) {
+		// we're not meant to have executables.
+		int mode = 6*64 + 6*8 + 6;
+		return mkdir(request->mkdir, mode) == 0;
+	}
 #endif
 	return false; // not supported
 }
@@ -141,9 +146,41 @@ void ncl_closefile(ncl_VFS vfs, void *file) {
 	vfs.handler(&req);
 }
 
-bool ncl_readfile(ncl_VFS vfs, void *file, char *buf, size_t *len);
-bool ncl_writefile(ncl_VFS vfs, void *file, const char *data, size_t len);
-bool ncl_seekfile(ncl_VFS vfs, void *file, nn_FSWhence whence, int *off);
+bool ncl_readfile(ncl_VFS vfs, void *file, char *buf, size_t *len) {
+	ncl_VFSRequest req;
+	req.state = vfs.state;
+	req.action = NCL_VFS_READ;
+	req.read.file = file;
+	req.read.buf = buf;
+	req.read.len = *len;
+	if(!vfs.handler(&req)) return false;
+	if(req.read.buf == NULL) return false;
+	*len = req.read.len;
+	return true;
+}
+
+bool ncl_writefile(ncl_VFS vfs, void *file, const char *data, size_t len) {
+	ncl_VFSRequest req;
+	req.state = vfs.state;
+	req.action = NCL_VFS_WRITE;
+	req.write.file = file;
+	req.write.buf = data;
+	req.write.len = len;
+	return vfs.handler(&req);
+}
+
+bool ncl_seekfile(ncl_VFS vfs, void *file, nn_FSWhence whence, int *off) {
+	ncl_VFSRequest req;
+	req.state = vfs.state;
+	req.action = NCL_VFS_SEEK;
+	req.seek.file = file;
+	req.seek.whence = whence;
+	req.seek.off = *off;
+	if(!vfs.handler(&req)) return false;
+	*off = req.seek.off;
+	return true;
+}
+
 bool ncl_stat(ncl_VFS vfs, const char *path, ncl_Stat *stat) {
 	ncl_VFSRequest req;
 	req.state = vfs.state;
@@ -220,6 +257,31 @@ size_t ncl_spaceUsedBy(ncl_VFS vfs, const char *path) {
 	ncl_closedir(vfs, dir);
 	return spaceUsed;
 }
+
+bool ncl_exists(ncl_VFS vfs, const char *path) {
+	ncl_Stat s;
+	return ncl_stat(vfs, path, &s);
+}
+
+bool ncl_remove(ncl_VFS vfs, const char *path) {
+	ncl_VFSRequest req;
+	req.state = vfs.state;
+	req.action = NCL_VFS_REMOVE;
+	req.remove = path;
+	return vfs.handler(&req);
+}
+
+bool ncl_removeRecursive(ncl_VFS vfs, const char *path);
+
+bool ncl_mkdir(ncl_VFS vfs, const char *path) {
+	ncl_VFSRequest req;
+	req.state = vfs.state;
+	req.action = NCL_VFS_MKDIR;
+	req.mkdir = path;
+	return vfs.handler(&req);
+}
+
+bool ncl_mkdirRecursive(ncl_VFS vfs, const char *path);
 
 typedef struct ncl_ScreenPixel {
 	nn_codepoint codepoint;
