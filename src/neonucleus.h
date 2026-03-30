@@ -547,6 +547,7 @@ typedef struct nn_ComponentRequest {
 	nn_Context *ctx;
 	nn_Computer *computer;
 	void *state;
+	void *classState;
 	nn_ComponentAction action;
 	// method index
 	unsigned int methodIdx;
@@ -573,6 +574,7 @@ void nn_dropComponentN(nn_Component *c, size_t n);
 // configure the state
 void nn_setComponentHandler(nn_Component *c, nn_ComponentHandler *handler);
 void nn_setComponentState(nn_Component *c, void *state);
+void nn_setComponentClassState(nn_Component *c, void *state);
 // sets the methods, same implications as setComponentMethodsArray.
 // methods is NULL-terminated, as in, it is terminated by a method with a NULL name.
 nn_Exit nn_setComponentMethods(nn_Component *c, const nn_Method *methods);
@@ -587,6 +589,8 @@ nn_Exit nn_setComponentTypeID(nn_Component *c, const char *internalTypeID);
 
 // get component state
 void *nn_getComponentState(nn_Component *c);
+// get component class state
+void *nn_getComponentClassState(nn_Component *c);
 // counts how many methods are registered. May return too many if some of them are not enabled.
 size_t nn_countComponentMethods(nn_Component *c);
 // will fill the methodnames array with the names of the *enabled* methods.
@@ -934,10 +938,10 @@ typedef enum nn_FSAction {
 
 	// for file I/O
 	NN_FS_OPEN,
+	NN_FS_CLOSE,
 	NN_FS_READ,
 	NN_FS_WRITE,
 	NN_FS_SEEK,
-	NN_FS_CLOSE,
 
 	// for list
 	NN_FS_OPENDIR,
@@ -986,6 +990,8 @@ typedef struct nn_FSRequest {
 		} seek;
 		const char *opendir;
 		struct {
+			// directory path, as a reminder if need be
+			const char *dirpath;
 			char *buf;
 			// set to length of entry name
 			size_t len;

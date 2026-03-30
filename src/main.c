@@ -382,6 +382,8 @@ int main(int argc, char **argv) {
 	
 	nn_Component *eepromCard = nn_createVEEPROM(u, "eeprom", &veeprom, &nn_defaultEEPROMs[3]);
 
+	nn_Component *managedfs = ncl_createFilesystem(u, "mainFS", "data/OpenOS", &nn_defaultFilesystems[3], true);
+
 	size_t ramTotal = 0;
 	ramTotal += nn_ramSizes[5];
 	
@@ -426,6 +428,7 @@ restart:;
 
 	nn_mountComponent(c, ocelotCard, -1);
 	nn_mountComponent(c, eepromCard, 0);
+	nn_mountComponent(c, managedfs, 1);
 
 	while(true) {
 		if(WindowShouldClose()) break;

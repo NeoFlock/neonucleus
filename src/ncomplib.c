@@ -2,7 +2,6 @@
 #include "ncomplib.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdatomic.h>
 
 static bool ncl_defaultHandler(ncl_VFSRequest *request);
 
@@ -74,14 +73,18 @@ bool ncl_defaultHandler(ncl_VFSRequest *request) {
 		return true;
 	}
 	if(request->action == NCL_VFS_READDIR) {
-		DIR *d = request->readdir.dir;
-		struct dirent *ent = readdir(d);
-		if(ent == NULL) {
-			request->readdir.name = NULL;
-		} else {
-			strncpy(request->readdir.name, ent->d_name, NN_MAX_PATH-1);
+		while(1) {
+			DIR *d = request->readdir.dir;
+			struct dirent *ent = readdir(d);
+			if(ent == NULL) {
+				request->readdir.name = NULL;
+			} else if(strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) {
+				continue;
+			} else {
+				strncpy(request->readdir.name, ent->d_name, NN_MAX_PATH-1);
+			}
+			return true;
 		}
-		return true;
 	}
 	if(request->action == NCL_VFS_STAT) {
 		struct stat s;
@@ -358,10 +361,10 @@ typedef struct ncl_FSState {
 	size_t spaceUsed;
 	// if 0, needs to be recomputed
 	size_t realSpaceUsed;
-	atomic_size_t usage;
+	size_t usage;
 	bool isReadonly;
 	// all the arrays
-	FILE *fds[NN_MAX_OPENFILES];
+	void *fds[NN_MAX_OPENFILES];
 	void *dirs[NN_MAX_OPENFILES];
 	char label[NN_MAX_LABEL];
 	size_t labellen;
@@ -372,7 +375,7 @@ typedef struct ncl_DriveState {
 	nn_Lock *lock;
 	nn_Drive conf;
 	bool isReadonly;
-	atomic_size_t usage;
+	size_t usage;
 	size_t lastSector;
 	char *path;
 	FILE *file;
@@ -385,22 +388,18 @@ typedef struct ncl_EEState {
 	nn_Lock *lock;
 	nn_EEPROM conf;
 	bool isReadonly;
-	atomic_size_t usage;
+	size_t usage;
 	char *codepath;
 	char *datapath;
 	char label[NN_MAX_LABEL];
 	size_t labellen;
 } ncl_EEState;
 
-static void ncl_fixPath(ncl_VFS vfs, const char *path, char buf[NN_MAX_PATH]) {
-	size_t len = 0;
-	while(path[len]) {
-		if(len == NN_MAX_PATH) break;
-		if(path[len] == '/') buf[len] = vfs.pathsep;
-		else buf[len] = path[len];
-		len++;
+static void ncl_fixPath(ncl_FSState *fs, const char *path, char buf[NN_MAX_PATH]) {
+	snprintf(buf, NN_MAX_PATH, "%s%c%s", fs->path, fs->vfs.pathsep, path);
+	for(size_t i = 0; buf[i]; i++) {
+		if(buf[i] == '/') buf[i] = fs->vfs.pathsep;
 	}
-	buf[len] = '\0';
 }
 
 // assumes locked
@@ -420,6 +419,19 @@ static size_t ncl_fsGetRealUsage(ncl_FSState *fs) {
 	return fs->realSpaceUsed;
 }
 
+// -1 on too many
+static int ncl_findFileDesc(void *fds[NN_MAX_OPENFILES]) {
+	for(int i = 0; i < NN_MAX_OPENFILES; i++) {
+		if(fds[i] == NULL) return i;
+	}
+	return -1;
+}
+
+static void *ncl_getFile(void *fds[NN_MAX_OPENFILES], int fd) {
+	if(fd < 0 || fd > NN_MAX_OPENFILES) return NULL;
+	return fds[fd];
+}
+
 static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 	ncl_FSState *state = req->state;
 	nn_Context *ctx = req->ctx;
@@ -431,13 +443,197 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 			if(state->fds[i] != NULL) ncl_closefile(state->vfs, state->fds[i]);
 			if(state->dirs[i] != NULL) ncl_closedir(state->vfs, state->dirs[i]);
 		}
+		nn_destroyLock(ctx, state->lock);
 		nn_strfree(ctx, state->path);
 		nn_free(ctx, state, sizeof(*state));
 		return NN_OK;
 	}
 	if(req->action == NN_FS_SPACEUSED) {
 		nn_lock(ctx, state->lock);
+		state->usage++;
 		req->spaceUsed = ncl_fsGetUsage(state);
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_GETLABEL) {
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		size_t len = state->labellen;
+		if(len > req->getlabel.len) len = req->getlabel.len;
+		memcpy(req->getlabel.buf, state->label, len);
+		req->getlabel.len = len;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_SETLABEL) {
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		size_t len = req->setlabel.len;
+		if(len > NN_MAX_LABEL) len = NN_MAX_LABEL;
+		memcpy(state->label, req->setlabel.buf, len);
+		state->labellen = len;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_ISRO) {
+		req->isReadonly = state->isReadonly;
+		return NN_OK;
+	}
+	if(req->action == NN_FS_OPEN) {
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		int fd = ncl_findFileDesc(state->fds);
+		if(fd < 0) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "too many files");
+			return NN_EBADCALL;
+		}
+		const char *mode = req->open.mode;
+		if(mode[0] != 'r' && state->isReadonly) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "is readonly");
+			return NN_EBADCALL;
+		}
+		char path[NN_MAX_PATH];
+		ncl_fixPath(state, req->open.path, path);
+		void *file = ncl_openfile(state->vfs, path, mode);
+		if(file == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, req->open.path);
+			return NN_EBADCALL;
+		}
+		state->fds[fd] = file;
+		req->fd = fd;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_CLOSE) {
+		nn_lock(ctx, state->lock);
+		int fd = req->fd;
+		void *file = ncl_getFile(state->fds, fd);
+		if(file == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		state->fds[fd] = NULL;
+		volatile ncl_VFS vfs = state->vfs;
+		nn_unlock(ctx, state->lock);
+		// out of lock for the most minimal of performance
+		ncl_closefile(vfs, file);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_READ) {
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		void *file = ncl_getFile(state->fds, req->fd);
+		if(file == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		if(!ncl_readfile(state->vfs, file, req->read.buf, &req->read.len)) {
+			req->read.buf = NULL;
+		}
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_WRITE) {
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		void *file = ncl_getFile(state->fds, req->fd);
+		if(file == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		size_t spaceRemaining = state->conf.spaceTotal - ncl_fsGetUsage(state);
+		// inaccurate...
+		if(spaceRemaining < req->write.len) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "out of space");
+			return NN_EBADCALL;
+		}
+		bool ok = ncl_writefile(state->vfs, file, req->write.buf, req->write.len);
+		nn_unlock(ctx, state->lock);
+		if(ok) return NN_OK;
+		nn_setError(C, "write failed");
+		return NN_EBADCALL;
+	}
+	if(req->action == NN_FS_SEEK) {
+		nn_lock(ctx, state->lock);
+		void *file = ncl_getFile(state->fds, req->fd);
+		if(file == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		bool ok = ncl_seekfile(state->vfs, file, req->seek.whence, &req->seek.off);
+		nn_unlock(ctx, state->lock);
+		if(ok) return NN_OK;
+		nn_setError(C, "seek failed");
+		return NN_EBADCALL;
+	}
+	if(req->action == NN_FS_OPENDIR) {
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		int fd = ncl_findFileDesc(state->dirs);
+		if(fd < 0) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "too many directories listed simultaneously");
+			return NN_EBADCALL;
+		}
+		char path[NN_MAX_PATH];
+		ncl_fixPath(state, req->open.path, path);
+		void *dir = ncl_opendir(state->vfs, path);
+		if(dir == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, req->opendir);
+			return NN_EBADCALL;
+		}
+		state->dirs[fd] = dir;
+		req->fd = fd;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_CLOSEDIR) {
+		nn_lock(ctx, state->lock);
+		int fd = req->fd;
+		void *file = ncl_getFile(state->dirs, fd);
+		if(file == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		state->dirs[fd] = NULL;
+		volatile ncl_VFS vfs = state->vfs;
+		nn_unlock(ctx, state->lock);
+		// out of lock for the most minimal of performance
+		ncl_closedir(vfs, file);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_READDIR) {
+		nn_lock(ctx, state->lock);
+		int fd = req->fd;
+		void *dir = ncl_getFile(state->dirs, fd);
+		if(dir == NULL) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		char name[NN_MAX_PATH];
+		if(!ncl_readdir(state->vfs, dir, name)) {
+			nn_unlock(ctx, state->lock);
+			req->readdir.buf = NULL;
+			return NN_OK;
+		}
+		char path[NN_MAX_PATH];
+		snprintf(path, NN_MAX_PATH, "%s%c%s%c%s", state->path, state->vfs.pathsep, req->readdir.dirpath, state->vfs.pathsep, name);
+		ncl_Stat s;
+		if(!ncl_stat(state->vfs, path, &s)) s.isDirectory = false;
+		if(s.isDirectory) snprintf(req->readdir.buf, req->readdir.len, "%s/", name);
+		else snprintf(req->readdir.buf, req->readdir.len, "%s", name);
+		req->readdir.len = strlen(req->readdir.buf);
 		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
@@ -446,7 +642,44 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 	return NN_EBADCALL;
 }
 
-nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, const char *path, const nn_Filesystem *fs, bool isReadonly);
+nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, const char *path, const nn_Filesystem *fs, bool isReadonly) {
+	nn_Context *ctx = nn_getUniverseContext(universe);
+
+	ncl_FSState *state = nn_alloc(ctx, sizeof(*state));
+	if(state == NULL) return NULL;
+	state->ctx = ctx;
+	state->lock = nn_createLock(ctx);
+	if(state->lock == NULL) {
+		nn_free(ctx, state, sizeof(*state));
+		return NULL;
+	}
+	state->path = nn_strdup(ctx, path);
+	if(state->path == NULL) {
+		nn_destroyLock(ctx, state->lock);
+		nn_free(ctx, state, sizeof(*state));
+		return NULL;
+	}
+	state->vfs = ncl_defaultFS;
+	state->usage = 0;
+	state->isReadonly = isReadonly;
+	state->conf = *fs;
+	state->labellen = 0;
+	state->realSpaceUsed = 0;
+	state->spaceUsed = 0;
+	for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
+		state->fds[i] = NULL;
+		state->dirs[i] = NULL;
+	}
+	nn_Component *c = nn_createFilesystem(universe, address, fs, state, ncl_fsHandler);
+	if(c == NULL) {
+		nn_strfree(ctx, state->path);
+		nn_destroyLock(ctx, state->lock);
+		nn_free(ctx, state, sizeof(*state));
+		return NULL;
+	}
+	return c;
+}
+
 nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
 nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *codepath, const char *datapath, bool isReadonly);
 
@@ -619,8 +852,10 @@ bool ncl_makeReadonly(nn_Component *component) {
 	void *state = nn_getComponentState(component);
 	if(strcmp(ty, NCL_FS) == 0) {
 		ncl_FSState *fs = state;
+		nn_lock(fs->ctx, fs->lock);
 		fs->isReadonly = true;
 		fs->usage++;
+		nn_unlock(fs->ctx, fs->lock);
 		return true;
 	}
 	if(strcmp(ty, NCL_DRIVE) == 0) {

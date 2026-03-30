@@ -777,6 +777,7 @@ typedef struct nn_Component {
 	char *type;
 	char *internalID;
 	void *state;
+	void *classState;
 	nn_ComponentHandler *handler;
 	nn_Arena methodArena;
 	nn_HashMap methodsMap;
@@ -1457,6 +1458,7 @@ void nn_dropComponentN(nn_Component *c, size_t n) {
 
 	nn_ComponentRequest req;
 	req.state = c->state;
+	req.classState = c->classState;
 	req.ctx = ctx;
 	req.computer = NULL;
 	req.action = NN_COMP_DROP;
@@ -1475,6 +1477,10 @@ void nn_setComponentHandler(nn_Component *c, nn_ComponentHandler *handler) {
 
 void nn_setComponentState(nn_Component *c, void *state) {
 	c->state = state;
+}
+
+void nn_setComponentClassState(nn_Component *c, void *state) {
+	c->classState = state;
 }
 
 nn_Exit nn_setComponentMethods(nn_Component *c, const nn_Method *methods) {
@@ -1527,6 +1533,10 @@ nn_Exit nn_setComponentTypeID(nn_Component *c, const char *internalTypeID) {
 
 void *nn_getComponentState(nn_Component *c) {
 	return c->state;
+}
+
+void *nn_getComponentClassState(nn_Component *c) {
+	return c->classState;
 }
 
 // counts how many methods are registered. May return too many if some of them are not enabled.
@@ -1697,11 +1707,13 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 	req.ctx = &c->universe->ctx;
 	req.computer = computer;
 	req.state = c->state;
+	req.classState = c->classState;
 	req.action = NN_COMP_INVOKE;
 	req.methodIdx = m->idx;
 	req.returnCount = 0;
 	nn_Exit e = c->handler(&req);
 	if(e) {
+		if(e != NN_EBADCALL) nn_setErrorFromExit(computer, e);
 		nn_clearstack(computer);
 		return e;
 	}
@@ -1723,6 +1735,7 @@ nn_Exit nn_signalComponent(nn_Component *component, nn_Computer *computer, const
 	req.ctx = &component->universe->ctx;
 	req.computer = computer;
 	req.state = component->state;
+	req.classState = component->classState;
 	req.action = NN_COMP_SIGNAL;
 	req.signal = signal;
 	return component->handler(&req);
@@ -3125,18 +3138,17 @@ typedef enum nn_EENum {
 typedef struct nn_EEState {
 	nn_Context *ctx;
 	nn_EEPROM eeprom;
-	void *state;
 	nn_EEPROMHandler *handler;
 } nn_EEState;
 
 static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 	if(req->action == NN_COMP_SIGNAL) return NN_OK;
 	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
-	nn_EEState *state = req->state;
+	nn_EEState *state = req->classState;
 	nn_EEPROMRequest ereq;
 	ereq.ctx = req->ctx;
 	ereq.computer = req->computer;
-	ereq.state = state->state;
+	ereq.state = req->state;
 	ereq.eeprom = &state->eeprom;
 	nn_EEPROM eeprom = state->eeprom;
 	if(req->action == NN_COMP_DROP) {
@@ -3277,9 +3289,9 @@ nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const 
 	}
 	eestate->ctx = ctx;
 	eestate->eeprom = *eeprom;
-	eestate->state = state;
 	eestate->handler = handler;
-	nn_setComponentState(c, eestate);
+	nn_setComponentState(c, state);
+	nn_setComponentClassState(c, eestate);
 	nn_setComponentHandler(c, nn_eepromHandler);
 	return c;
 }
@@ -3337,8 +3349,8 @@ static nn_Exit nn_veepromHandler(nn_EEPROMRequest *request) {
 	}
 	if(request->action == NN_EEPROM_SETLABEL) {
 		if(request->buflen > NN_MAX_LABEL) request->buflen = NN_MAX_LABEL;
-		state->datalen = request->buflen;
-		nn_memcpy(state->data, request->robuf, state->datalen);
+		state->labellen = request->buflen;
+		nn_memcpy(state->label, request->robuf, state->labellen);
 		return NN_OK;
 	}
 	if(request->action == NN_EEPROM_SETARCH) {
@@ -3370,6 +3382,8 @@ nn_Component *nn_createVEEPROM(nn_Universe *universe, const char *address, const
 	state->data = data;
 	nn_memcpy(data, veeprom->data, veeprom->datalen);
 	state->datalen = veeprom->datalen;
+	nn_memcpy(state->label, veeprom->label, veeprom->labellen);
+	state->labellen = veeprom->labellen;
 
 	nn_Component *c = nn_createEEPROM(universe, address, eeprom, state, nn_veepromHandler);
 	if(c == NULL) goto fail;
@@ -3416,7 +3430,6 @@ typedef enum nn_FSNum {
 typedef struct nn_FSState {
 	nn_Context *ctx;
 	nn_Filesystem fs;
-	void *state;
 	nn_FSHandler *handler;
 } nn_FSState;
 
@@ -3433,11 +3446,11 @@ static nn_Exit nn_fsPathCheck(nn_Computer *C, char buf[NN_MAX_PATH], const char 
 static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 	if(req->action == NN_COMP_SIGNAL) return NN_OK;
 	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
-	nn_FSState *state = req->state;
+	nn_FSState *state = req->classState;
 	nn_FSRequest freq;
 	freq.ctx = req->ctx;
 	freq.computer = req->computer;
-	freq.state = state->state;
+	freq.state = req->state;
 	freq.fs = &state->fs;
 	if(req->action == NN_COMP_DROP) {
 		freq.action = NN_FS_DROP;
@@ -3513,7 +3526,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		if(nn_checknumber(C, 1, "bad argument #2 (number expected)")) return NN_EBADCALL;
 		double requested = nn_tonumber(C, 1);
 		if(requested > NN_MAX_READ) requested = NN_MAX_READ;
-		freq.action = NN_FS_CLOSE;
+		freq.action = NN_FS_READ;
 		freq.fd = nn_tointeger(C, 0);
 		char buf[NN_MAX_READ];
 		freq.read.buf = buf;
@@ -3522,7 +3535,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		if(e) return e;
 		if(freq.read.buf == NULL) return NN_OK;
 		req->returnCount = 1;
-		return nn_pushbool(C, true);
+		return nn_pushlstring(C, buf, freq.read.len);
 	}
 	if(method == NN_FSNUM_WRITE) {
 		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
@@ -3587,6 +3600,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 			char name[NN_MAX_PATH];
 			freq.action = NN_FS_READDIR;
 			freq.fd = dirfd;
+			freq.readdir.dirpath = truepath;
 			freq.readdir.buf = name;
 			freq.readdir.len = NN_MAX_PATH;
 			e = state->handler(&freq);
@@ -3747,9 +3761,9 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 	}
 	fsstate->ctx = ctx;
 	fsstate->fs = *fs;
-	fsstate->state = state;
 	fsstate->handler = handler;
-	nn_setComponentState(c, fsstate);
+	nn_setComponentState(c, state);
+	nn_setComponentClassState(c, fsstate);
 	nn_setComponentHandler(c, nn_fsHandler);
 	return c;
 }
