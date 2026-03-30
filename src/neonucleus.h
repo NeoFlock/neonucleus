@@ -1003,7 +1003,7 @@ typedef struct nn_FSRequest {
 			bool isDirectory;
 			// in seconds. Result will be multiplied by 1000.
 			// This is because OpenOS code is garbage.
-			size_t lastModified;
+			intptr_t lastModified;
 			// size. 0 for directories.
 			size_t size;
 		} stat;
@@ -1174,6 +1174,22 @@ typedef struct nn_ScreenConfig {
 
 // OC has 3 tiers, NN adds a 4th one as well.
 extern const nn_ScreenConfig nn_defaultScreens[4];
+
+typedef enum nn_ScreenAction {
+	NN_SCREEN_DROP,
+} nn_ScreenAction;
+
+typedef struct nn_ScreenRequest {
+	nn_Context *ctx;
+	nn_Computer *computer;
+	void *state;
+	const nn_ScreenConfig *screen;
+	nn_ScreenAction action;
+} nn_ScreenRequest;
+
+typedef nn_Exit (nn_ScreenHandler)(nn_ScreenRequest *req);
+
+nn_Component *nn_createScreen(nn_Universe *universe, const char *address, const nn_ScreenConfig *scrconf, void *state, nn_ScreenHandler *handler);
 
 // GPU class
 

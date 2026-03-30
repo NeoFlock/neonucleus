@@ -274,7 +274,21 @@ bool ncl_remove(ncl_VFS vfs, const char *path) {
 	return vfs.handler(&req);
 }
 
-bool ncl_removeRecursive(ncl_VFS vfs, const char *path);
+bool ncl_removeRecursive(ncl_VFS vfs, const char *path) {
+	ncl_Stat s;
+	if(!ncl_stat(vfs, path, &s)) return false;
+	if(s.isDirectory) {
+		void *dir = ncl_opendir(vfs, path);
+		char name[NN_MAX_PATH];
+		while(ncl_readdir(vfs, dir, name)) {
+			char subpath[NN_MAX_PATH];
+			snprintf(subpath, sizeof(subpath), "%s%c%s", path, vfs.pathsep, name);
+			ncl_removeRecursive(vfs, subpath);
+		}
+		ncl_closedir(vfs, dir);
+	}
+	return ncl_remove(vfs, path);
+}
 
 bool ncl_mkdir(ncl_VFS vfs, const char *path) {
 	ncl_VFSRequest req;
@@ -298,6 +312,7 @@ typedef struct ncl_ScreenPixel {
 
 typedef struct ncl_ScreenState {
 	nn_Context *ctx;
+	nn_Lock *lock;
 	nn_ScreenConfig conf;
 	int width;
 	int height;
@@ -308,6 +323,8 @@ typedef struct ncl_ScreenState {
 	int *resolvedPalette;
 	ncl_ScreenPixel *pixels;
 	ncl_ScreenFlags flags;
+	size_t keyboardCount;
+	char *keyboards[NCL_MAX_KEYBOARD];
 } ncl_ScreenState;
 
 typedef struct nn_VRAMBuf {
@@ -378,7 +395,6 @@ typedef struct ncl_DriveState {
 	size_t usage;
 	size_t lastSector;
 	char *path;
-	FILE *file;
 	char label[NN_MAX_LABEL];
 	size_t labellen;
 } ncl_DriveState;
@@ -637,6 +653,23 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
+	if(req->action == NN_FS_STAT) {
+		nn_lock(ctx, state->lock);
+		char path[NN_MAX_PATH];
+		ncl_fixPath(state, req->stat.path, path);
+		ncl_Stat s;
+		if(!ncl_stat(state->vfs, path, &s)) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "no such file or directory");
+			return NN_EBADCALL;
+		}
+		req->stat.isDirectory = s.isDirectory;
+		req->stat.size = s.size;
+		req->stat.lastModified = s.lastModified;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	// TODO: mkdir, rename
 
 	if(C) nn_setError(C, "not implemented yet");
 	return NN_EBADCALL;
@@ -677,11 +710,15 @@ nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, c
 		nn_free(ctx, state, sizeof(*state));
 		return NULL;
 	}
+	// TODO: handle OOM case
+	nn_setComponentTypeID(c, NCL_FS);
 	return c;
 }
 
 nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
 nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *codepath, const char *datapath, bool isReadonly);
+
+ncl_VFS ncl_setVFS(nn_Component *component, ncl_VFS vfs);
 
 static ncl_ScreenPixel ncl_getRealScreenPixel(const ncl_ScreenState *state, int x, int y) {
 	if(x < 1 || y < 1 || x >= state->width || y >= state->height) {
@@ -740,8 +777,98 @@ static void ncl_recomputeScreen(const ncl_ScreenState *state) {
 	}
 }
 
-nn_Component *ncl_createScreen(nn_Universe *universe, const char *address, const nn_ScreenConfig *config);
+static nn_Exit ncl_screenHandler(nn_ScreenRequest *req) {
+	nn_Context *ctx = req->ctx;
+	nn_Computer *C = req->computer;
+	ncl_ScreenState *state = req->state;
+	const nn_ScreenConfig *conf = req->screen;
+
+	if(req->action == NN_SCREEN_DROP) {
+		for(size_t i = 0; i < state->keyboardCount; i++) {
+			nn_strfree(ctx, state->keyboards[i]);
+		}
+		nn_destroyLock(ctx, state->lock);
+		nn_free(ctx, state->pixels, sizeof(ncl_ScreenPixel) * state->conf.maxWidth * state->conf.maxHeight);
+		nn_free(ctx, state->palette, sizeof(int) * state->conf.paletteColors);
+		nn_free(ctx, state->resolvedPalette, sizeof(int) * state->conf.paletteColors);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+
+	if(C) nn_setError(C, "ncl-screen: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *ncl_createScreen(nn_Universe *universe, const char *address, const nn_ScreenConfig *config) {
+	nn_Context *ctx = nn_getUniverseContext(universe);
+	ncl_ScreenState *screen = NULL;
+	ncl_ScreenPixel *pixels = NULL;
+	int *palette = NULL;
+	int *resolvedPalette = NULL;
+	nn_Component *c = NULL;
+	nn_Lock *lock = NULL;
+
+	screen = nn_alloc(ctx, sizeof(ncl_ScreenState));
+	if(screen == NULL) goto fail;
+
+	lock = nn_createLock(ctx);
+	if(lock == NULL) goto fail;
+
+	pixels = nn_alloc(ctx, sizeof(ncl_ScreenPixel) * config->maxWidth * config->maxHeight);
+	if(pixels == NULL) goto fail;
+
+	palette = nn_alloc(ctx, sizeof(int) * config->paletteColors);
+	if(palette == NULL) goto fail;
+	memcpy(palette, config->defaultPalette, sizeof(int) * config->paletteColors);
+	
+	resolvedPalette = nn_alloc(ctx, sizeof(int) * config->paletteColors);
+	if(resolvedPalette == NULL) goto fail;
+
+	screen->conf = *config;
+	screen->ctx = ctx;
+	screen->lock = lock;
+	screen->width = config->maxWidth;
+	screen->height = config->maxHeight;
+	screen->palette = palette;
+	screen->resolvedPalette = resolvedPalette;
+	screen->pixels = pixels;
+	screen->flags = 0;
+	screen->depth = config->maxDepth;
+	screen->viewportWidth = screen->width;
+	screen->viewportHeight = screen->height;
+	screen->keyboardCount = 0;
+
+	ncl_resetScreen(screen);
+
+	c = nn_createScreen(universe, address, config, screen, ncl_screenHandler);
+	if(c == NULL) goto fail;
+
+	if(nn_setComponentTypeID(c, NCL_SCREEN)) goto fail;
+
+	return c;
+
+fail:;
+	if(c != NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	if(lock != NULL) nn_destroyLock(ctx, lock);
+	nn_free(ctx, screen, sizeof(*screen));
+	nn_free(ctx, palette, sizeof(int) * config->paletteColors);
+	nn_free(ctx, resolvedPalette, sizeof(int) * config->paletteColors);
+	nn_free(ctx, pixels, sizeof(ncl_ScreenPixel) * config->maxWidth * config->maxHeight);
+	return NULL;
+}
+
 nn_Component *ncl_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu);
+
+void ncl_lockScreen(ncl_ScreenState *state) {
+	nn_lock(state->ctx, state->lock);
+}
+
+void ncl_unlockScreen(ncl_ScreenState *state) {
+	nn_unlock(state->ctx, state->lock);
+}
 
 void ncl_resetScreen(ncl_ScreenState *state) {
 	state->width = state->conf.maxWidth;
@@ -784,6 +911,18 @@ ncl_Pixel ncl_getScreenPixel(const ncl_ScreenState *state, int x, int y) {
 	};
 }
 
+void ncl_setScreenPixel(ncl_ScreenState *state, int x, int y, nn_codepoint codepoint, int fg, int bg, bool isFgPalette, bool isBgPalette) {
+	ncl_ScreenPixel p = {
+		.codepoint = codepoint,
+		.storedFg = fg,
+		.storedBg = bg,
+		.realFg = isFgPalette ? -1 : fg,
+		.realBg = isBgPalette ? -1 : bg,
+	};
+	ncl_setRealScreenPixel(state, x, y, p);
+	ncl_recomputeScreen(state);
+}
+
 ncl_ScreenFlags ncl_getScreenFlags(const ncl_ScreenState *state) {
 	return state->flags;
 }
@@ -791,6 +930,19 @@ ncl_ScreenFlags ncl_getScreenFlags(const ncl_ScreenState *state) {
 void ncl_setScreenFlags(ncl_ScreenState *state, ncl_ScreenFlags flags) {
 	state->flags = flags;
 }
+
+char ncl_getScreenDepth(ncl_ScreenState *state) {
+	return state->depth;
+}
+
+void ncl_setScreenDepth(ncl_ScreenState *state, char depth) {
+	state->depth = depth;
+}
+
+nn_Exit ncl_mountKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
+void ncl_unmountKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
+bool ncl_hasKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
+const char *ncl_getKeyboard(ncl_ScreenState *state, size_t idx);
 
 // general stuff
 
@@ -841,6 +993,19 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		stat->eeprom.codepath = ee->codepath;
 		stat->eeprom.datapath = ee->datapath;
 		nn_unlock(ee->ctx, ee->lock);
+		return;
+	}
+	if(strcmp(ty, NCL_SCREEN) == 0) {
+		ncl_ScreenState *screen = state;
+		nn_lock(screen->ctx, screen->lock);
+		stat->screen.conf = &screen->conf;
+		stat->screen.depth = screen->depth;
+		stat->screen.flags = screen->flags;
+		stat->screen.keyboardCount = screen->keyboardCount;
+		stat->screen.viewportWidth = screen->viewportWidth;
+		stat->screen.viewportHeight = screen->viewportHeight;
+		stat->screen.state = screen;
+		nn_unlock(screen->ctx, screen->lock);
 		return;
 	}
 }

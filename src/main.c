@@ -412,6 +412,19 @@ int main(int argc, char **argv) {
 	double nextSecond = 0;
 	double wattage = 0;
 
+	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
+	//nn_Component *gpu = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
+
+	{
+		// draw test
+		const char *s = "hello there";
+		for(size_t i = 0; s[i]; i++) {
+			unsigned char c = s[i];
+			ncl_ScreenState *scrstate = nn_getComponentState(screen);
+			ncl_setScreenPixel(scrstate, i+1, 1, c, 0xFFFFFF, 0x000000, false, false);
+		}
+	}
+
 
 restart:;
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
@@ -426,6 +439,7 @@ restart:;
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);
 
+	nn_mountComponent(c, screen, -1);
 	nn_mountComponent(c, ocelotCard, -1);
 	nn_mountComponent(c, eepromCard, 0);
 	nn_mountComponent(c, managedfs, 1);
@@ -435,6 +449,31 @@ restart:;
 
 		BeginDrawing();
 		ClearBackground(BLACK);
+
+		// drawing the screen
+		{
+			int offX = 0;
+			int offY = 0;
+			int cheight = 20;
+			int cwidth = MeasureText("A", cheight);
+
+			ncl_ScreenState *scrbuf = nn_getComponentState(screen);
+			ncl_lockScreen(scrbuf);
+			size_t scrw, scrh;
+			ncl_getScreenResolution(scrbuf, &scrw, &scrh);
+			for(int y = 1; y <= scrh; y++) {
+				for(int x = 1; x <= scrw; x++) {
+					ncl_Pixel p = ncl_getScreenPixel(scrbuf, x, y);
+					Vector2 pos = {
+						offX + (x - 1) * cwidth,
+						offY + (y - 1) * cheight,
+					};
+					DrawRectangle(pos.x, pos.y, cwidth, cheight, ne_processColor(p.bgColor));
+					DrawTextCodepoint(font, p.codepoint, pos, cheight, ne_processColor(p.fgColor));
+				}
+			}
+			ncl_unlockScreen(scrbuf);
+		}
 
 		int statY = 10;
 		if(sand.buf != NULL) {
@@ -536,6 +575,8 @@ cleanup:;
 	nn_destroyComputer(c);
 	nn_dropComponent(ocelotCard);
 	nn_dropComponent(eepromCard);
+	nn_dropComponent(managedfs);
+	nn_dropComponent(screen);
 	// rip the universe
 	nn_destroyUniverse(u);
 	UnloadFont(font);

@@ -281,6 +281,10 @@ static int luaArch_component_list(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	lua_createtable(L, 64, 0);
 	size_t len = nn_countComponents(arch->computer);
+	if(len == 0) {
+		lua_createtable(L, 0, 0);
+		return 1;
+	}
 	const char *comps[len];
 	nn_getComponents(arch->computer, comps);
 	for(size_t i = 0; i < len; i++) {
@@ -377,6 +381,10 @@ static int luaArch_component_methods(lua_State *L) {
 		return 2;
 	}
 	size_t methodLen = nn_countComponentMethods(c);
+	if(methodLen == 0) {
+		lua_createtable(L, 0, 0);
+		return 1;
+	}
 	const char *methods[methodLen];
 	nn_getComponentMethods(c, methods, &methodLen);
 	lua_createtable(L, 0, methodLen);
@@ -402,6 +410,10 @@ static int luaArch_component_fields(lua_State *L) {
 		return 2;
 	}
 	size_t methodLen = nn_countComponentMethods(c);
+	if(methodLen == 0) {
+		lua_createtable(L, 0, 0);
+		return 1;
+	}
 	const char *methods[methodLen];
 	nn_getComponentMethods(c, methods, &methodLen);
 	lua_createtable(L, 0, methodLen);

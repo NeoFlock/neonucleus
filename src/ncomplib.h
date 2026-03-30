@@ -10,6 +10,7 @@
 #define NCL_SCREEN "ncl-screen"
 
 #define NCL_MAX_VRAMBUF 128
+#define NCL_MAX_KEYBOARD 64
 
 // very low-level actions
 // some environment have VFSes so
@@ -32,7 +33,7 @@ typedef struct ncl_Stat {
 	size_t diskSize;
 	// The UNIX timestamp of the last modified date
 	// of the entry.
-	size_t lastModified;
+	intptr_t lastModified;
 } ncl_Stat;
 
 typedef enum ncl_VFSAction {
@@ -235,6 +236,8 @@ typedef struct ncl_ComponentStat {
 			ncl_ScreenFlags flags;
 			int viewportWidth;
 			int viewportHeight;
+			char depth;
+			size_t keyboardCount;
 		} screen;
 	};
 } ncl_ComponentStat;
@@ -244,11 +247,20 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat);
 // Returns whether it was successful or not.
 bool ncl_makeReadonly(nn_Component *component);
 
+void ncl_lockScreen(ncl_ScreenState *state);
+void ncl_unlockScreen(ncl_ScreenState *state);
 void ncl_resetScreen(ncl_ScreenState *state);
 void ncl_getScreenResolution(const ncl_ScreenState *state, size_t *width, size_t *height);
 void ncl_getScreenViewport(const ncl_ScreenState *state, size_t *width, size_t *height);
 ncl_Pixel ncl_getScreenPixel(const ncl_ScreenState *state, int x, int y);
+void ncl_setScreenPixel(ncl_ScreenState *state, int x, int y, nn_codepoint codepoint, int fg, int bg, bool isFgPalette, bool isBgPalette);
 ncl_ScreenFlags ncl_getScreenFlags(const ncl_ScreenState *state);
 void ncl_setScreenFlags(ncl_ScreenState *state, ncl_ScreenFlags flags);
+char ncl_getScreenDepth(ncl_ScreenState *state);
+void ncl_setScreenDepth(ncl_ScreenState *state, char depth);
+nn_Exit ncl_mountKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
+void ncl_unmountKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
+bool ncl_hasKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
+const char *ncl_getKeyboard(ncl_ScreenState *state, size_t idx);
 
 #endif

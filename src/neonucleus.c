@@ -1469,6 +1469,7 @@ void nn_dropComponentN(nn_Component *c, size_t n) {
 	nn_strfree(ctx, c->type);
 	nn_strfree(ctx, c->internalID);
 	nn_hashDeinit(&c->methodsMap);
+	nn_free(ctx, c, sizeof(*c));
 }
 
 void nn_setComponentHandler(nn_Component *c, nn_ComponentHandler *handler) {
@@ -3315,6 +3316,7 @@ static nn_Exit nn_veepromHandler(nn_EEPROMRequest *request) {
 	if(request->action == NN_EEPROM_DROP) {
 		nn_free(ctx, state->code, eeprom->size);
 		nn_free(ctx, state->data, eeprom->dataSize);
+		nn_free(ctx, state, sizeof(*state));
 		return NN_OK;
 	}
 	if(request->action == NN_EEPROM_GET) {
@@ -3384,6 +3386,12 @@ nn_Component *nn_createVEEPROM(nn_Universe *universe, const char *address, const
 	state->datalen = veeprom->datalen;
 	nn_memcpy(state->label, veeprom->label, veeprom->labellen);
 	state->labellen = veeprom->labellen;
+	if(veeprom->arch == NULL) {
+		state->archlen = 0;
+	} else {
+		state->archlen = nn_strlen(veeprom->arch);
+	}
+	nn_memcpy(state->arch, veeprom->arch, state->archlen);
 
 	nn_Component *c = nn_createEEPROM(universe, address, eeprom, state, nn_veepromHandler);
 	if(c == NULL) goto fail;
@@ -3765,5 +3773,55 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 	nn_setComponentState(c, state);
 	nn_setComponentClassState(c, fsstate);
 	nn_setComponentHandler(c, nn_fsHandler);
+	return c;
+}
+
+nn_Component *nn_createVFilesystem(nn_Universe *universe, const char *address, const nn_VFilesystem *vfs, const nn_Filesystem *fs);
+
+typedef struct nn_ScreenState {
+	nn_Context *ctx;
+	nn_ScreenConfig scrconf;
+	nn_ScreenHandler *handler;
+} nn_ScreenState;
+
+static nn_Exit nn_screenHandler(nn_ComponentRequest *req) {
+	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	nn_Context *ctx = req->ctx;
+	nn_ScreenState *state = req->classState;
+	nn_Computer *C = req->computer;
+	nn_ScreenRequest sreq;
+	sreq.ctx = ctx;
+	sreq.state = req->state;
+	sreq.computer = C;
+	sreq.screen = &state->scrconf;
+
+	if(req->action == NN_COMP_DROP) {
+		sreq.action = NN_SCREEN_DROP;
+		state->handler(&sreq);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+
+	nn_setError(C, "screen: not yet implemented");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createScreen(nn_Universe *universe, const char *address, const nn_ScreenConfig *scrconf, void *state, nn_ScreenHandler *handler) {
+	nn_Component *c = nn_createComponent(universe, address, "screen");
+	if(c == NULL) return NULL;
+	// TODO: methods
+	nn_Context *ctx = &universe->ctx;
+	nn_ScreenState *scrstate = nn_alloc(ctx, sizeof(*scrstate));
+	if(scrstate == NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	scrstate->ctx = ctx;
+	scrstate->scrconf = *scrconf;
+	scrstate->handler = handler;
+	nn_setComponentState(c, state);
+	nn_setComponentClassState(c, scrstate);
+	nn_setComponentHandler(c, nn_screenHandler);
 	return c;
 }
