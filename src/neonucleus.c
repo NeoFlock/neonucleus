@@ -3198,6 +3198,53 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 		if(ereq.buflen == 0) return nn_pushnull(C);
 		return nn_pushlstring(C, ereq.buf, ereq.buflen);
 	}
+	if(method == NN_EENUM_SET) {
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		ereq.action = NN_EEPROM_SET;
+		ereq.robuf = nn_tolstring(C, 0, &ereq.buflen);
+		if(ereq.buflen > eeprom.size) {
+			nn_setError(C, "not enough space");
+			return NN_EBADCALL;
+		}
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_EENUM_SETDATA) {
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		ereq.action = NN_EEPROM_SETDATA;
+		ereq.robuf = nn_tolstring(C, 0, &ereq.buflen);
+		if(ereq.buflen > eeprom.dataSize) {
+			nn_setError(C, "not enough space");
+			return NN_EBADCALL;
+		}
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_EENUM_SETLABEL) {
+		e = nn_defaultstring(C, 0, "");
+		if(e) return e;
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		ereq.action = NN_EEPROM_SETLABEL;
+		ereq.robuf = nn_tolstring(C, 0, &ereq.buflen);
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		if(ereq.buflen == 0) return nn_pushnull(C);
+		return nn_pushlstring(C, ereq.robuf, ereq.buflen);
+	}
+	if(method == NN_EENUM_SETARCH) {
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		ereq.action = NN_EEPROM_SETARCH;
+		ereq.robuf = nn_tolstring(C, 0, &ereq.buflen);
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
 	nn_setError(C, "not implemented yet");
 	return NN_EBADCALL;
 }
@@ -3278,7 +3325,30 @@ static nn_Exit nn_veepromHandler(nn_EEPROMRequest *request) {
 		request->buflen = state->archlen;
 		return NN_OK;
 	}
-	return NN_OK;
+	if(request->action == NN_EEPROM_SET) {
+		state->codelen = request->buflen;
+		nn_memcpy(state->code, request->robuf, state->codelen);
+		return NN_OK;
+	}
+	if(request->action == NN_EEPROM_SETDATA) {
+		state->datalen = request->buflen;
+		nn_memcpy(state->data, request->robuf, state->datalen);
+		return NN_OK;
+	}
+	if(request->action == NN_EEPROM_SETLABEL) {
+		if(request->buflen > NN_MAX_LABEL) request->buflen = NN_MAX_LABEL;
+		state->datalen = request->buflen;
+		nn_memcpy(state->data, request->robuf, state->datalen);
+		return NN_OK;
+	}
+	if(request->action == NN_EEPROM_SETARCH) {
+		if(request->buflen > NN_MAX_ARCHNAME) request->buflen = NN_MAX_ARCHNAME;
+		state->archlen = request->buflen;
+		nn_memcpy(state->arch, request->robuf, state->archlen);
+		return NN_OK;
+	}
+	nn_setError(C, "veeprom: not implemented yet");
+	return NN_EBADCALL;
 }
 
 nn_Component *nn_createVEEPROM(nn_Universe *universe, const char *address, const nn_VEEPROM *veeprom, const nn_EEPROM *eeprom) {
