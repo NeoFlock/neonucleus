@@ -851,6 +851,10 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 			nn_setError(C, "illegal copy operation");
 			return NN_EBADCALL;
 		}
+		// matches tmpfs behavior
+		if(ncl_exists(state->vfs, to)) {
+			ncl_removeRecursive(state->vfs, to);
+		}
 		bool ok = ncl_copyto(state->vfs, from, to);
 		if(ok) {
 			ncl_removeRecursive(state->vfs, from);
