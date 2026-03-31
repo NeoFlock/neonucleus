@@ -95,25 +95,12 @@ bool ncl_defaultHandler(ncl_VFSRequest *request) {
 		ncl_Stat *stat = request->stat.stat;
 		stat->isDirectory = S_ISDIR(s.st_mode);
 		stat->diskSize = s.st_blocks * 512;
-		stat->size = 0;
-		if(!stat->isDirectory) {
-			FILE *f = fopen(request->stat.path, "r");
-			if(f == NULL) {
-				// horribly off but don't care atp
-				stat->size = s.st_size;
-			} else {
-				fseek(f, SEEK_END, 0);
-				stat->size = ftell(f);
-				fclose(f);
-			}
-		}
+		stat->size = stat->isDirectory ? 0 : s.st_size;
 		stat->lastModified = s.st_mtime;
 		return true;
 	}
 	if(request->action == NCL_VFS_MKDIR) {
-		// we're not meant to have executables.
-		int mode = 6*64 + 6*8 + 6;
-		return mkdir(request->mkdir, mode) == 0;
+		return mkdir(request->mkdir, 0777) == 0;
 	}
 #endif
 	return false; // not supported
@@ -232,11 +219,9 @@ size_t ncl_spaceUsedIn(ncl_VFS vfs, const char *path) {
 	if(dir == NULL) return spaceUsed;
 	char name[NN_MAX_PATH];
 	while(ncl_readdir(vfs, dir, name)) {
-		if(strcmp(name, ".") != 0 && strcmp(name, "..") != 0) {
-			char subpath[NN_MAX_PATH];
-			snprintf(subpath, sizeof(subpath), "%s%c%s", path, vfs.pathsep, name);
-			spaceUsed += ncl_spaceUsedIn(vfs, subpath);
-		}
+		char subpath[NN_MAX_PATH];
+		snprintf(subpath, sizeof(subpath), "%s%c%s", path, vfs.pathsep, name);
+		spaceUsed += ncl_spaceUsedIn(vfs, subpath);
 	}
 	ncl_closedir(vfs, dir);
 	return spaceUsed;
@@ -251,11 +236,9 @@ size_t ncl_spaceUsedBy(ncl_VFS vfs, const char *path) {
 	if(dir == NULL) return spaceUsed;
 	char name[NN_MAX_PATH];
 	while(ncl_readdir(vfs, dir, name)) {
-		if(strcmp(name, ".") != 0 && strcmp(name, "..") != 0) {
-			char subpath[NN_MAX_PATH];
-			snprintf(subpath, sizeof(subpath), "%s%c%s", path, vfs.pathsep, name);
-			spaceUsed += ncl_spaceUsedBy(vfs, subpath);
-		}
+		char subpath[NN_MAX_PATH];
+		snprintf(subpath, sizeof(subpath), "%s%c%s", path, vfs.pathsep, name);
+		spaceUsed += ncl_spaceUsedBy(vfs, subpath);
 	}
 	ncl_closedir(vfs, dir);
 	return spaceUsed;
@@ -298,7 +281,94 @@ bool ncl_mkdir(ncl_VFS vfs, const char *path) {
 	return vfs.handler(&req);
 }
 
-bool ncl_mkdirRecursive(ncl_VFS vfs, const char *path);
+bool ncl_mkdirRecursive(ncl_VFS vfs, const char *path) {
+	ncl_Stat s;
+	if(ncl_stat(vfs, path, &s)) {
+		return s.isDirectory;
+	}
+	char buf[NN_MAX_PATH];
+	// use snprintf instead of strncpy cuz NULL terminator
+	snprintf(buf, NN_MAX_PATH, "%s", path);
+	char *sep = strrchr(buf, '/');
+	if(sep == NULL) {
+		return ncl_mkdir(vfs, path);
+	}
+	*sep = '\0';
+	if(!ncl_mkdirRecursive(vfs, buf)) return false;
+	return ncl_mkdir(vfs, path);
+}
+
+static bool ncl_copydir(ncl_VFS vfs, const char *from, const char *to) {
+	bool created = ncl_mkdir(vfs, to);
+	if(!created) return false;
+	void *dir = ncl_opendir(vfs, from);
+	if(dir == NULL) goto fail;
+
+	char name[NN_MAX_PATH];
+	while(ncl_readdir(vfs, dir, name)) {
+		char subpath[NN_MAX_PATH];
+		snprintf(subpath, NN_MAX_PATH, "%s%c%s", from, vfs.pathsep, name);
+		char subdest[NN_MAX_PATH];
+		snprintf(subdest, NN_MAX_PATH, "%s%c%s", to, vfs.pathsep, name);
+		printf("%s -> %s\n", subpath, subdest);
+		if(!ncl_copyto(vfs, subpath, subdest)) goto fail;
+	}
+
+	ncl_closedir(vfs, dir);
+	return true;
+fail:
+	if(dir != NULL) ncl_closedir(vfs, dir);
+	// erase all evidence
+	//ncl_removeRecursive(vfs, to);
+	return false;
+}
+
+static bool ncl_copyfile(ncl_VFS vfs, const char *from, const char *to) {
+	// copy some files!
+	void *src = NULL;
+	void *dest = NULL;
+	src = ncl_openfile(vfs, from, "r");
+	if(src == NULL) goto fail;
+	dest = ncl_openfile(vfs, to, "w");
+	if(dest == NULL) goto fail;
+
+	char buf[NN_MAX_READ];
+	size_t len = NN_MAX_READ;
+	while(ncl_readfile(vfs, src, buf, &len)) {
+		if(!ncl_writefile(vfs, dest, buf, len)) goto fail;
+		len = NN_MAX_READ;
+	}
+	ncl_closefile(vfs, src);
+	ncl_closefile(vfs, dest);
+
+	return true;
+fail:
+	if(src != NULL) ncl_closefile(vfs, src);
+	if(dest != NULL) ncl_closefile(vfs, dest);
+	//ncl_remove(vfs, to);
+	return false;
+}
+
+static bool ncl_isIllegalCopy(const char *from, const char *to) {
+	// check if to starts with from, or from starts with to
+	if(strncmp(from, to, strlen(from)) == 0) return true;
+	if(strncmp(to, from, strlen(to)) == 0) return true;
+	return false;
+}
+
+bool ncl_copyto(ncl_VFS vfs, const char *from, const char *to) {
+	if(strcmp(from, to) == 0) return true;
+	if(ncl_isIllegalCopy(from, to)) return false;
+	// already exists
+	if(ncl_exists(vfs, to)) return false;
+
+	ncl_Stat s;
+	// missing
+	if(!ncl_stat(vfs, from, &s)) return false;
+
+	if(s.isDirectory) return ncl_copydir(vfs, from, to);
+	return ncl_copyfile(vfs, from, to);
+}
 
 typedef struct ncl_ScreenPixel {
 	nn_codepoint codepoint;
@@ -533,6 +603,8 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 			return NN_EBADCALL;
 		}
 		state->fds[fd] = NULL;
+		state->spaceUsed = 0;
+		state->realSpaceUsed = 0;
 		volatile ncl_VFS vfs = state->vfs;
 		nn_unlock(ctx, state->lock);
 		// out of lock for the most minimal of performance
@@ -571,6 +643,8 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 			return NN_EBADCALL;
 		}
 		bool ok = ncl_writefile(state->vfs, file, req->write.buf, req->write.len);
+		state->spaceUsed = 0;
+		state->realSpaceUsed = 0;
 		nn_unlock(ctx, state->lock);
 		if(ok) return NN_OK;
 		nn_setError(C, "write failed");
@@ -655,13 +729,14 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 	}
 	if(req->action == NN_FS_STAT) {
 		nn_lock(ctx, state->lock);
+		state->usage++;
 		char path[NN_MAX_PATH];
 		ncl_fixPath(state, req->stat.path, path);
 		ncl_Stat s;
 		if(!ncl_stat(state->vfs, path, &s)) {
 			nn_unlock(ctx, state->lock);
-			nn_setError(C, "no such file or directory");
-			return NN_EBADCALL;
+			req->stat.path = NULL;
+			return NN_OK;
 		}
 		req->stat.isDirectory = s.isDirectory;
 		req->stat.size = s.size;
@@ -669,7 +744,80 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
-	// TODO: mkdir, rename
+	if(req->action == NN_FS_MKDIR) {
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		char path[NN_MAX_PATH];
+		ncl_fixPath(state, req->mkdir, path);
+		ncl_Stat s;
+		if(ncl_stat(state->vfs, path, &s)) {
+			nn_unlock(ctx, state->lock);
+			if(s.isDirectory) {
+				return NN_OK;
+			}
+			nn_setError(C, "not a directory");
+			return NN_EBADCALL;
+		}
+		if(!ncl_mkdirRecursive(state->vfs, path)) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "operation failed");
+			return NN_EBADCALL;
+		}
+		size_t newSpaceUsed = ncl_spaceUsedIn(state->vfs, state->path);
+		if(newSpaceUsed > state->conf.spaceTotal) {
+			ncl_removeRecursive(state->vfs, path);
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "out of space");
+			return NN_EBADCALL;
+		}
+		state->spaceUsed = newSpaceUsed;
+		state->realSpaceUsed = 0;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_RENAME) {
+		if(req->rename.from[0] == '\0') {
+			nn_setError(C, "root is forbidden");
+			return NN_EBADCALL;
+		}
+		if(req->rename.to != NULL && req->rename.to[0] == '\0') {
+			nn_setError(C, "root is forbidden");
+			return NN_EBADCALL;
+		}
+		nn_lock(ctx, state->lock);
+		state->usage++;
+		char from[NN_MAX_PATH];
+		ncl_fixPath(state, req->rename.from, from);
+		if(req->rename.to == NULL) {
+			bool ok = ncl_removeRecursive(state->vfs, from);
+			nn_unlock(ctx, state->lock);
+			if(!ok) {
+				nn_setError(C, "operation failed");
+				return NN_EBADCALL;
+			}
+			return NN_OK;
+		}
+		char to[NN_MAX_PATH];
+		ncl_fixPath(state, req->rename.to, to);
+		// copy a to a is illegal btw
+		if(ncl_isIllegalCopy(from, to)) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "illegal copy operation");
+			return NN_EBADCALL;
+		}
+		bool ok = ncl_copyto(state->vfs, from, to);
+		if(ok) {
+			ncl_removeRecursive(state->vfs, from);
+		}
+		state->spaceUsed = 0;
+		state->realSpaceUsed = 0;
+		nn_unlock(ctx, state->lock);
+		if(!ok) {
+			nn_setError(C, "operation failed");
+			return NN_EBADCALL;
+		}
+		return NN_OK;
+	}
 
 	if(C) nn_setError(C, "not implemented yet");
 	return NN_EBADCALL;

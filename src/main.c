@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 #include <raylib.h>
+#include <errno.h>
 
 nn_Architecture getLuaArch();
 
@@ -379,7 +380,7 @@ int main(int argc, char **argv) {
 
 	printf("%zu bytes logically used by OpenOS\n", ncl_spaceUsedIn(ncl_defaultFS, "data/OpenOS"));
 	printf("%zu bytes physically used by OpenOS\n", ncl_spaceUsedBy(ncl_defaultFS, "data/OpenOS"));
-	
+
 	nn_Component *eepromCard = nn_createVEEPROM(u, "eeprom", &veeprom, &nn_defaultEEPROMs[3]);
 
 	nn_Component *managedfs = ncl_createFilesystem(u, "mainFS", "data/OpenOS", &nn_defaultFilesystems[3], true);

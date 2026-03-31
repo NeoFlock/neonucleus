@@ -150,6 +150,8 @@ bool ncl_removeRecursive(ncl_VFS vfs, const char *path);
 bool ncl_mkdir(ncl_VFS vfs, const char *path);
 bool ncl_mkdirRecursive(ncl_VFS vfs, const char *path);
 
+bool ncl_copyto(ncl_VFS vfs, const char *from, const char *to);
+
 typedef struct ncl_EncodedState {
 	char *buf;
 	size_t len;

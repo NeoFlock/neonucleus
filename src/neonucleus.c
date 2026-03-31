@@ -3272,10 +3272,10 @@ nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const 
 		[NN_EENUM_GETDATA] = {"getData", "function(): string - Get the data stored on the eeprom", NN_DIRECT},
 		[NN_EENUM_GETLABEL] = {"getLabel", "function(): string? - Get the label stored on the eeprom, if any", NN_DIRECT},
 		[NN_EENUM_GETARCH] = {"getArchitecture", "function(): string? - Get the desired architecture stored on the eeprom, if any", NN_DIRECT},
-		[NN_EENUM_SET] = {"set", "function(code: string) - Set the code on the EEPROM", NN_DIRECT},
-		[NN_EENUM_SETDATA] = {"setData", "function(data: string) - Set the data on the EEPROM", NN_DIRECT},
-		[NN_EENUM_SETLABEL] = {"setLabel", "function(label?: string) - Set the label", NN_DIRECT},
-		[NN_EENUM_SETARCH] = {"setArchitecture", "function(arch?: string) - Set the desired architecture", NN_DIRECT},
+		[NN_EENUM_SET] = {"set", "function(code: string) - Set the code on the EEPROM", NN_INDIRECT},
+		[NN_EENUM_SETDATA] = {"setData", "function(data: string) - Set the data on the EEPROM", NN_INDIRECT},
+		[NN_EENUM_SETLABEL] = {"setLabel", "function(label?: string) - Set the label", NN_INDIRECT},
+		[NN_EENUM_SETARCH] = {"setArchitecture", "function(arch?: string) - Set the desired architecture", NN_INDIRECT},
 	};
 	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_EENUM_COUNT);
 	if(e) {
@@ -3740,7 +3740,7 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 		[NN_FSNUM_SPACETOTAL] = {"spaceTotal", "function(): integer - Capacity of the drive", NN_DIRECT},
 		[NN_FSNUM_SPACEUSED] = {"spaceUsed", "function(): integer - Amount of space used", NN_DIRECT},
 		[NN_FSNUM_GETLABEL] = {"getLabel", "function(): string? - Gets the label of the drive, if any", NN_DIRECT},
-		[NN_FSNUM_SETLABEL] = {"setLabel", "function(label?: string): string - Sets the label of the drive. Returns the new label, which may be truncated", NN_DIRECT},
+		[NN_FSNUM_SETLABEL] = {"setLabel", "function(label?: string): string - Sets the label of the drive. Returns the new label, which may be truncated", NN_INDIRECT},
 		[NN_FSNUM_ISRO] = {"isReadOnly", "function(): boolean - Returns whether the drive is read-only", NN_DIRECT},
 		[NN_FSNUM_OPEN] = {"open", "function(path: string, mode?: 'r'|'w'|'a'): integer - Open a file", NN_DIRECT},
 		[NN_FSNUM_READ] = {"read", "function(fd: integer, len?: integer): string? - Read from a file, returns nothing on EoF", NN_DIRECT},
@@ -3753,8 +3753,8 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 		[NN_FSNUM_SIZE] = {"size", "function(path: string): integer - Returns the size of an entry", NN_DIRECT},
 		[NN_FSNUM_LASTMODIFIED] = {"lastModified", "function(path: string): integer - Returns the UNIX timestamp of the last modified time", NN_DIRECT},
 		[NN_FSNUM_MKDIR] = {"makeDirectory", "function(path: string): boolean - Create a directory, recursively. Does not fail if directory already exists", NN_DIRECT},
-		[NN_FSNUM_REMOVE] = {"remove", "function(path: string): boolean - Recursively deletes an entry", NN_DIRECT},
-		[NN_FSNUM_RENAME] = {"rename", "function(from: string, to: string): boolean - Renames/moves an entry", NN_DIRECT},
+		[NN_FSNUM_REMOVE] = {"remove", "function(path: string): boolean - Recursively deletes an entry", NN_INDIRECT},
+		[NN_FSNUM_RENAME] = {"rename", "function(from: string, to: string): boolean - Renames/moves an entry", NN_INDIRECT},
 	};
 	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_FSNUM_COUNT);
 	if(e) {
