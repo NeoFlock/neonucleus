@@ -330,7 +330,7 @@ int main(int argc, char **argv) {
 	bool sandboxMem = getenv("NN_MEMSAND") != NULL;
 	bool showStats = getenv("NN_STAT") != NULL;
 
-	const char *mainDir = "OpenOS";
+	const char *mainDir = "openos";
 	if(argc > 1) mainDir = argv[1];
 
 	nn_Context ctx;
@@ -378,12 +378,9 @@ int main(int argc, char **argv) {
 		.isReadonly = false,
 	};
 
-	printf("%zu bytes logically used by OpenOS\n", ncl_spaceUsedIn(ncl_defaultFS, "data/OpenOS"));
-	printf("%zu bytes physically used by OpenOS\n", ncl_spaceUsedBy(ncl_defaultFS, "data/OpenOS"));
-
 	nn_Component *eepromCard = nn_createVEEPROM(u, "eeprom", &veeprom, &nn_defaultEEPROMs[3]);
 
-	nn_Component *managedfs = ncl_createFilesystem(u, "mainFS", "data/OpenOS", &nn_defaultFilesystems[3], true);
+	nn_Component *managedfs = ncl_createFilesystem(u, "mainFS", "data/openos", &nn_defaultFilesystems[3], true);
 
 	size_t ramTotal = 0;
 	ramTotal += nn_ramSizes[5];

@@ -115,7 +115,18 @@ ncl_VFS ncl_defaultFS = (ncl_VFS) {
 #else
 	.pathsep = '/',
 #endif
-	.fileCost = 512,
+	.fileCost = NCL_FILECOST_DEFAULT,
+};
+
+ncl_VFS ncl_installerFS = (ncl_VFS) {
+	.state = NULL,
+	.handler = ncl_defaultHandler,
+#ifdef NN_WINDOWS
+	.pathsep = '\\',
+#else
+	.pathsep = '/',
+#endif
+	.fileCost = NCL_FILECOST_INSTALL,
 };
 
 void *ncl_openfile(ncl_VFS vfs, const char *path, const char *mode) {
@@ -213,8 +224,8 @@ bool ncl_readdir(ncl_VFS vfs, void *dir, char name[NN_MAX_PATH]) {
 size_t ncl_spaceUsedIn(ncl_VFS vfs, const char *path) {
 	ncl_Stat s;
 	if(!ncl_stat(vfs, path, &s)) return 0;
-	if(!s.isDirectory) return vfs.fileCost + s.size;
-	size_t spaceUsed = vfs.fileCost;
+	size_t spaceUsed = vfs.fileCost + s.size;
+	if(!s.isDirectory) return spaceUsed;
 	void *dir = ncl_opendir(vfs, path);
 	if(dir == NULL) return spaceUsed;
 	char name[NN_MAX_PATH];
@@ -289,7 +300,7 @@ bool ncl_mkdirRecursive(ncl_VFS vfs, const char *path) {
 	char buf[NN_MAX_PATH];
 	// use snprintf instead of strncpy cuz NULL terminator
 	snprintf(buf, NN_MAX_PATH, "%s", path);
-	char *sep = strrchr(buf, '/');
+	char *sep = strrchr(buf, vfs.pathsep);
 	if(sep == NULL) {
 		return ncl_mkdir(vfs, path);
 	}
@@ -606,6 +617,12 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 		}
 		char path[NN_MAX_PATH];
 		ncl_fixPath(state, req->open.path, path);
+		size_t spaceRemaining = state->conf.spaceTotal - ncl_fsGetUsage(state);
+		if(mode[0] == 'w' && !ncl_exists(state->vfs, path) && spaceRemaining < state->vfs.fileCost) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "out of space");
+			return NN_EBADCALL;
+		}
 		void *file = ncl_openfile(state->vfs, path, mode);
 		if(file == NULL) {
 			nn_unlock(ctx, state->lock);

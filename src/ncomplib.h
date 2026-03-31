@@ -9,6 +9,17 @@
 #define NCL_GPU "ncl-gpu"
 #define NCL_SCREEN "ncl-screen"
 
+// Default file cost.
+// This is for a normal HDD/floppy.
+#define NCL_FILECOST_DEFAULT 512
+
+// File cost on an installer floppy.
+// In OC, those are backed by a file called ZipFileInputStream.
+// That class has a different implementation for spaceUsed,
+// it is almost identical except it does not add the file cost.
+// For that reason, it is recommended to set it to 0, for parity.
+#define NCL_FILECOST_INSTALL 0
+
 #define NCL_MAX_VRAMBUF 128
 #define NCL_MAX_KEYBOARD 64
 
@@ -124,7 +135,21 @@ typedef struct ncl_VFS {
 	size_t fileCost;
 } ncl_VFS;
 
+// The default FS.
+// Uses a basic implementation using POSIX/Windows FS APIs,
+// or erroring on all operations if baremetal.
+// Has default file cost (512)
 extern ncl_VFS ncl_defaultFS;
+
+// The installer FS.
+// Same implementation as the default FS,
+// but has a file cost of 0.
+// This makes it accurate to ZipFileInputStreams in OC,
+// which are used for the loot floppy disks.
+// ENSURE ALL FILESYSTEMS WITH 0 FILE COST
+// ARE READ-ONLY, OR ELSE YOU CAN BE SPAMMED
+// ENDLESSLY WITH GIGABYTES OF DISK HOGGING.
+extern ncl_VFS ncl_installerFS;
 
 void *ncl_openfile(ncl_VFS vfs, const char *path, const char *mode);
 void ncl_closefile(ncl_VFS vfs, void *file);
