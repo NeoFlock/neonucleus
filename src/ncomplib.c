@@ -438,6 +438,30 @@ static ncl_VRAMBuf *ncl_allocVRAM(nn_Context *ctx, int width, int height) {
 	return buf;
 }
 
+static ncl_ScreenPixel *ncl_vramPtr(ncl_VRAMBuf *buf, int x, int y) {
+	x--;
+	y--;
+	if(x < 0 || y < 0 || x >= buf->width || y >= buf->height) return NULL;
+	return &buf->pixels[x + y * buf->width];
+}
+
+static ncl_ScreenPixel ncl_vramGet(ncl_VRAMBuf *buf, int x, int y) {
+	ncl_ScreenPixel *ptr = ncl_vramPtr(buf, x, y);
+	if(ptr != NULL) return *ptr;
+	return (ncl_ScreenPixel) {
+		.codepoint = ' ',
+		.storedFg = 0xFFFFFF,
+		.storedBg = 0x000000,
+		.realFg = 0xFFFFFF,
+		.realBg = 0x000000,
+	};
+}
+
+static void ncl_vramSet(ncl_VRAMBuf *buf, int x, int y, ncl_ScreenPixel pixel) {
+	ncl_ScreenPixel *ptr = ncl_vramPtr(buf, x, y);
+	if(ptr != NULL) *ptr = pixel;
+}
+
 typedef struct ncl_FSState {
 	nn_Context *ctx;
 	nn_Lock *lock;
@@ -590,6 +614,11 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 		}
 		state->fds[fd] = file;
 		req->fd = fd;
+		if(mode[0] == 'w') {
+			// file cleared
+			state->spaceUsed = 0;
+			state->realSpaceUsed = 0;
+		}
 		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
@@ -1008,7 +1037,88 @@ fail:;
 	return NULL;
 }
 
-nn_Component *ncl_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu);
+static ncl_ScreenState *ncl_getBoundScreen(ncl_GPUState *gpu, nn_Computer *C) {
+	if(gpu->screenAddress == NULL) return NULL;
+	nn_Component *c = nn_getComponent(C, gpu->screenAddress);
+	if(c == NULL) return NULL;
+	return nn_getComponentState(c);
+}
+
+static void ncl_getGPULimits(ncl_GPUState *gpu, nn_Computer *C, int *maxWidth, int *maxHeight, char *maxDepth) {
+	int w = gpu->conf.maxWidth, h = gpu->conf.maxHeight;
+	char d = gpu->conf.maxDepth;
+
+	ncl_ScreenState *screen = ncl_getBoundScreen(gpu, C);
+
+	if(screen != NULL) {
+		if(w > screen->conf.maxWidth) w = screen->conf.maxWidth;
+		if(h > screen->conf.maxHeight) h = screen->conf.maxHeight;
+		if(d > screen->conf.maxDepth) d = screen->conf.maxDepth;
+	}
+
+	*maxWidth = w;
+	*maxHeight = h;
+	*maxDepth = d;
+}
+
+static nn_Exit ncl_gpuHandler(nn_GPURequest *req) {
+	nn_Context *ctx = req->ctx;
+	nn_Computer *C = req->computer;
+	ncl_GPUState *state = req->state;
+	const nn_GPU *gpu = req->gpu;
+	if(req->action == NN_GPU_DROP) {
+		for(size_t i = 0; i < NCL_MAX_VRAMBUF; i++) {
+			if(state->vram[i] != NULL) ncl_freeVRAM(ctx, state->vram[i]);
+		}
+		if(state->screenAddress != NULL) nn_strfree(ctx, state->screenAddress);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+	if(C != NULL) nn_setError(C, "ncl-gpu: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *ncl_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu) {
+	nn_Context *ctx = nn_getUniverseContext(universe);
+	nn_Lock *lock = NULL;
+	ncl_GPUState *state = NULL;
+	nn_Component *c = NULL;
+
+	lock = nn_createLock(ctx);
+	if(lock == NULL) goto fail;
+
+	state = nn_alloc(ctx, sizeof(*state));
+	if(state == NULL) goto fail;
+
+	state->ctx = ctx;
+	state->lock = lock;
+	state->conf = *gpu;
+	state->vramFree = gpu->totalVRAM;
+	state->screenAddress = NULL;
+	state->currentFg = 0xFFFFFF;
+	state->currentBg = 0x000000;
+	state->activeBuffer = 0;
+	state->isFgPalette = false;
+	state->isBgPalette = false;
+	for(size_t i = 0; i < NCL_MAX_VRAMBUF; i++) {
+		state->vram[i] = NULL;
+	}
+
+	c = nn_createGPU(universe, address, gpu, state, ncl_gpuHandler);
+	if(c == NULL) goto fail;
+
+	if(nn_setComponentTypeID(c, NCL_GPU)) goto fail;
+
+	return c;
+fail:
+	if(c != NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	if(lock != NULL) nn_destroyLock(ctx, lock);
+	nn_free(ctx, state, sizeof(*state));
+	return NULL;
+}
 
 void ncl_lockScreen(ncl_ScreenState *state) {
 	nn_lock(state->ctx, state->lock);

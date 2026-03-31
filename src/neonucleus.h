@@ -1220,6 +1220,22 @@ typedef struct nn_GPU {
 // 1 GPU tier for every screen.
 extern const nn_GPU nn_defaultGPUs[4];
 
+typedef enum nn_GPUAction {
+	NN_GPU_DROP,
+} nn_GPUAction;
+
+typedef struct nn_GPURequest {
+	nn_Context *ctx;
+	nn_Computer *computer;
+	void *state;
+	const nn_GPU *gpu;
+	nn_GPUAction action;
+} nn_GPURequest;
+
+typedef nn_Exit (nn_GPUHandler)(nn_GPURequest *req);
+
+nn_Component *nn_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu, void *state, nn_GPUHandler *handler);
+
 // Colors and palettes.
 // Do note that the 
 

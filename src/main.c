@@ -414,7 +414,7 @@ int main(int argc, char **argv) {
 	double wattage = 0;
 
 	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
-	//nn_Component *gpu = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
 
 	{
 		// draw test
@@ -444,6 +444,7 @@ restart:;
 	nn_mountComponent(c, ocelotCard, -1);
 	nn_mountComponent(c, eepromCard, 0);
 	nn_mountComponent(c, managedfs, 1);
+	nn_mountComponent(c, gpuCard, 2);
 
 	while(true) {
 		if(WindowShouldClose()) break;
@@ -578,6 +579,7 @@ cleanup:;
 	nn_dropComponent(eepromCard);
 	nn_dropComponent(managedfs);
 	nn_dropComponent(screen);
+	nn_dropComponent(gpuCard);
 	// rip the universe
 	nn_destroyUniverse(u);
 	UnloadFont(font);

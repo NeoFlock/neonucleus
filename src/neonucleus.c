@@ -1821,6 +1821,8 @@ bool nn_costComponent(nn_Computer *computer, const char *address, double perTick
 }
 
 bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick) {
+	// this means 0 per tick means free
+	if(perTick == 0) return false;
 	nn_ComponentEntry *c = nn_getInternalComponent(computer, address);
 	if(c == NULL) return false;
 	c->budgetUsed += (NN_COMPONENT_CALLBUDGET * amount) / perTick;
@@ -3823,5 +3825,53 @@ nn_Component *nn_createScreen(nn_Universe *universe, const char *address, const 
 	nn_setComponentState(c, state);
 	nn_setComponentClassState(c, scrstate);
 	nn_setComponentHandler(c, nn_screenHandler);
+	return c;
+}
+
+typedef struct nn_GPUState {
+	nn_Context *ctx;
+	nn_GPU gpu;
+	nn_GPUHandler *handler;
+} nn_GPUState;
+
+static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
+	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	nn_Context *ctx = req->ctx;
+	nn_GPUState *state = req->classState;
+	nn_Computer *C = req->computer;
+	nn_GPURequest greq;
+	greq.ctx = ctx;
+	greq.state = req->state;
+	greq.computer = C;
+	greq.gpu = &state->gpu;
+
+	if(req->action == NN_COMP_DROP) {
+		greq.action = NN_GPU_DROP;
+		state->handler(&greq);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+
+	nn_setError(C, "gpu: not yet implemented");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu, void *state, nn_GPUHandler *handler) {
+	nn_Component *c = nn_createComponent(universe, address, "gpu");
+	if(c == NULL) return NULL;
+	// TODO: methods
+	nn_Context *ctx = &universe->ctx;
+	nn_GPUState *gpustate = nn_alloc(ctx, sizeof(*gpustate));
+	if(gpustate == NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	gpustate->ctx = ctx;
+	gpustate->gpu = *gpu;
+	gpustate->handler = handler;
+	nn_setComponentState(c, state);
+	nn_setComponentClassState(c, gpustate);
+	nn_setComponentHandler(c, nn_gpuHandler);
 	return c;
 }
