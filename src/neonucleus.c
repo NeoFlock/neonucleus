@@ -15,15 +15,16 @@
 // to use the numerical accuracy better
 #define NN_COMPONENT_CALLBUDGET 10000
 
+// NN_ATOMIC_NONE accepts 1 args, others 2
 #ifdef NN_ATOMIC_NONE
 typedef size_t nn_refc_t;
 
-void nn_incRef(nn_refc_t *refc) {
-	(*refc)++;
+void nn_incRef(nn_refc_t *refc, size_t n) {
+	(*refc) += n;
 }
 
-bool nn_decRef(nn_refc_t *refc) {
-	(*refc)--;
+bool nn_decRef(nn_refc_t *refc, size_t n) {
+	(*refc) -= n;
 	return (*refc) == 0;
 }
 #else
@@ -87,8 +88,13 @@ void nn_free(nn_Context *ctx, void *memory, size_t size) {
 }
 
 void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize) {
-	if(memory == NULL) return nn_alloc(memory, newSize);
-	if(memory == ctx->alloc) return nn_alloc(memory, newSize);
+	// nn_realloc passed memory (which is NULL here) as first argument
+	// to nn_alloc instead of ctx. nn_alloc dereferences it as a context
+	// struct to call ctx->alloc(), so this is a NULL pointer dereference.
+	// Confirmed by test_realloc crashing on nn_realloc(&ctx, NULL, 0, 64).
+	// Original: if(memory == NULL) return nn_alloc(memory, newSize); if(memory == ctx->alloc) return nn_alloc(memory, newSize);
+	if(memory == NULL) return nn_alloc(ctx, newSize);
+	if(memory == ctx->alloc) return nn_alloc(ctx, newSize);
 	if(newSize == 0) {
 		nn_free(ctx, memory, oldSize);
 		return ctx->alloc;
@@ -570,7 +576,8 @@ static void nn_defaultLock(void *state, nn_LockRequest *req) {
 #elif defined(NN_THREAD_WINDOWS)
 	switch(req->action) {
 	case NN_LOCK_CREATE:;
-		req->lock = CreateMutex(NULL, false, NULL);
+		req->lock = CreateMutex(NULL, FALSE, NULL);
+		return; 				// don't fall into destroy
 	case NN_LOCK_DESTROY:;
 		CloseHandle(req->lock);
 		return;
@@ -2226,8 +2233,8 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount) {
 // todo: everything
 
 const nn_EEPROM nn_defaultEEPROMs[4] = {
-	(nn_EEPROM) {
-		.size = 4 * NN_KiB,
+    NN_INIT(nn_EEPROM) {
+        .size = 4 * NN_KiB,
 		.dataSize = 256,
 		.readEnergyCost = 1,
 		.writeEnergyCost = 100,
@@ -2236,7 +2243,7 @@ const nn_EEPROM nn_defaultEEPROMs[4] = {
 		.writeDelay = 2,
 		.writeDataDelay = 1,
 	},
-	(nn_EEPROM) {
+	NN_INIT(nn_EEPROM) {
 		.size = 8 * NN_KiB,
 		.dataSize = 1 * NN_KiB,
 		.readEnergyCost = 2,
@@ -2246,7 +2253,7 @@ const nn_EEPROM nn_defaultEEPROMs[4] = {
 		.writeDelay = 2,
 		.writeDataDelay = 1,
 	},
-	(nn_EEPROM) {
+	NN_INIT(nn_EEPROM) {
 		.size = 16 * NN_KiB,
 		.dataSize = 2 * NN_KiB,
 		.readEnergyCost = 4,
@@ -2256,7 +2263,7 @@ const nn_EEPROM nn_defaultEEPROMs[4] = {
 		.writeDelay = 1,
 		.writeDataDelay = 0.5,
 	},
-	(nn_EEPROM) {
+	NN_INIT(nn_EEPROM) {
 		.size = 32 * NN_KiB,
 		.dataSize = 4 * NN_KiB,
 		.readEnergyCost = 8,
@@ -2269,25 +2276,25 @@ const nn_EEPROM nn_defaultEEPROMs[4] = {
 };
 
 const nn_Filesystem nn_defaultFilesystems[4] = {
-	(nn_Filesystem) {
+	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 1 * NN_MiB,
 		.readsPerTick = 4,
 		.writesPerTick = 2,
 		.dataEnergyCost = 256.0 / NN_MiB,
 	},
-	(nn_Filesystem) {
+	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 2 * NN_MiB,
 		.readsPerTick = 4,
 		.writesPerTick = 2,
 		.dataEnergyCost = 512.0 / NN_MiB,
 	},
-	(nn_Filesystem) {
+	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 4 * NN_MiB,
 		.readsPerTick = 7,
 		.writesPerTick = 3,
 		.dataEnergyCost = 1024.0 / NN_MiB,
 	},
-	(nn_Filesystem) {
+	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 8 * NN_MiB,
 		.readsPerTick = 13,
 		.writesPerTick = 5,
@@ -2296,14 +2303,14 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 };
 
 
-const nn_Filesystem nn_defaultFloppy = (nn_Filesystem) {
+const nn_Filesystem nn_defaultFloppy = NN_INIT(nn_Filesystem) {
 	.spaceTotal = 512 * NN_KiB,
 	.readsPerTick = 1,
 	.writesPerTick = 1,
 	.dataEnergyCost = 8.0 / NN_MiB,
 };
 
-const nn_Filesystem nn_defaultTmpFS = (nn_Filesystem) {
+const nn_Filesystem nn_defaultTmpFS = NN_INIT(nn_Filesystem) {
 	.spaceTotal = 64 * NN_KiB,
 	.readsPerTick = 1024,
 	.writesPerTick = 512,
@@ -2311,7 +2318,7 @@ const nn_Filesystem nn_defaultTmpFS = (nn_Filesystem) {
 };
 
 const nn_Drive nn_defaultDrives[4] = {
-	(nn_Drive) {
+	NN_INIT(nn_Drive) {
 		.capacity = 1 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 2,
@@ -2321,7 +2328,7 @@ const nn_Drive nn_defaultDrives[4] = {
 		.onlySpinForwards = false,
 		.dataEnergyCost = 256.0 / NN_MiB,
 	},
-	(nn_Drive) {
+	NN_INIT(nn_Drive) {
 		.capacity = 2 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 4,
@@ -2331,7 +2338,7 @@ const nn_Drive nn_defaultDrives[4] = {
 		.onlySpinForwards = false,
 		.dataEnergyCost = 512.0 / NN_MiB,
 	},
-	(nn_Drive) {
+	NN_INIT(nn_Drive) {
 		.capacity = 4 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 8,
@@ -2341,7 +2348,7 @@ const nn_Drive nn_defaultDrives[4] = {
 		.onlySpinForwards = false,
 		.dataEnergyCost = 1024.0 / NN_MiB,
 	},
-	(nn_Drive) {
+	NN_INIT(nn_Drive) {
 		.capacity = 8 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 16,
@@ -2366,7 +2373,7 @@ const nn_Drive nn_floppyDrive = {
 
 
 const nn_ScreenConfig nn_defaultScreens[4] = {
-	(nn_ScreenConfig) {
+	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 50,
 		.maxHeight = 16,
 		.maxDepth = 1,
@@ -2375,7 +2382,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.editableColors = 0,
 		.features = NN_SCRF_NONE,
 	},
-	(nn_ScreenConfig) {
+	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 80,
 		.maxHeight = 25,
 		.maxDepth = 4,
@@ -2384,7 +2391,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.editableColors = 0,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED,
 	},
-	(nn_ScreenConfig) {
+	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 160,
 		.maxHeight = 50,
 		.maxDepth = 8,
@@ -2393,7 +2400,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.editableColors = 16,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE | NN_SCRF_EDITABLECOLORS,
 	},
-	(nn_ScreenConfig) {
+	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 240,
 		.maxHeight = 80,
 		.maxDepth = 16,
@@ -2405,7 +2412,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 };
 
 const nn_GPU nn_defaultGPUs[4] = {
-	(nn_GPU) {
+	NN_INIT(nn_GPU) {
 		.maxWidth = 50,
 		.maxHeight = 16,
 		.maxDepth = 1,
@@ -2418,7 +2425,7 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.energyPerWrite = 0.0002,
 		.energyPerClear = 0.0001,
 	},
-	(nn_GPU) {
+	NN_INIT(nn_GPU) {
 		.maxWidth = 80,
 		.maxHeight = 25,
 		.maxDepth = 4,
@@ -2431,7 +2438,7 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.energyPerWrite = 0.001,
 		.energyPerClear = 0.0005,
 	},
-	(nn_GPU) {
+	NN_INIT(nn_GPU) {
 		.maxWidth = 160,
 		.maxHeight = 50,
 		.maxDepth = 8,
@@ -2444,7 +2451,7 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.energyPerWrite = 0.002,
 		.energyPerClear = 0.001,
 	},
-	(nn_GPU) {
+	NN_INIT(nn_GPU) {
 		.maxWidth = 240,
 		.maxHeight = 80,
 		.maxDepth = 16,
@@ -3049,10 +3056,12 @@ nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, 
 	return nn_pushSignal(computer, 6);
 }
 
+// the value is not returned for all execution paths - not a windows bug probably, need tests on *nix
 nn_Exit nn_pushScroll(nn_Computer *computer, const char *screenAddress, double x, double y, double direction, const char *player) {
 	if(!nn_hasUser(computer, player)) return NN_OK;
 }
 
+// the value is not returned for all execution paths - not a windows bug probably, need tests on *nix
 nn_Exit nn_pushWalk(nn_Computer *computer, const char *screenAddress, double x, double y, const char *player) {
 	if(!nn_hasUser(computer, player)) return NN_OK;
 }
@@ -3149,7 +3158,7 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 	}
 	if(method == NN_EENUM_GET) {
 		ereq.action = NN_EEPROM_GET;
-		char buf[eeprom.size];
+		NN_VLA(char, buf, eeprom.size);
 		ereq.buf = buf;
 		ereq.buflen = eeprom.size;
 		e = state->handler(&ereq);
@@ -3159,7 +3168,7 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 	}
 	if(method == NN_EENUM_GETDATA) {
 		ereq.action = NN_EEPROM_GETDATA;
-		char buf[eeprom.size];
+		NN_VLA(char, buf, eeprom.size);
 		ereq.buf = buf;
 		ereq.buflen = eeprom.size;
 		e = state->handler(&ereq);
