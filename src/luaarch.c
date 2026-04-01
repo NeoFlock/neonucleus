@@ -588,15 +588,15 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_createtable(L, 0, 10);
 	int unicode = lua_gettop(L);
 	lua_pushcfunction(L, luaArch_unicode_char);
-	lua_setfield(L, component, "char");
+	lua_setfield(L, unicode, "char");
 	lua_pushcfunction(L, luaArch_unicode_len);
-	lua_setfield(L, component, "len");
+	lua_setfield(L, unicode, "len");
 	lua_pushcfunction(L, luaArch_unicode_sub);
-	lua_setfield(L, component, "sub");
+	lua_setfield(L, unicode, "sub");
 	lua_pushcfunction(L, luaArch_unicode_len);
-	lua_setfield(L, component, "wlen");
+	lua_setfield(L, unicode, "wlen");
 	lua_pushcfunction(L, luaArch_unicode_wtrunc);
-	lua_setfield(L, component, "wtrunc");
+	lua_setfield(L, unicode, "wtrunc");
 	lua_setglobal(L, "unicode");
 }
 
