@@ -60,7 +60,9 @@ extern "C" {
 */
 // Test: gcc -E -DNN_VLA\(type,name,count\)="type name[count]" -x c - <<< 'NN_VLA(const char *, comps, len);'
 #ifdef _MSC_VER
-#include <malloc.h>
+// avoid #include <malloc.h>, for it can pollute the namespace
+// with symbols to functions which are not linked with in baremetal.
+void *_alloca(size_t);
 #define NN_VLA(type, name, count) type *name = (type *)_alloca(sizeof(type) * (count))
 #else
 #define NN_VLA(type, name, count) type name[count]
