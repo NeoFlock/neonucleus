@@ -9,6 +9,10 @@
 #define NCL_GPU "ncl-gpu"
 #define NCL_SCREEN "ncl-screen"
 
+#define NCL_TMPEEPROM "ncl-tmpeeprom"
+#define NCL_TMPFS "ncl-tmpfs"
+#define NCL_TMPDRIVE "ncl-tmpdrive"
+
 // Default file cost.
 // This is for a normal HDD/floppy.
 #define NCL_FILECOST_DEFAULT 512
@@ -191,7 +195,28 @@ size_t ncl_setLabel(nn_Component *c, const char *label, size_t len);
 
 nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, const char *path, const nn_Filesystem *fs, bool isReadonly);
 nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
-nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *codepath, const char *datapath, bool isReadonly);
+// data is stored interally
+nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *path, bool isReadonly);
+
+#define NCL_VFS_NAMEMAX 32
+
+// Creates a tmpfs.
+// This component is mostly treated like a normal filesystem,
+// except you obviously cannot bind a tmpfs to it.
+// Do note, it is illegal to mix encoded state between normal filesystem
+// and tmpfs.
+nn_Component *ncl_createTmpFS(nn_Universe *universe, const nn_Filesystem *fs);
+
+// creates a temporary EEPROM, with some initial code
+// the data is stored internally
+nn_Component *ncl_createTmpEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const char *code, size_t codelen);
+
+// creates a temporary drive, with some initial data
+nn_Component *ncl_createTmpDrive(nn_Universe *universe, const nn_EEPROM *eeprom, const char *data, size_t datalen);
+
+// Gets the VFS bound to a filesystem, drive or eeprom.
+// Returns the default FS if the component is not recognized.
+ncl_VFS ncl_getVFS(nn_Component *component);
 
 // Sets the VFS bound to a filesystem, drive or eeprom.
 // This determines the filesystem the operations are run in.
@@ -236,7 +261,6 @@ typedef struct ncl_ComponentStat {
 			size_t codeUsed;
 			size_t dataUsed;
 			const char *codepath;
-			const char *datapath;
 		} eeprom;
 		struct {
 			const nn_Filesystem *conf;

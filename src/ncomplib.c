@@ -496,6 +496,7 @@ typedef struct ncl_DriveState {
 	nn_Context *ctx;
 	nn_Lock *lock;
 	nn_Drive conf;
+	ncl_VFS vfs;
 	bool isReadonly;
 	size_t usage;
 	size_t lastSector;
@@ -508,10 +509,14 @@ typedef struct ncl_EEState {
 	nn_Context *ctx;
 	nn_Lock *lock;
 	nn_EEPROM conf;
+	ncl_VFS vfs;
 	bool isReadonly;
 	size_t usage;
 	char *codepath;
-	char *datapath;
+	// stored data buffer
+	char *data;
+	// the data length
+	size_t datalen;
 	char label[NN_MAX_LABEL];
 	size_t labellen;
 } ncl_EEState;
@@ -919,7 +924,7 @@ nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, c
 }
 
 nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
-nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *codepath, const char *datapath, bool isReadonly);
+nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *path, bool isReadonly);
 
 ncl_VFS ncl_setVFS(nn_Component *component, ncl_VFS vfs);
 
@@ -1275,7 +1280,6 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		memcpy(stat->label, ee->label, stat->labellen);
 		stat->eeprom.conf = &ee->conf;
 		stat->eeprom.codepath = ee->codepath;
-		stat->eeprom.datapath = ee->datapath;
 		nn_unlock(ee->ctx, ee->lock);
 		return;
 	}

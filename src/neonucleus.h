@@ -1039,44 +1039,7 @@ extern const nn_Filesystem nn_defaultFloppy;
 // a generic tmpfs
 extern const nn_Filesystem nn_defaultTmpFS;
 
-typedef struct nn_VFileNode {
-	// the name of the node.
-	// This is the raw name, do not append / to directories.
-	const char *name;
-	// if NULL, the node is a directory.
-	const char *data;
-	union {
-		// for files, how much of data to read.
-		size_t dataLen;
-		// for directories, the amount of entries encoded afterwards.
-		// Do note that entry encoding is recursive, so for example
-		// a(1) b(2) c("hi") d("there"), means directory a/ has a directory b/ which has 2 files, c and d,
-		// even though a's entry count is 1.
-		size_t entryCount;
-	};
-} nn_VFileNode;
-
-typedef struct nn_VFilesystem {
-	const char *label;
-	size_t labellen;
-	bool isReadOnly;
-	// cost of a file entry when computed the spaceUsed
-	size_t fileCost;
-	// The maximum amount of directory entries. This is used to pre-allocate an array.
-	// It also helps against memory hogging attacks.
-	size_t maxDirEntries;
-	// the maximum amount of nodes the filesystem can have. This is also used to pre-allocate an array.
-	size_t maxNodeCount;
-	// used to compute lastModified. This, together with the context's time procedure, is used to compute the timestamp.
-	// It must be a UNIX timestamp, else you'll get weird results.
-	size_t creationTime;
-	size_t rootNodeCount;
-	// the flat array of the filesystem. See nn_VFileNode for details.
-	nn_VFileNode *image;
-} nn_VFilesystem;
-
 nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, const nn_Filesystem *fs, void *state, nn_FSHandler *handler);
-nn_Component *nn_createVFilesystem(nn_Universe *universe, const char *address, const nn_VFilesystem *vfs, const nn_Filesystem *fs);
 
 // Drive class
 
@@ -1117,15 +1080,6 @@ typedef struct nn_Drive {
 	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
 	double dataEnergyCost;
 } nn_Drive;
-
-typedef struct nn_VDrive {
-	// initial label
-	const char *label;
-	size_t labellen;
-	// initial data
-	const char *data;
-	size_t datalen;
-} nn_VDrive;
 
 extern const nn_Drive nn_defaultDrives[4];
 extern const nn_Drive nn_floppyDrive;
@@ -1191,7 +1145,6 @@ typedef struct nn_DriveRequest {
 typedef nn_Exit (nn_DriveHandler)(nn_DriveRequest *request);
 
 nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const nn_Drive *drive, void *state, nn_DriveHandler *handler);
-nn_Component *nn_createVDrive(nn_Universe *universe, const char *address, const nn_VDrive *vdrive, const nn_Drive *drive);
 
 // Screen class
 

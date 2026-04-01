@@ -3754,8 +3754,6 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 	return c;
 }
 
-nn_Component *nn_createVFilesystem(nn_Universe *universe, const char *address, const nn_VFilesystem *vfs, const nn_Filesystem *fs);
-
 static void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, const nn_Drive *drive) {
 	// Check if SSD
 	if(drive->rpm == 0) return;
@@ -3785,6 +3783,7 @@ typedef enum nn_DrvNum {
 	NN_DRVNUM_GETCAPACITY,
 	NN_DRVNUM_GETSECTORSIZE,
 	NN_DRVNUM_GETPLATTERCOUNT,
+	NN_DRVNUM_ISRO,
 	NN_DRVNUM_GETLABEL,
 	NN_DRVNUM_SETLABEL,
 	NN_DRVNUM_READSECTOR,
@@ -3829,8 +3828,14 @@ nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const n
 		[NN_DRVNUM_GETCAPACITY] = {"getCapacity", "function(): integer - Get drive capacity", NN_DIRECT},
 		[NN_DRVNUM_GETSECTORSIZE] = {"getSectorSize", "function(): integer - Get sector size", NN_DIRECT},
 		[NN_DRVNUM_GETPLATTERCOUNT] = {"getPlatterCount", "function(): integer - Get number of platters on this drive", NN_DIRECT},
+		[NN_DRVNUM_ISRO] = {"isReadOnly", "function(): boolean - Get whether the drive is read-only", NN_DIRECT},
 		[NN_DRVNUM_GETLABEL] = {"getLabel", "function(): string? - Get drive label", NN_DIRECT},
-		[NN_DRVNUM_SETLABEL] = {"setLabel", "function(label: string?): string - Set drive label", NN_DIRECT},
+		[NN_DRVNUM_SETLABEL] = {"setLabel", "function(label: string?): string - Set drive label", NN_INDIRECT},
+		[NN_DRVNUM_READSECTOR] = {"readSector", "function(sector: integer): string - Read a sector from the drive", NN_DIRECT},
+		[NN_DRVNUM_WRITESECTOR] = {"writeSector", "function(sector: integer): boolean - Read a sector from the drive", NN_DIRECT},
+		[NN_DRVNUM_READBYTE] = {"readByte", "function(byte: integer): integer - Read a single signed byte", NN_DIRECT},
+		[NN_DRVNUM_READUBYTE] = {"readUByte", "function(byte: integer): integer - Read a single unsigned byte", NN_DIRECT},
+		[NN_DRVNUM_WRITEBYTE] = {"writeByte", "function(byte: integer, value: integer): boolean - Write a single byte", NN_DIRECT},
 	};
 	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_DRVNUM_COUNT);
 	if(e) {
@@ -3851,8 +3856,6 @@ nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const n
 	nn_setComponentHandler(c, nn_drvHandler);
 	return c;
 }
-
-nn_Component *nn_createVDrive(nn_Universe *universe, const char *address, const nn_VDrive *vdrive, const nn_Drive *drive);
 
 typedef struct nn_ScreenState {
 	nn_Context *ctx;

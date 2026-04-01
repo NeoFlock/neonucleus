@@ -394,14 +394,6 @@ int main(int argc, char **argv) {
 		tickDelay = atof(getenv("NN_TICKDELAY"));
 	}
 	
-	const char *driveData = "error('unmanaged drive')";
-	nn_VDrive vdrive = {
-		.data = driveData,
-		.datalen = strlen(driveData),
-		.label = "",
-		.labellen = 0,
-	};
-	
 	struct {int key; nn_codepoint unicode;} keybuf[512];
 	memset(keybuf, 0, sizeof(keybuf));
 	size_t keycap = sizeof(keybuf) / sizeof(keybuf[0]);
