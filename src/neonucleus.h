@@ -1130,6 +1130,69 @@ typedef struct nn_VDrive {
 extern const nn_Drive nn_defaultDrives[4];
 extern const nn_Drive nn_floppyDrive;
 
+typedef enum nn_DriveAction {
+	// drive gone
+	NN_DRIVE_DROP,
+	// get current label
+	NN_DRIVE_GETLABEL,
+	// set or remove current label
+	NN_DRIVE_SETLABEL,
+	// get the last read position
+	NN_DRIVE_LASTREADPOS,
+	// read a sector
+	NN_DRIVE_READSECTOR,
+	// write a sector
+	NN_DRIVE_WRITESECTOR,
+	// read a byte
+	NN_DRIVE_READBYTE,
+	// write a byte
+	NN_DRIVE_WRITEBYTE,
+} nn_DriveAction;
+
+typedef struct nn_DriveRequest {
+	nn_Context *ctx;
+	nn_Computer *computer;
+	void *state;
+	const nn_Filesystem *fs;
+	nn_DriveAction action;
+	union {
+		struct {
+			char *buf;
+			size_t len;
+		} getlabel;
+		struct {
+			const char *label;
+			size_t len;
+		} setlabel;
+		size_t lastReadPos;
+		struct {
+			// 1-indexed
+			size_t sector;
+			char *buf;
+		} readSector;
+		struct {
+			// 1-indexed
+			size_t sector;
+			const char *buf;
+		} writeSector;
+		struct {
+			// 1-indexed
+			size_t byte;
+			unsigned char value;
+		} readByte;
+		struct {
+			// 1-indexed
+			size_t byte;
+			unsigned char value;
+		} writeByte;
+	};
+} nn_DriveRequest;
+
+typedef nn_Exit (nn_DriveHandler)(nn_DriveRequest *request);
+
+nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const nn_Drive *drive, void *state, nn_DriveHandler *handler);
+nn_Component *nn_createVDrive(nn_Universe *universe, const char *address, const nn_VDrive *vdrive, const nn_Drive *drive);
+
 // Screen class
 
 typedef enum nn_ScreenFeatures {

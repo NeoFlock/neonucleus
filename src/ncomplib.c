@@ -588,6 +588,11 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 	}
 	if(req->action == NN_FS_SETLABEL) {
 		nn_lock(ctx, state->lock);
+		if(state->isReadonly) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "is readonly");
+			return NN_EBADCALL;
+		}
 		state->usage++;
 		size_t len = req->setlabel.len;
 		if(len > NN_MAX_LABEL) len = NN_MAX_LABEL;

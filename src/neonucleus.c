@@ -2364,30 +2364,6 @@ const nn_Drive nn_floppyDrive = {
 	.dataEnergyCost = 128.0 / NN_MiB,
 };
 
-void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, const nn_Drive *drive) {
-	// Check if SSD
-	if(drive->rpm == 0) return;
-
-	size_t maxSectors = drive->capacity / drive->sectorSize;
-	size_t sectorsPerPlatter = maxSectors / drive->platterCount;
-	// RPM over the number of sectors, over 60 seconds.
-	double latencyPerSector = 1.0 / ((double)drive->rpm / 60 * maxSectors);
-
-	// magic
-	lastSector %= sectorsPerPlatter;
-	newSector %= sectorsPerPlatter;
-
-	size_t sectorDelta;
-	if(newSector >= lastSector) {
-		sectorDelta = newSector - lastSector;
-	} else if(drive->onlySpinForwards) {
-		sectorDelta	= sectorsPerPlatter - (lastSector - newSector);
-	} else {
-		sectorDelta = lastSector - newSector;
-	}
-
-	nn_addIdleTime(C, sectorDelta * latencyPerSector);
-}
 
 const nn_ScreenConfig nn_defaultScreens[4] = {
 	(nn_ScreenConfig) {
@@ -3779,6 +3755,104 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 }
 
 nn_Component *nn_createVFilesystem(nn_Universe *universe, const char *address, const nn_VFilesystem *vfs, const nn_Filesystem *fs);
+
+static void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, const nn_Drive *drive) {
+	// Check if SSD
+	if(drive->rpm == 0) return;
+
+	size_t maxSectors = drive->capacity / drive->sectorSize;
+	size_t sectorsPerPlatter = maxSectors / drive->platterCount;
+	// RPM over the number of sectors, over 60 seconds.
+	double latencyPerSector = 1.0 / ((double)drive->rpm / 60 * maxSectors);
+
+	// magic
+	lastSector %= sectorsPerPlatter;
+	newSector %= sectorsPerPlatter;
+
+	size_t sectorDelta;
+	if(newSector >= lastSector) {
+		sectorDelta = newSector - lastSector;
+	} else if(drive->onlySpinForwards) {
+		sectorDelta = sectorsPerPlatter - (lastSector - newSector);
+	} else {
+		sectorDelta = lastSector - newSector;
+	}
+
+	nn_addIdleTime(C, sectorDelta * latencyPerSector);
+}
+
+typedef enum nn_DrvNum {
+	NN_DRVNUM_GETCAPACITY,
+	NN_DRVNUM_GETSECTORSIZE,
+	NN_DRVNUM_GETPLATTERCOUNT,
+	NN_DRVNUM_GETLABEL,
+	NN_DRVNUM_SETLABEL,
+	NN_DRVNUM_READSECTOR,
+	NN_DRVNUM_WRITESECTOR,
+	NN_DRVNUM_READBYTE,
+	NN_DRVNUM_READUBYTE,
+	NN_DRVNUM_WRITEBYTE,
+
+	NN_DRVNUM_COUNT,
+} nn_DrvNum;
+
+typedef struct nn_DrvState {
+	nn_Context *ctx;
+	nn_Drive drive;
+	nn_DriveHandler *handler;
+} nn_DrvState;
+
+static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
+	nn_Context *ctx = request->ctx;
+	nn_Computer *C = request->computer;
+	nn_DrvState *state = request->classState;
+
+	nn_DriveRequest dreq;
+	dreq.ctx = ctx;
+	dreq.computer = C;
+	dreq.state = request->state;
+
+	if(request->action == NN_COMP_DROP) {
+		dreq.action = NN_DRIVE_DROP;
+		state->handler(&dreq);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+	if(C) nn_setError(C, "bad call");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const nn_Drive *drive, void *state, nn_DriveHandler *handler) {
+	nn_Component *c = nn_createComponent(universe, address, "drive");
+	if(c == NULL) return NULL;
+	const nn_Method methods[NN_DRVNUM_COUNT] = {
+		[NN_DRVNUM_GETCAPACITY] = {"getCapacity", "function(): integer - Get drive capacity", NN_DIRECT},
+		[NN_DRVNUM_GETSECTORSIZE] = {"getSectorSize", "function(): integer - Get sector size", NN_DIRECT},
+		[NN_DRVNUM_GETPLATTERCOUNT] = {"getPlatterCount", "function(): integer - Get number of platters on this drive", NN_DIRECT},
+		[NN_DRVNUM_GETLABEL] = {"getLabel", "function(): string? - Get drive label", NN_DIRECT},
+		[NN_DRVNUM_SETLABEL] = {"setLabel", "function(label: string?): string - Set drive label", NN_DIRECT},
+	};
+	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_DRVNUM_COUNT);
+	if(e) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	nn_Context *ctx = &universe->ctx;
+	nn_DrvState *drvstate = nn_alloc(ctx, sizeof(*drvstate));
+	if(drvstate == NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	drvstate->ctx = ctx;
+	drvstate->drive = *drive;
+	drvstate->handler = handler;
+	nn_setComponentState(c, state);
+	nn_setComponentClassState(c, drvstate);
+	nn_setComponentHandler(c, nn_drvHandler);
+	return c;
+}
+
+nn_Component *nn_createVDrive(nn_Universe *universe, const char *address, const nn_VDrive *vdrive, const nn_Drive *drive);
 
 typedef struct nn_ScreenState {
 	nn_Context *ctx;
