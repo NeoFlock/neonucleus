@@ -9,27 +9,62 @@ extern "C" {
 // Used internally as well.
 // Based off https://stackoverflow.com/questions/5919996/how-to-detect-reliably-mac-os-x-ios-linux-windows-in-c-preprocessor
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
-   //define something for Windows (32-bit and 64-bit, this part is common)
+	#ifndef NN_WINDOWS
 	#define NN_WINDOWS
+	#endif
 #elif __APPLE__
+    #ifndef NN_MACOS
     #define NN_MACOS
+    #endif
 #elif __linux__
+    #ifndef NN_LINUX
     #define NN_LINUX
+    #endif
 #endif
 
-#if __unix__ // all unices not caught above
-    // Unix
+#if __unix__
+    #ifndef NN_UNIX
     #define NN_UNIX
+    #endif
+    #ifndef NN_POSIX
     #define NN_POSIX
+    #endif
 #elif defined(_POSIX_VERSION)
-    // POSIX
+    #ifndef NN_POSIX
     #define NN_POSIX
+    #endif
+#endif
+
+
+#if defined(_MSC_VER) && !defined(__cplusplus)
+#ifndef NN_ATOMIC_NONE
+#define NN_ATOMIC_NONE
+#endif
+#endif
+
+#ifdef _MSC_VER
+#define NN_INIT(type)
+#else
+#define NN_INIT(type) (type)
 #endif
 
 // every C standard header we depend on, conveniently put here
 #include <stddef.h> // for NULL,
 #include <stdint.h> // for intptr_t
 #include <stdbool.h> // for true, false and bool
+
+/* MSVC can't use VLA;
+	* What we see 							: NN_VLA(const char *, comps, len);
+	* What compiler see after preproccessor : const char * comps[len];
+	* What actaully was						: const char *comps[len];
+*/
+// Test: gcc -E -DNN_VLA\(type,name,count\)="type name[count]" -x c - <<< 'NN_VLA(const char *, comps, len);'
+#ifdef _MSC_VER
+#include <malloc.h>
+#define NN_VLA(type, name, count) type *name = (type *)_alloca(sizeof(type) * (count))
+#else
+#define NN_VLA(type, name, count) type name[count]
+#endif
 
 // Internally we need stdatomic.h and, if NN_BAREMETAL is not defined, stdlib.h and time.h
 
@@ -40,7 +75,8 @@ extern "C" {
 #define NN_KiB (1024)
 #define NN_MiB (1024 * NN_KiB)
 #define NN_GiB (1024 * NN_MiB)
-#define NN_TiB (1024 * NN_TiB)
+// probably recursive: #define NN_TiB (1024 * NN_TiB)
+#define NN_TiB ((size_t)1024 * NN_GiB)
 
 // the alignment an allocation should have
 #define NN_ALLOC_ALIGN 16
