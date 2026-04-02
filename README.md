@@ -12,4 +12,3 @@ They do not provide:
 - Networking implementation, so you need to pass vtables for all network-related components
 - Default architecture. While the testing emulator has a test version of the common Lua architecture seen in OpenComputers,
 it is not propely sandboxed nor safe. Neither NN nor NCL provide any architectures.
--  
