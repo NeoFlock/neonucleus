@@ -1573,7 +1573,7 @@ static nn_Exit ncl_gpuHandler(nn_GPURequest *req) {
         int h = req->resolution.height;
         nn_lock(ctx, st->lock);
         ncl_ScreenState *scr =
-            ncl_getBoundScreen(st, C);
+        ncl_getBoundScreen(st, C);
         nn_unlock(ctx, st->lock);
         int maxW, maxH; char maxD;
         if(scr != NULL) ncl_lockScreen(scr);

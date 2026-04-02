@@ -42,3 +42,7 @@ Assume memory allocation will eventually fail. Assume the filesystem will eventu
 - Avoid separate functions for each method handler. Inline them into the single handler that handles dispatch. This not only net-shrinks the codebase,
 but also means that navigating by searching for `== NN_<COMPONENT>_<REQUEST>)` (in NCL) or `== NN_<COMPONENT>NUM_<METHOD>)` (in NN) will show the
 dispatch logic and implementation.
+- Properties which are always equal to a constant from the config, or simply has no dependency on state, must not be requests, and instead handled by
+the component class directly.
+- All loops inside methods must be bound by something controlled by either the config or a compile-time constant, to prevent denial of service attacks on
+the worker thread.
