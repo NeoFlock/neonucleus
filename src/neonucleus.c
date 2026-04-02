@@ -3150,6 +3150,9 @@ typedef enum nn_EENum {
 	NN_EENUM_SETDATA,
 	NN_EENUM_SETLABEL,
 	NN_EENUM_SETARCH,
+	NN_EENUM_ISRO,
+	NN_EENUM_GETCHKSUM,
+	NN_EENUM_MKRO,
 	
 	NN_EENUM_COUNT,
 } nn_EENum;
@@ -3294,6 +3297,9 @@ nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const 
 		[NN_EENUM_SETDATA] = {"setData", "function(data: string) - Set the data on the EEPROM", NN_INDIRECT},
 		[NN_EENUM_SETLABEL] = {"setLabel", "function(label?: string) - Set the label", NN_INDIRECT},
 		[NN_EENUM_SETARCH] = {"setArchitecture", "function(arch?: string) - Set the desired architecture", NN_INDIRECT},
+		[NN_EENUM_ISRO] = {"isReadonly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT},
+		[NN_EENUM_GETCHKSUM] = {"getChecksum", "function(): string - Returns a checksum of the EEPROM code.", NN_DIRECT},
+		[NN_EENUM_MKRO] = {"makeReadonly", "function(checksum: string): boolean - Make the EEPROM read-only if checksum passes.", NN_INDIRECT},
 	};
 	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_EENUM_COUNT);
 	if(e) {
