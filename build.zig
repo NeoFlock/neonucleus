@@ -63,7 +63,10 @@ fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, c: *std.Build.Step.Compil
     c.linkSystemLibrary("raylib");
     if (os == .windows) {
         c.linkSystemLibrary("WinMM");
-        c.linkSystemLibrary("GDI32");
+        c.linkSystemLibrary("GDI32"); // <---
+        c.linkSystemLibrary("User32"); //    ^ Windows can't just rely on GDI
+        c.linkSystemLibrary("Shell32");
+        c.linkSystemLibrary("OpenGL32");
     }
 }
 
