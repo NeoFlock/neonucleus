@@ -1,15 +1,15 @@
-[submodule "foreign/lua52"]
-	path = foreign/lua52
-	url = https://github.com/lua/lua
-	branch = v5-2
-[submodule "foreign/lua53"]
+[submodule "lua53"]
 	path = foreign/lua53
 	url = https://github.com/lua/lua
 	branch = v5.3
-[submodule "foreign/lua54"]
+[submodule "lua54"]
 	path = foreign/lua54
 	url = https://github.com/lua/lua
 	branch = v5.4
-[submodule "foreign/raylib"]
+[submodule "raylib"]
 	path = foreign/raylib
 	url = https://github.com/raysan5/raylib
+[submodule "lua52"]
+	path = foreign/lua52
+	url = https://github.com/lua/lua
+	branch = v5-2
