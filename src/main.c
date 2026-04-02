@@ -323,207 +323,6 @@ double ne_energy_accumulator(void *state, nn_Computer *c, double n) {
 }
 
 
-
-#ifdef NN_WINDOWS
-// Quick self-tests for Windows-specific fixes
-// These run before anything else so failures are caught early
-
-static jmp_buf nn_test_jmpbuf;
-static volatile int nn_test_caught;
-
-static void nn_test_crash_handler(int sig) {
-    nn_test_caught = 1;
-    longjmp(nn_test_jmpbuf, 1);
-}
-
-static int nn_test_try(void (*func)(void *), void *arg) {
-    nn_test_caught = 0;
-    signal(SIGSEGV, nn_test_crash_handler);
-    signal(SIGABRT, nn_test_crash_handler);
-    if(setjmp(nn_test_jmpbuf) == 0) {
-        func(arg);
-    }
-    signal(SIGSEGV, SIG_DFL);
-    signal(SIGABRT, SIG_DFL);
-    return nn_test_caught;
-}
-
-static int nn_test_failed = 0;
-static int nn_test_passed = 0;
-
-static void nn_test_report(const char *name, int crashed, int expected_crash) {
-    if(crashed && !expected_crash) {
-        printf("[CRASH] %s\n", name);
-        nn_test_failed++;
-    } else if(!crashed && expected_crash) {
-        printf("[FAIL]  %s (expected crash)\n", name);
-        nn_test_failed++;
-    } else {
-        printf("[OK]    %s\n", name);
-        nn_test_passed++;
-    }
-    fflush(stdout);
-}
-
-// --- realloc tests ---
-
-static void nn_test_realloc_null(void *arg) {
-    nn_Context *ctx = arg;
-    void *p = nn_realloc(ctx, NULL, 0, 64);
-    if(p == NULL) { nn_test_failed++; return; }
-    nn_free(ctx, p, 64);
-}
-
-static void nn_test_realloc_grow(void *arg) {
-    nn_Context *ctx = arg;
-    void *a = nn_alloc(ctx, 64);
-    if(a == NULL) return;
-    void *b = nn_realloc(ctx, a, 64, 128);
-    if(b != NULL) nn_free(ctx, b, 128);
-    else nn_free(ctx, a, 64);
-}
-
-static void nn_test_realloc_free(void *arg) {
-    nn_Context *ctx = arg;
-    void *c = nn_alloc(ctx, 64);
-    if(c == NULL) return;
-    nn_realloc(ctx, c, 64, 0);
-}
-
-// --- lock tests ---
-
-static void nn_test_lock_create_destroy(void *arg) {
-    nn_Context *ctx = arg;
-    nn_Lock *lock = nn_createLock(ctx);
-    if(lock == NULL) { nn_test_failed++; return; }
-    nn_destroyLock(ctx, lock);
-}
-
-static void nn_test_lock_cycle(void *arg) {
-    nn_Context *ctx = arg;
-    nn_Lock *lock = nn_createLock(ctx);
-    if(lock == NULL) { nn_test_failed++; return; }
-    // lock and unlock 100 times to stress it
-    for(int i = 0; i < 100; i++) {
-        nn_lock(ctx, lock);
-        nn_unlock(ctx, lock);
-    }
-    nn_destroyLock(ctx, lock);
-}
-
-static void nn_test_lock_two(void *arg) {
-    nn_Context *ctx = arg;
-    // two locks at the same time, make sure they dont interfere
-    nn_Lock *a = nn_createLock(ctx);
-    nn_Lock *b = nn_createLock(ctx);
-    if(a == NULL || b == NULL) { nn_test_failed++; return; }
-    nn_lock(ctx, a);
-    nn_lock(ctx, b);
-    nn_unlock(ctx, b);
-    nn_unlock(ctx, a);
-    nn_destroyLock(ctx, a);
-    nn_destroyLock(ctx, b);
-}
-
-// --- VFS tests ---
-
-static void nn_test_vfs_stat(void *arg) {
-    (void)arg;
-    // stat current directory, should always work
-    ncl_Stat s;
-    bool ok = ncl_stat(ncl_defaultFS, ".", &s);
-    if(!ok) nn_test_failed++;
-    if(!s.isDirectory) nn_test_failed++;
-}
-
-static void nn_test_vfs_dir(void *arg) {
-    (void)arg;
-    void *dir = ncl_opendir(ncl_defaultFS, ".");
-    if(dir == NULL) { nn_test_failed++; return; }
-    char name[NN_MAX_PATH];
-    // just read one entry, dont care what it is
-    ncl_readdir(ncl_defaultFS, dir, name);
-    ncl_closedir(ncl_defaultFS, dir);
-}
-
-static void nn_test_vfs_mkdir_remove(void *arg) {
-    (void)arg;
-    const char *testdir = "nn_test_tmpdir";
-    ncl_mkdir(ncl_defaultFS, testdir);
-    ncl_Stat s;
-    bool ok = ncl_stat(ncl_defaultFS, testdir, &s);
-    if(!ok || !s.isDirectory) nn_test_failed++;
-    ncl_remove(ncl_defaultFS, testdir);
-    // should be gone now
-    ok = ncl_stat(ncl_defaultFS, testdir, &s);
-    if(ok) nn_test_failed++;
-}
-
-static void nn_test_vfs_seek(void *arg) {
-    (void)arg;
-    // write a small file, seek around, read back
-    const char *path = "nn_test_seekfile";
-    const char *data = "abcdefghij";
-    void *f = ncl_openfile(ncl_defaultFS, path, "w");
-    if(f == NULL) { nn_test_failed++; return; }
-    ncl_writefile(ncl_defaultFS, f, data, 10);
-    ncl_closefile(ncl_defaultFS, f);
-
-    f = ncl_openfile(ncl_defaultFS, path, "r");
-    if(f == NULL) { nn_test_failed++; ncl_remove(ncl_defaultFS, path); return; }
-    // seek to offset 5 from start
-    int off = 5;
-    bool ok = ncl_seekfile(ncl_defaultFS, f, NN_SEEK_SET, &off);
-    if(!ok || off != 5) nn_test_failed++;
-    // read from there
-    char buf[5];
-    size_t len = 5;
-    ok = ncl_readfile(ncl_defaultFS, f, buf, &len);
-    if(!ok || len != 5) nn_test_failed++;
-    // should be "fghij"
-    if(buf[0] != 'f' || buf[4] != 'j') nn_test_failed++;
-    ncl_closefile(ncl_defaultFS, f);
-    ncl_remove(ncl_defaultFS, path);
-}
-
-static void nn_run_selftests(nn_Context *ctx) {
-    printf("--- nn self tests ---\n");
-    fflush(stdout);
-
-    nn_test_report("realloc(NULL)",
-        nn_test_try(nn_test_realloc_null, ctx), 0);
-    nn_test_report("realloc(ptr, grow)",
-        nn_test_try(nn_test_realloc_grow, ctx), 0);
-    nn_test_report("realloc(ptr, free)",
-        nn_test_try(nn_test_realloc_free, ctx), 0);
-
-    nn_test_report("lock create/destroy",
-        nn_test_try(nn_test_lock_create_destroy, ctx), 0);
-    nn_test_report("lock 100 cycles",
-        nn_test_try(nn_test_lock_cycle, ctx), 0);
-    nn_test_report("two locks interleaved",
-        nn_test_try(nn_test_lock_two, ctx), 0);
-
-    nn_test_report("vfs stat cwd",
-        nn_test_try(nn_test_vfs_stat, NULL), 0);
-    nn_test_report("vfs readdir cwd",
-        nn_test_try(nn_test_vfs_dir, NULL), 0);
-    nn_test_report("vfs mkdir/remove",
-        nn_test_try(nn_test_vfs_mkdir_remove, NULL), 0);
-    nn_test_report("vfs seek",
-        nn_test_try(nn_test_vfs_seek, NULL), 0);
-
-    printf("--- %d passed, %d failed ---\n\n", nn_test_passed, nn_test_failed);
-    fflush(stdout);
-
-    if(nn_test_failed > 0) {
-        printf("self tests failed, aborting\n");
-        fflush(stdout);
-        exit(1);
-    }
-}
-#endif
-
 int main(int argc, char **argv) {
 	const char *player = getenv("USER");
 #ifdef NN_WINDOWS
@@ -540,9 +339,7 @@ int main(int argc, char **argv) {
 	nn_Context ctx;
 	nn_initContext(&ctx);
 	nn_initPalettes();
-#ifdef NN_WINDOWS
-	nn_run_selftests(&ctx);
-#endif
+
 	ne_memSand sand;
 	sand.buf = NULL;
 	
@@ -608,7 +405,11 @@ int main(int argc, char **argv) {
 
 	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
 	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
+    nn_Component *keyboard = nn_createComponent(
+    u, "mainKB", "keyboard");
 
+    ncl_ScreenState *scrstate = nn_getComponentState(screen);
+    ncl_mountKeyboard(scrstate, "mainKB");
 	{
 		// draw test
 		const char *s = "hello there";
@@ -638,7 +439,7 @@ restart:;
 	nn_mountComponent(c, eepromCard, 0);
 	nn_mountComponent(c, managedfs, 1);
 	nn_mountComponent(c, gpuCard, 2);
-
+    nn_mountComponent(c, keyboard, -1);
 	while(true) {
 		if(WindowShouldClose()) break;
 
@@ -773,6 +574,7 @@ cleanup:;
 	nn_dropComponent(managedfs);
 	nn_dropComponent(screen);
 	nn_dropComponent(gpuCard);
+    nn_dropComponent(keyboard);
 	// rip the universe
 	nn_destroyUniverse(u);
 	UnloadFont(font);

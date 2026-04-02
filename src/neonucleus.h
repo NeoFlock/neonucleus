@@ -1229,24 +1229,8 @@ typedef struct nn_ScreenConfig {
 // OC has 3 tiers, NN adds a 4th one as well.
 extern const nn_ScreenConfig nn_defaultScreens[4];
 
-typedef enum nn_ScreenAction {
-	NN_SCREEN_DROP,
-} nn_ScreenAction;
-
-typedef struct nn_ScreenRequest {
-	nn_Context *ctx;
-	nn_Computer *computer;
-	void *state;
-	const nn_ScreenConfig *screen;
-	nn_ScreenAction action;
-} nn_ScreenRequest;
-
-typedef nn_Exit (nn_ScreenHandler)(nn_ScreenRequest *req);
-
-nn_Component *nn_createScreen(nn_Universe *universe, const char *address, const nn_ScreenConfig *scrconf, void *state, nn_ScreenHandler *handler);
 
 // GPU class
-
 typedef struct nn_GPU {
 	// the minimum between these and the screen's
 	// are the maximum width/height/depth supported.
@@ -1275,20 +1259,175 @@ typedef struct nn_GPU {
 extern const nn_GPU nn_defaultGPUs[4];
 
 typedef enum nn_GPUAction {
-	NN_GPU_DROP,
+    NN_GPU_DROP,
+    NN_GPU_BIND,
+    NN_GPU_GETSCREEN,
+    NN_GPU_GETBG,
+    NN_GPU_SETBG,
+    NN_GPU_GETFG,
+    NN_GPU_SETFG,
+    NN_GPU_GETPALETTE,
+    NN_GPU_SETPALETTE,
+    NN_GPU_MAXDEPTH,
+    NN_GPU_GETDEPTH,
+    NN_GPU_SETDEPTH,
+    NN_GPU_MAXRES,
+    NN_GPU_GETRES,
+    NN_GPU_SETRES,
+    NN_GPU_GETVIEWPORT,
+    NN_GPU_SETVIEWPORT,
+    NN_GPU_GET,
+    NN_GPU_SET,
+    NN_GPU_COPY,
+    NN_GPU_FILL,
+    NN_GPU_GETACTIVEBUF,
+    NN_GPU_SETACTIVEBUF,
+    NN_GPU_BUFFERS,
+    NN_GPU_ALLOCBUF,
+    NN_GPU_FREEBUF,
+    NN_GPU_FREEALLBUFS,
+    NN_GPU_FREEMEM,
+    NN_GPU_GETBUFSIZE,
+    NN_GPU_BITBLT,
 } nn_GPUAction;
 
 typedef struct nn_GPURequest {
-	nn_Context *ctx;
-	nn_Computer *computer;
-	void *state;
-	const nn_GPU *gpu;
-	nn_GPUAction action;
+    nn_Context *ctx;
+    nn_Computer *computer;
+    void *state;
+    const nn_GPU *gpu;
+    nn_GPUAction action;
+    union {
+        struct {
+            const char *address;
+            bool reset;
+        } bind;
+        // GETSCREEN result
+        char screenAddr[NN_MAX_ADDRESS];
+        // GET/SET BG/FG
+        struct {
+            int color;
+            bool isPalette;
+            int oldColor;
+            bool wasPalette;
+            int oldPaletteIdx; // -1 if none
+        } color;
+        // GET/SET PALETTE
+        struct {
+            int index;
+            int color;
+            int oldColor;
+        } palette;
+        // MAXDEPTH / GETDEPTH / SETDEPTH
+        struct {
+            char depth;
+            char oldDepth;
+        } depth;
+        // MAXRES/GETRES/SETRES/GETVIEWPORT/SETVIEWPORT
+        struct {
+            int width;
+            int height;
+        } resolution;
+        // GET pixel
+        struct {
+            int x, y;
+            nn_codepoint codepoint;
+            int fg, bg;
+            int fgIdx, bgIdx; // -1 if not palette
+        } get;
+        // SET string
+        struct {
+            int x, y;
+            const char *value;
+            size_t len;
+            bool vertical;
+        } set;
+        // COPY
+        struct {
+            int x, y, w, h, tx, ty;
+        } copy;
+        // FILL
+        struct {
+            int x, y, w, h;
+            nn_codepoint codepoint;
+        } fill;
+        // GET/SET ACTIVE BUFFER, FREE BUFFER
+        struct {
+            int index;
+        } buffer;
+        // ALLOCATE BUFFER
+        struct {
+            int w, h, index;
+        } allocBuf;
+        // TOTALMEM / FREEMEM
+        size_t memory;
+        // GETBUFSIZE
+        struct {
+            int index, w, h;
+        } bufSize;
+        // BITBLT
+        struct {
+            int dst, col, row, w, h;
+            int src, fromCol, fromRow;
+        } bitblt;
+        // BUFFERS / count returned here, indices
+        // pushed on stack by handler
+        size_t bufCount;
+    };
 } nn_GPURequest;
 
 typedef nn_Exit (nn_GPUHandler)(nn_GPURequest *req);
 
-nn_Component *nn_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu, void *state, nn_GPUHandler *handler);
+nn_Component *nn_createGPU(
+    nn_Universe *universe, const char *address,
+    const nn_GPU *gpu, void *state,
+    nn_GPUHandler *handler);
+
+typedef enum nn_ScreenAction {
+    NN_SCREEN_DROP,
+    NN_SCREEN_ISON,
+    NN_SCREEN_TURNON,
+    NN_SCREEN_TURNOFF,
+    NN_SCREEN_GETASPECTRATIO,
+    NN_SCREEN_GETKEYBOARDS,
+    NN_SCREEN_SETPRECISE,
+    NN_SCREEN_ISPRECISE,
+    NN_SCREEN_SETTOUCHINVERTED,
+    NN_SCREEN_ISTOUCHINVERTED,
+} nn_ScreenAction;
+
+typedef struct nn_ScreenRequest {
+    nn_Context *ctx;
+    nn_Computer *computer;
+    void *state;
+    const nn_ScreenConfig *screen;
+    nn_ScreenAction action;
+    union {
+        // turnOn / turnOff / isOn
+        struct {
+            bool wasOn;
+            bool isOn;
+        } power;
+        // getAspectRatio
+        struct {
+            int w, h;
+        } aspect;
+        // getKeyboards — addresses pushed on stack by
+        // handler; count returned here
+        size_t kbCount;
+        // setPrecise / isPrecise /
+        // setTouchModeInverted / isTouchModeInverted
+        bool flag;
+    };
+} nn_ScreenRequest;
+
+typedef nn_Exit (nn_ScreenHandler)(nn_ScreenRequest *req);
+
+nn_Component *nn_createScreen(
+    nn_Universe *universe, const char *address,
+    const nn_ScreenConfig *scrconf, void *state,
+    nn_ScreenHandler *handler
+);
 
 // Colors and palettes.
 // Do note that the 
