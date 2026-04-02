@@ -339,9 +339,7 @@ int main(int argc, char **argv) {
 	nn_Context ctx;
 	nn_initContext(&ctx);
 	nn_initPalettes();
-#ifdef NN_WINDOWS
-	nn_run_selftests(&ctx);
-#endif
+
 	ne_memSand sand;
 	sand.buf = NULL;
 	
