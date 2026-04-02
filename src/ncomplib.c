@@ -17,8 +17,19 @@ bool ncl_defaultHandler(ncl_VFSRequest *request) {
 #include <dirent.h>
 #include <sys/stat.h>
 
+// Read me all my rights
 #elif defined(NN_WINDOWS)
-#error "Windows is not supported yet"
+
+#include <windows.h>
+#include <sys/stat.h>
+#include <direct.h>
+
+typedef struct ncl_WinDir {
+	HANDLE handle;
+	WIN32_FIND_DATAA findData;
+	bool isFirst;
+} ncl_WinDir;
+
 #endif
 
 bool ncl_defaultHandler(ncl_VFSRequest *request) {
@@ -54,11 +65,47 @@ bool ncl_defaultHandler(ncl_VFSRequest *request) {
 		if(wanted == NN_SEEK_SET) whence = SEEK_SET;
 		if(wanted == NN_SEEK_CUR) whence = SEEK_CUR;
 		if(wanted == NN_SEEK_END) whence = SEEK_END;
-		if(fseek(f, whence, request->seek.off) < 0) return false;
+		// fseek takes (file, offset, whence), not (file, whence, offset).
+		// The original code had these two arguments swapped, which caused
+		// every seek to go to the wrong position or fail entirely.
+		/*
+			* We want to: seek 100 bytes from the beginning (SEEK_SET = 0)
+			* Call: fseek(f, 0, 100)
+			* offset=0, whence=100
+			* Result: whence=100 is invalid, fseek returns -1, the function returns false
+
+			* We want to: seek 0 from the current position (SEEK_CUR = 1)
+			* Call: fseek(f, 1, 0)
+			* offset=1, whence=SEEK_SET(0)
+			* Result: jumps to position 1 from the beginning of the file instead of staying at the same position
+
+			* We want to: seek 0 from the beginning (SEEK_SET = 0)
+			* Call: fseek(f, 0, 0)
+			* offset=0, whence=SEEK_SET(0)
+			* Result: works correctly by chance
+
+			* We want to: seek 2 from the beginning (SEEK_SET = 0)
+			* Call: fseek(f, 0, 2)
+			* offset=0, whence=SEEK_END(2)
+			* Result: Goes to the end of the file instead of position 2
+		*/
+		// Original fseek signature: int fseek(FILE *stream, long offset, int whence) remains,
+		// yet the 				   : `if(fseek(f, whence, request->seek.off) < 0) return false;` 
+		// ...variant was wrong
+		if(fseek(f, request->seek.off, whence) < 0) return false;
+
 		request->seek.off = ftell(f);
 		return true;
 	}
 	if(request->action == NCL_VFS_REMOVE) {
+		// On Windows, remove() cannot delete directories.
+		// We need to check if the path is a directory and use _rmdir instead.
+#ifdef NN_WINDOWS
+		DWORD attrs = GetFileAttributesA(request->remove);
+		if(attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+			return _rmdir(request->remove) == 0;
+		}
+#endif
 		return remove(request->remove) == 0;
 	}
 #ifdef NN_POSIX
@@ -102,8 +149,73 @@ bool ncl_defaultHandler(ncl_VFSRequest *request) {
 	if(request->action == NCL_VFS_MKDIR) {
 		return mkdir(request->mkdir, 0777) == 0;
 	}
+#elif defined(NN_WINDOWS)
+	if(request->action == NCL_VFS_OPENDIR) {
+		// FindFirstFileA needs a glob pattern, so we append "\\*" to the path.
+		// We allocate the wrapper struct on the heap because FindFirstFileA
+		// fills in the first result immediately and we need to remember that.
+		ncl_WinDir *dir = malloc(sizeof(ncl_WinDir));
+		if(dir == NULL) return false;
+		char searchPath[NN_MAX_PATH + 4];
+		snprintf(searchPath, sizeof(searchPath), "%s\\*", request->opendir.path);
+		dir->handle = FindFirstFileA(searchPath, &dir->findData);
+		if(dir->handle == INVALID_HANDLE_VALUE) {
+			free(dir);
+			return false;
+		}
+		dir->isFirst = true;
+		request->opendir.dir = dir;
+		return true;
+	}
+	if(request->action == NCL_VFS_CLOSEDIR) {
+		ncl_WinDir *dir = request->closedir;
+		FindClose(dir->handle);
+		free(dir);
+		return true;
+	}
+	if(request->action == NCL_VFS_READDIR) {
+		// Mirrors the POSIX readdir loop: skip "." and "..",
+		// copy name into the caller buffer, signal end with NULL.
+		ncl_WinDir *dir = request->readdir.dir;
+		while(1) {
+			if(!dir->isFirst) {
+				if(!FindNextFileA(dir->handle, &dir->findData)) {
+					request->readdir.name = NULL;
+					return true;
+				}
+			}
+			dir->isFirst = false;
+			if(strcmp(dir->findData.cFileName, ".") == 0 ||
+			   strcmp(dir->findData.cFileName, "..") == 0) {
+				continue;
+			}
+			strncpy(request->readdir.name, dir->findData.cFileName, NN_MAX_PATH - 1);
+			request->readdir.name[NN_MAX_PATH - 1] = '\0';
+			return true;
+		}
+	}
+	if(request->action == NCL_VFS_STAT) {
+		// Windows does not have st_blocks, so we approximate disk size
+		// as the file size itself. This is less accurate than the POSIX
+		// version but avoids needing the full Win32 file information API.
+		struct _stat s;
+		if(_stat(request->stat.path, &s) != 0) {
+			request->stat.path = NULL;
+			return false;
+		}
+		ncl_Stat *st = request->stat.stat;
+		st->isDirectory = (s.st_mode & _S_IFDIR) != 0;
+		st->diskSize = s.st_size;
+		st->size = st->isDirectory ? 0 : s.st_size;
+		st->lastModified = s.st_mtime;
+		return true;
+	}
+	if(request->action == NCL_VFS_MKDIR) {
+		// _mkdir on Windows does not take a permissions argument.
+		return _mkdir(request->mkdir) == 0;
+	}
 #endif
-	return false; // not supported
+	return false;
 }
 #endif
 

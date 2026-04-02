@@ -285,7 +285,7 @@ static int luaArch_component_list(lua_State *L) {
 		lua_createtable(L, 0, 0);
 		return 1;
 	}
-	const char *comps[len];
+	NN_VLA(const char *, comps, len);
 	nn_getComponents(arch->computer, comps);
 	for(size_t i = 0; i < len; i++) {
 		nn_Component *c = nn_getComponent(arch->computer, comps[i]);
@@ -385,7 +385,7 @@ static int luaArch_component_methods(lua_State *L) {
 		lua_createtable(L, 0, 0);
 		return 1;
 	}
-	const char *methods[methodLen];
+	NN_VLA(const char *, methods, methodLen);
 	nn_getComponentMethods(c, methods, &methodLen);
 	lua_createtable(L, 0, methodLen);
 	for(size_t i = 0; i < methodLen; i++) {
@@ -414,7 +414,8 @@ static int luaArch_component_fields(lua_State *L) {
 		lua_createtable(L, 0, 0);
 		return 1;
 	}
-	const char *methods[methodLen];
+	// const char *methods[methodLen];
+	NN_VLA(const char *, methods, methodLen);
 	nn_getComponentMethods(c, methods, &methodLen);
 	lua_createtable(L, 0, methodLen);
 	for(size_t i = 0; i < methodLen; i++) {
@@ -587,15 +588,15 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_createtable(L, 0, 10);
 	int unicode = lua_gettop(L);
 	lua_pushcfunction(L, luaArch_unicode_char);
-	lua_setfield(L, component, "char");
+	lua_setfield(L, unicode, "char");
 	lua_pushcfunction(L, luaArch_unicode_len);
-	lua_setfield(L, component, "len");
+	lua_setfield(L, unicode, "len");
 	lua_pushcfunction(L, luaArch_unicode_sub);
-	lua_setfield(L, component, "sub");
+	lua_setfield(L, unicode, "sub");
 	lua_pushcfunction(L, luaArch_unicode_len);
-	lua_setfield(L, component, "wlen");
+	lua_setfield(L, unicode, "wlen");
 	lua_pushcfunction(L, luaArch_unicode_wtrunc);
-	lua_setfield(L, component, "wtrunc");
+	lua_setfield(L, unicode, "wtrunc");
 	lua_setglobal(L, "unicode");
 }
 
