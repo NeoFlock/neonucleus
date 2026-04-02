@@ -1,19 +1,19 @@
 # For MVP functionality
 
-- finish `eeprom` class and volatile eeprom 
-- `filesystem`, `drive`, `gpu`, `screen` class implementations
-- `ncomplib` with reference component implementations (depends on libc)
+- `gpu`, `screen` class implementations
 - write a tester OS, basically a menu with tests to run
-- volatile drive
-- volatile filesystem
+- move veeprom into NCL as tmpeeprom
+- tmpdrive
+- tmpfs
 - device info
+- userdata support
 
 # To re-evaluate
 
-- More stack manipulation functions to allow libraries to have better APIs.
+- Exposing the internal non-resizing hashmap implementation.
+- More stack manipulation functions to allow libraries to have better APIs. (rotate)
 - Having a copy of the context stored directly in requests instead of having to use getComputerContext, as it simplifies the APIs and allows them
 to be made more portable.
-- Exposing more context wrappers than just the memory allocation functions.
 - Exposing more internal functions that may be useful to the user to prevent pointless rewriting and duplicate machine code.
 
 # Vanilla components needed
@@ -23,6 +23,7 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 - `data` component (note: maybe add hamming code support?)
 - `modem` component
 - `tunnel` component
+- `internet` component
 - `relay` component (note: OCDoc still refers to it as `access_point`)
 - `computer` component
 - `geolyzer` component

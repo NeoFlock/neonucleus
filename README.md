@@ -1,21 +1,15 @@
 # NeoNucleus
 
 The core of NeoComputers.
+This repository has both NeoNucleus itself (NN) and the NeoNucleus Component Library (NCL).
 
-It provides:
-- the computer model and state implementation
-- architecture system
-- (NOT NOW) basic component implementations
-- (NOT NOW) standard emulator
-- (NOT NOW) some extra components
+These libraries provides:
+- the base architecture, with computer states (for running machines), components, architectures, etc.
+- (NCL) base component implementations for common ones (GPU/FS/tmpfs/EEPROM/etc.)
+- fine control over component limits, with default references
 
-The library does not provide:
-- The sandbox (equivalent to OpenComputer's `machine.lua`)
-- Default architectures
-- Default host interop (as in, the vtables that control the basic component's internals, such as the filesystem implementation)
-
-The emulator *will* (as its gonna be made after the engine is functional) provide:
-- A simple Lua sandbox
-- Very simple workspaces
-- Ocelot components for debug
-- Headless mode (single computer, uses actual terminal for a teletypewriter).
+They do not provide:
+- Networking implementation, so you need to pass vtables for all network-related components
+- Default architecture. While the testing emulator has a test version of the common Lua architecture seen in OpenComputers,
+it is not propely sandboxed nor safe. Neither NN nor NCL provide any architectures.
+-  
