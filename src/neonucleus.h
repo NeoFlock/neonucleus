@@ -586,6 +586,7 @@ typedef struct nn_ComponentRequest {
 	nn_Computer *computer;
 	void *state;
 	void *classState;
+	const char *compAddress;
 	nn_ComponentAction action;
 	// method index
 	unsigned int methodIdx;

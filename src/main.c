@@ -404,7 +404,7 @@ int main(int argc, char **argv) {
 	double wattage = 0;
 
 	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
-	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[2]);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
@@ -532,7 +532,6 @@ restart:;
 		}
 
 		if(tickNow >= nextTick) {
-			accumulatedEnergyCost = 0;
 			nextTick = tickNow + tickDelay;
 			nn_clearstack(c);
 

@@ -1561,6 +1561,7 @@ void nn_dropComponentN(nn_Component *c, size_t n) {
 	req.classState = c->classState;
 	req.ctx = ctx;
 	req.computer = NULL;
+	req.compAddress = c->address;
 	req.action = NN_COMP_DROP;
 	c->handler(&req);
 
@@ -1679,6 +1680,7 @@ bool nn_hasComponentMethod(nn_Component *c,
     req.computer = NULL;
     req.state = c->state;
     req.classState = c->classState; // Don't remove it. It segfaults.
+	req.compAddress = c->address;
     req.action = NN_COMP_CHECKMETHOD;
     req.methodIdx = ent->idx;
     req.methodEnabled = true;
@@ -1812,6 +1814,7 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 	req.computer = computer;
 	req.state = c->state;
 	req.classState = c->classState;
+	req.compAddress = c->address;
 	req.action = NN_COMP_INVOKE;
 	req.methodIdx = m->idx;
 	req.returnCount = 0;
@@ -1840,6 +1843,7 @@ nn_Exit nn_signalComponent(nn_Component *component, nn_Computer *computer, const
 	req.computer = computer;
 	req.state = component->state;
 	req.classState = component->classState;
+	req.compAddress = component->address;
 	req.action = NN_COMP_SIGNAL;
 	req.signal = signal;
 	return component->handler(&req);
@@ -3256,6 +3260,7 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 		return nn_pushinteger(C, eeprom.dataSize);
 	}
 	if(method == NN_EENUM_GET) {
+		nn_removeEnergy(C, eeprom.readEnergyCost);
 		ereq.action = NN_EEPROM_GET;
 		NN_VLA(char, buf, eeprom.size);
 		ereq.buf = buf;
@@ -3266,6 +3271,7 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 		return nn_pushlstring(C, ereq.buf, ereq.buflen);
 	}
 	if(method == NN_EENUM_GETDATA) {
+		nn_removeEnergy(C, eeprom.readDataEnergyCost);
 		ereq.action = NN_EEPROM_GETDATA;
 		NN_VLA(char, buf, eeprom.size);
 		ereq.buf = buf;
@@ -3298,6 +3304,8 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 		return nn_pushlstring(C, ereq.buf, ereq.buflen);
 	}
 	if(method == NN_EENUM_SET) {
+		nn_removeEnergy(C, eeprom.writeEnergyCost);
+		nn_addIdleTime(C, eeprom.writeDelay);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		ereq.action = NN_EEPROM_SET;
 		ereq.robuf = nn_tolstring(C, 0, &ereq.buflen);
@@ -3311,6 +3319,8 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 		return nn_pushbool(C, true);
 	}
 	if(method == NN_EENUM_SETDATA) {
+		nn_removeEnergy(C, eeprom.writeDataEnergyCost);
+		nn_addIdleTime(C, eeprom.writeDataDelay);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		ereq.action = NN_EEPROM_SETDATA;
 		ereq.robuf = nn_tolstring(C, 0, &ereq.buflen);
@@ -3631,6 +3641,8 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		e = state->handler(&freq);
 		if(e) return e;
 		if(freq.read.buf == NULL) return NN_OK;
+		nn_costComponent(C, req->compAddress, state->fs.readsPerTick);
+		nn_removeEnergy(C, state->fs.dataEnergyCost * freq.read.len);
 		req->returnCount = 1;
 		return nn_pushlstring(C, buf, freq.read.len);
 	}
@@ -3643,6 +3655,8 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		e = state->handler(&freq);
 		if(e) return e;
 		req->returnCount = 1;
+		nn_costComponent(C, req->compAddress, state->fs.writesPerTick);
+		nn_removeEnergy(C, state->fs.dataEnergyCost * freq.write.len);
 		return nn_pushbool(C, true);
 	}
 	if(method == NN_FSNUM_SEEK) {
@@ -3671,6 +3685,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		e = state->handler(&freq);
 		if(e) return e;
 		req->returnCount = 1;
+		nn_costComponent(C, req->compAddress, state->fs.readsPerTick);
 		return nn_pushbool(C, true);
 	}
 	if(method == NN_FSNUM_CLOSE) {
@@ -3831,7 +3846,7 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 		[NN_FSNUM_GETLABEL] = {"getLabel", "function(): string? - Gets the label of the drive, if any", NN_DIRECT},
 		[NN_FSNUM_SETLABEL] = {"setLabel", "function(label?: string): string - Sets the label of the drive. Returns the new label, which may be truncated", NN_INDIRECT},
 		[NN_FSNUM_ISRO] = {"isReadOnly", "function(): boolean - Returns whether the drive is read-only", NN_DIRECT},
-		[NN_FSNUM_OPEN] = {"open", "function(path: string, mode?: 'r'|'w'|'a'): integer - Open a file", NN_DIRECT},
+		[NN_FSNUM_OPEN] = {"open", "function(path: string, mode?: 'r'|'w'|'a'): integer - Open a file", NN_INDIRECT},
 		[NN_FSNUM_READ] = {"read", "function(fd: integer, len?: integer): string? - Read from a file, returns nothing on EoF", NN_DIRECT},
 		[NN_FSNUM_WRITE] = {"write", "function(fd: integer, data: string): boolean - Writes to a file, returns whether the operation succeeded", NN_DIRECT},
 		[NN_FSNUM_SEEK] = {"seek", "function(fd: integer, whence?: 'set'|'cur'|'end', off?: integer): integer - Seeks a file, returns new position", NN_DIRECT},
@@ -3841,7 +3856,7 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 		[NN_FSNUM_ISDIR] = {"isDirectory", "function(path: string): boolean - Returns whether an entry is a directory", NN_DIRECT},
 		[NN_FSNUM_SIZE] = {"size", "function(path: string): integer - Returns the size of an entry", NN_DIRECT},
 		[NN_FSNUM_LASTMODIFIED] = {"lastModified", "function(path: string): integer - Returns the UNIX timestamp of the last modified time", NN_DIRECT},
-		[NN_FSNUM_MKDIR] = {"makeDirectory", "function(path: string): boolean - Create a directory, recursively. Does not fail if directory already exists", NN_DIRECT},
+		[NN_FSNUM_MKDIR] = {"makeDirectory", "function(path: string): boolean - Create a directory, recursively. Does not fail if directory already exists", NN_INDIRECT},
 		[NN_FSNUM_REMOVE] = {"remove", "function(path: string): boolean - Recursively deletes an entry", NN_INDIRECT},
 		[NN_FSNUM_RENAME] = {"rename", "function(from: string, to: string): boolean - Renames/moves an entry", NN_INDIRECT},
 	};
@@ -4288,6 +4303,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
     }
     //  setBackground 
     if(m == NN_GPUNUM_SETBG) {
+		nn_costComponent(C, req->compAddress, cls->gpu.setBackgroundPerTick);
         if(nn_checknumber(C, 0,
             "bad argument #1 (number expected)"))
             return NN_EBADCALL;
@@ -4322,6 +4338,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
     }
     //  setForeground 
     if(m == NN_GPUNUM_SETFG) {
+		nn_costComponent(C, req->compAddress, cls->gpu.setForegroundPerTick);
         if(nn_checknumber(C, 0,
             "bad argument #1 (number expected)"))
             return NN_EBADCALL;
@@ -4540,6 +4557,8 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
+		nn_costComponent(C, req->compAddress, cls->gpu.setPerTick);
+		nn_removeEnergy(C, cls->gpu.energyPerWrite * g.set.len);
         return nn_pushbool(C, true);
     }
     //  copy 
@@ -4559,6 +4578,11 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
+		nn_costComponent(C, req->compAddress, cls->gpu.copyPerTick);
+		// prevent issues
+		if(g.copy.tx < 1) g.copy.tx = 1;
+		if(g.copy.ty < 1) g.copy.ty = 1;
+		nn_removeEnergy(C, cls->gpu.energyPerWrite * g.copy.tx * g.copy.ty);
         return nn_pushbool(C, true);
     }
     //  fill 
@@ -4581,6 +4605,11 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
+		nn_costComponent(C, req->compAddress, cls->gpu.fillPerTick);
+		// prevent issues
+		if(g.fill.w < 1) g.fill.w = 1;
+		if(g.fill.h < 1) g.fill.h = 1;
+		nn_removeEnergy(C, (g.fill.codepoint == ' ' ? cls->gpu.energyPerClear : cls->gpu.energyPerWrite) * g.fill.w * g.fill.h);
         return nn_pushbool(C, true);
     }
     //  VRAM: getActiveBuffer 
