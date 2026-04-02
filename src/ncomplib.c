@@ -1035,8 +1035,17 @@ nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, c
 	return c;
 }
 
+nn_Component *ncl_createTmpFS(nn_Universe *universe, const nn_Filesystem *fs);
+
 nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
+nn_Component *ncl_createTmpDrive(nn_Universe *universe, const nn_EEPROM *eeprom, const char *data, size_t datalen);
 nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *path, bool isReadonly);
+nn_Component *ncl_createTmpEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const char *code, size_t codelen);
+
+size_t ncl_getEEPROMData(nn_Component *component, char *buf);
+void ncl_setEEPROMData(nn_Component *component, const char *data, size_t len);
+
+ncl_VFS ncl_getVFS(nn_Component *component);
 
 ncl_VFS ncl_setVFS(nn_Component *component, ncl_VFS vfs);
 
@@ -1347,6 +1356,14 @@ const char *ncl_getKeyboard(ncl_ScreenState *state, size_t idx);
 
 // general stuff
 
+bool ncl_isNCLID(const char *type) {
+	return strncmp(NCL_PREFIX, type, strlen(NCL_PREFIX));
+}
+
+bool ncl_isNCLComponent(nn_Component *component) {
+	return ncl_isNCLID(nn_getComponentTypeID(component));
+}
+
 void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 	stat->labellen = 0;
 	stat->isReadonly = false;
@@ -1425,14 +1442,18 @@ bool ncl_makeReadonly(nn_Component *component) {
 	}
 	if(strcmp(ty, NCL_DRIVE) == 0) {
 		ncl_DriveState *drv = state;
+		nn_lock(drv->ctx, drv->lock);
 		drv->isReadonly = true;
 		drv->usage++;
+		nn_unlock(drv->ctx, drv->lock);
 		return true;
 	}
 	if(strcmp(ty, NCL_EEPROM) == 0) {
 		ncl_EEState *ee = state;
+		nn_lock(ee->ctx, ee->lock);
 		ee->isReadonly = true;
 		ee->usage++;
+		nn_unlock(ee->ctx, ee->lock);
 		return true;
 	}
 	return false;
@@ -1444,3 +1465,5 @@ nn_Exit ncl_encodeComponentState(nn_Universe *universe, nn_Component *comp, ncl_
 void ncl_freeEncodedState(nn_Universe *universe, ncl_EncodedState *state);
 nn_Exit ncl_loadComponentState(nn_Component *comp, const ncl_EncodedState *state);
 
+size_t ncl_getLabel(nn_Component *c, char buf[NN_MAX_LABEL]);
+size_t ncl_setLabel(nn_Component *c, const char *label, size_t len);
