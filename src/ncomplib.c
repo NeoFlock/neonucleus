@@ -1107,25 +1107,102 @@ static void ncl_recomputeScreen(const ncl_ScreenState *state) {
 }
 
 static nn_Exit ncl_screenHandler(nn_ScreenRequest *req) {
-	nn_Context *ctx = req->ctx;
-	nn_Computer *C = req->computer;
-	ncl_ScreenState *state = req->state;
-	const nn_ScreenConfig *conf = req->screen;
+    nn_Context *ctx = req->ctx;
+    nn_Computer *C = req->computer;
+    ncl_ScreenState *st = req->state;
 
-	if(req->action == NN_SCREEN_DROP) {
-		for(size_t i = 0; i < state->keyboardCount; i++) {
-			nn_strfree(ctx, state->keyboards[i]);
-		}
-		nn_destroyLock(ctx, state->lock);
-		nn_free(ctx, state->pixels, sizeof(ncl_ScreenPixel) * state->conf.maxWidth * state->conf.maxHeight);
-		nn_free(ctx, state->palette, sizeof(int) * state->conf.paletteColors);
-		nn_free(ctx, state->resolvedPalette, sizeof(int) * state->conf.paletteColors);
-		nn_free(ctx, state, sizeof(*state));
-		return NN_OK;
-	}
+    if(req->action == NN_SCREEN_DROP) {
+        for(size_t i = 0; i < st->keyboardCount; i++)
+            nn_strfree(ctx, st->keyboards[i]);
+        nn_destroyLock(ctx, st->lock);
+        nn_free(ctx, st->pixels,
+            sizeof(ncl_ScreenPixel)
+            * st->conf.maxWidth * st->conf.maxHeight);
+        nn_free(ctx, st->palette,
+            sizeof(int) * st->conf.paletteColors);
+        nn_free(ctx, st->resolvedPalette,
+            sizeof(int) * st->conf.paletteColors);
+        nn_free(ctx, st, sizeof(*st));
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_ISON) {
+        nn_lock(ctx, st->lock);
+        req->power.isOn =
+            (st->flags & NCL_SCREEN_ON) != 0;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_TURNON) {
+        nn_lock(ctx, st->lock);
+        bool was = (st->flags & NCL_SCREEN_ON) != 0;
+        st->flags |= NCL_SCREEN_ON;
+        req->power.wasOn = !was;
+        req->power.isOn = true;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_TURNOFF) {
+        nn_lock(ctx, st->lock);
+        bool was = (st->flags & NCL_SCREEN_ON) != 0;
+        st->flags &= ~NCL_SCREEN_ON;
+        req->power.wasOn = was;
+        req->power.isOn = false;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_GETASPECTRATIO) {
+        // single-block screen
+        req->aspect.w = 1;
+        req->aspect.h = 1;
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_GETKEYBOARDS) {
+        nn_lock(ctx, st->lock);
+        for(size_t i = 0; i < st->keyboardCount; i++)
+            nn_pushstring(C, st->keyboards[i]);
+        req->kbCount = st->keyboardCount;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_SETPRECISE) {
+        nn_lock(ctx, st->lock);
+        if(req->flag)
+            st->flags |= NCL_SCREEN_PRECISE;
+        else
+            st->flags &= ~NCL_SCREEN_PRECISE;
+        req->flag =
+            (st->flags & NCL_SCREEN_PRECISE) != 0;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_ISPRECISE) {
+        nn_lock(ctx, st->lock);
+        req->flag =
+            (st->flags & NCL_SCREEN_PRECISE) != 0;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_SETTOUCHINVERTED) {
+        nn_lock(ctx, st->lock);
+        if(req->flag)
+            st->flags |= NCL_SCREEN_TOUCHINVERTED;
+        else
+            st->flags &= ~NCL_SCREEN_TOUCHINVERTED;
+        req->flag =
+            (st->flags & NCL_SCREEN_TOUCHINVERTED) != 0;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_ISTOUCHINVERTED) {
+        nn_lock(ctx, st->lock);
+        req->flag =
+            (st->flags & NCL_SCREEN_TOUCHINVERTED) != 0;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
 
-	if(C) nn_setError(C, "ncl-screen: not implemented yet");
-	return NN_EBADCALL;
+    if(C) nn_setError(C, "ncl-screen: bad action");
+    return NN_EBADCALL;
 }
 
 nn_Component *ncl_createScreen(nn_Universe *universe, const char *address, const nn_ScreenConfig *config) {
@@ -1196,6 +1273,7 @@ static ncl_ScreenState *ncl_getBoundScreen(ncl_GPUState *gpu, nn_Computer *C) {
 	return nn_getComponentState(c);
 }
 
+/*
 static void ncl_getGPULimits(ncl_GPUState *gpu, nn_Computer *C, int *maxWidth, int *maxHeight, char *maxDepth) {
 	int w = gpu->conf.maxWidth, h = gpu->conf.maxHeight;
 	char d = gpu->conf.maxDepth;
@@ -1212,64 +1290,854 @@ static void ncl_getGPULimits(ncl_GPUState *gpu, nn_Computer *C, int *maxWidth, i
 	*maxHeight = h;
 	*maxDepth = d;
 }
+*/
 
-static nn_Exit ncl_gpuHandler(nn_GPURequest *req) {
-	nn_Context *ctx = req->ctx;
-	nn_Computer *C = req->computer;
-	ncl_GPUState *state = req->state;
-	const nn_GPU *gpu = req->gpu;
-	if(req->action == NN_GPU_DROP) {
-		for(size_t i = 0; i < NCL_MAX_VRAMBUF; i++) {
-			if(state->vram[i] != NULL) ncl_freeVRAM(ctx, state->vram[i]);
-		}
-		if(state->screenAddress != NULL) nn_strfree(ctx, state->screenAddress);
-		nn_free(ctx, state, sizeof(*state));
-		return NN_OK;
-	}
-	if(C != NULL) nn_setError(C, "ncl-gpu: not implemented yet");
-	return NN_EBADCALL;
+static void ncl_getGPULimitsWithScreen(
+    ncl_GPUState *gpu, ncl_ScreenState *screen,
+    int *maxWidth, int *maxHeight, char *maxDepth)
+{
+    int w = gpu->conf.maxWidth;
+    int h = gpu->conf.maxHeight;
+    char d = gpu->conf.maxDepth;
+    if(screen != NULL) {
+        if(w > screen->conf.maxWidth)
+            w = screen->conf.maxWidth;
+        if(h > screen->conf.maxHeight)
+            h = screen->conf.maxHeight;
+        if(d > screen->conf.maxDepth)
+            d = screen->conf.maxDepth;
+    }
+    *maxWidth = w;
+    *maxHeight = h;
+    *maxDepth = d;
 }
 
-nn_Component *ncl_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu) {
-	nn_Context *ctx = nn_getUniverseContext(universe);
-	nn_Lock *lock = NULL;
-	ncl_GPUState *state = NULL;
-	nn_Component *c = NULL;
+// helper: get the target buffer for the active index.
+// Returns NULL + sets error on failure.
+// If index==0 and screen is non-NULL, caller must use
+// the screen pixel functions instead.
+static ncl_VRAMBuf *ncl_getVRAMBuf(
+    ncl_GPUState *st, int idx, nn_Computer *C)
+{
+    if(idx <= 0 || idx >= NCL_MAX_VRAMBUF) {
+        if(C) nn_setError(C, "invalid buffer index");
+        return NULL;
+    }
+    ncl_VRAMBuf *b = st->vram[idx];
+    if(b == NULL && C)
+        nn_setError(C, "no such buffer");
+    return b;
+}
 
-	lock = nn_createLock(ctx);
-	if(lock == NULL) goto fail;
+static nn_Exit ncl_gpuHandler(nn_GPURequest *req) {
+    nn_Context *ctx = req->ctx;
+    nn_Computer *C = req->computer;
+    ncl_GPUState *st = req->state;
 
-	state = nn_alloc(ctx, sizeof(*state));
-	if(state == NULL) goto fail;
+    if(req->action == NN_GPU_DROP) {
+        for(size_t i = 0; i < NCL_MAX_VRAMBUF; i++) {
+            if(st->vram[i] != NULL)
+                ncl_freeVRAM(ctx, st->vram[i]);
+        }
+        if(st->screenAddress != NULL)
+            nn_strfree(ctx, st->screenAddress);
+        nn_destroyLock(ctx, st->lock);
+        nn_free(ctx, st, sizeof(*st));
+        return NN_OK;
+    }
 
-	state->ctx = ctx;
-	state->lock = lock;
-	state->conf = *gpu;
-	state->vramFree = gpu->totalVRAM;
-	state->screenAddress = NULL;
-	state->currentFg = 0xFFFFFF;
-	state->currentBg = 0x000000;
-	state->activeBuffer = 0;
-	state->isFgPalette = false;
-	state->isBgPalette = false;
-	for(size_t i = 0; i < NCL_MAX_VRAMBUF; i++) {
-		state->vram[i] = NULL;
-	}
+    //  bind 
+    if(req->action == NN_GPU_BIND) {
+        nn_Component *sc =
+            nn_getComponent(C, req->bind.address);
+        if(sc == NULL) {
+            nn_setError(C, "no such component");
+            return NN_EBADCALL;
+        }
+        const char *tid = nn_getComponentTypeID(sc);
+       	if(strcmp(tid, NCL_SCREEN) != 0) {
+            nn_setError(C, "not a screen");
+            return NN_EBADCALL;
+        }
+        nn_lock(ctx, st->lock);
+        if(st->screenAddress != NULL)
+            nn_strfree(ctx, st->screenAddress);
+        st->screenAddress =
+            nn_strdup(ctx, req->bind.address);
+        nn_unlock(ctx, st->lock);
 
-	c = nn_createGPU(universe, address, gpu, state, ncl_gpuHandler);
-	if(c == NULL) goto fail;
+        if(req->bind.reset) {
+            ncl_ScreenState *scr =
+                nn_getComponentState(sc);
+            ncl_lockScreen(scr);
+            ncl_resetScreen(scr);
+            ncl_unlockScreen(scr);
+        }
+        return NN_OK;
+    }
+    //  getScreen 
+    if(req->action == NN_GPU_GETSCREEN) {
+        nn_lock(ctx, st->lock);
+        if(st->screenAddress != NULL) {
+            size_t len = strlen(st->screenAddress);
+            if(len >= NN_MAX_ADDRESS)
+                len = NN_MAX_ADDRESS - 1;
+		memcpy(req->screenAddr,
+			st->screenAddress, len);
+            req->screenAddr[len] = '\0';
+        }
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  getBackground 
+    if(req->action == NN_GPU_GETBG) {
+        nn_lock(ctx, st->lock);
+        req->color.color = st->currentBg;
+        req->color.isPalette = st->isBgPalette;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  setBackground 
+    if(req->action == NN_GPU_SETBG) {
+        nn_lock(ctx, st->lock);
+        req->color.oldColor = st->currentBg;
+        req->color.wasPalette = st->isBgPalette;
+        req->color.oldPaletteIdx =
+            st->isBgPalette ? st->currentBg : -1;
+        st->currentBg = req->color.color;
+        st->isBgPalette = req->color.isPalette;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  getForeground 
+    if(req->action == NN_GPU_GETFG) {
+        nn_lock(ctx, st->lock);
+        req->color.color = st->currentFg;
+        req->color.isPalette = st->isFgPalette;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  setForeground 
+    if(req->action == NN_GPU_SETFG) {
+        nn_lock(ctx, st->lock);
+        req->color.oldColor = st->currentFg;
+        req->color.wasPalette = st->isFgPalette;
+        req->color.oldPaletteIdx =
+            st->isFgPalette ? st->currentFg : -1;
+        st->currentFg = req->color.color;
+        st->isFgPalette = req->color.isPalette;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  getPaletteColor 
+    if(req->action == NN_GPU_GETPALETTE) {
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr == NULL) {
+            nn_setError(C, "no screen");
+            return NN_EBADCALL;
+        }
+        ncl_lockScreen(scr);
+        int idx = req->palette.index;
+        if(idx < 0 || idx >= scr->conf.paletteColors) {
+            ncl_unlockScreen(scr);
+            nn_setError(C, "invalid palette index");
+            return NN_EBADCALL;
+        }
+        req->palette.color = scr->palette[idx];
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  setPaletteColor 
+    if(req->action == NN_GPU_SETPALETTE) {
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr == NULL) {
+            nn_setError(C, "no screen");
+            return NN_EBADCALL;
+        }
+        ncl_lockScreen(scr);
+        int idx = req->palette.index;
+        if(idx < 0
+           || idx >= scr->conf.editableColors) {
+            ncl_unlockScreen(scr);
+            nn_setError(C, "invalid palette index");
+            return NN_EBADCALL;
+        }
+        req->palette.oldColor = scr->palette[idx];
+        scr->palette[idx] = req->palette.color;
+        scr->resolvedPalette[idx] =
+            nn_mapDepth(req->palette.color, scr->depth);
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  maxDepth 
+    if(req->action == NN_GPU_MAXDEPTH) {
+        nn_lock(ctx, st->lock);
+        char d = st->conf.maxDepth;
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr != NULL) {
+            ncl_lockScreen(scr);
+            if(scr->conf.maxDepth < d)
+                d = scr->conf.maxDepth;
+            ncl_unlockScreen(scr);
+        }
+        req->depth.depth = d;
+        return NN_OK;
+    }
+    //  getDepth 
+    if(req->action == NN_GPU_GETDEPTH) {
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr == NULL) {
+            req->depth.depth = st->conf.maxDepth;
+            return NN_OK;
+        }
+        ncl_lockScreen(scr);
+        req->depth.depth = scr->depth;
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  setDepth 
+    if(req->action == NN_GPU_SETDEPTH) {
+        char want = req->depth.depth;
+        if(nn_depthName(want) == NULL) {
+            nn_setError(C, "unsupported depth");
+            return NN_EBADCALL;
+        }
+        nn_lock(ctx, st->lock);
+        int maxD = st->conf.maxDepth;
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr == NULL) {
+            nn_setError(C, "no screen");
+            return NN_EBADCALL;
+        }
+        ncl_lockScreen(scr);
+        if(scr->conf.maxDepth < maxD)
+            maxD = scr->conf.maxDepth;
+        if(want > maxD) {
+            ncl_unlockScreen(scr);
+            nn_setError(C, "unsupported depth");
+            return NN_EBADCALL;
+        }
+        req->depth.oldDepth = scr->depth;
+        scr->depth = want;
+        ncl_recomputeScreen(scr);
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  maxResolution 
+	if(req->action == NN_GPU_MAXRES) {
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        int w, h; char d;
+        if(scr != NULL) ncl_lockScreen(scr);
+        ncl_getGPULimitsWithScreen(
+            st, scr, &w, &h, &d);
+        if(scr != NULL) ncl_unlockScreen(scr);
+        req->resolution.width = w;
+        req->resolution.height = h;
+        return NN_OK;
+    }
+    //  getResolution 
+    if(req->action == NN_GPU_GETRES) {
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr == NULL) {
+            nn_setError(C, "no screen");
+            return NN_EBADCALL;
+        }
+        ncl_lockScreen(scr);
+        req->resolution.width = scr->width;
+        req->resolution.height = scr->height;
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  setResolution 
+	if(req->action == NN_GPU_SETRES) {
+        int w = req->resolution.width;
+        int h = req->resolution.height;
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+        ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        int maxW, maxH; char maxD;
+        if(scr != NULL) ncl_lockScreen(scr);
+        ncl_getGPULimitsWithScreen(
+            st, scr, &maxW, &maxH, &maxD);
+        if(w < 1 || h < 1
+           || w > maxW || h > maxH) {
+            if(scr != NULL) ncl_unlockScreen(scr);
+            nn_setError(C, "unsupported resolution");
+            return NN_EBADCALL;
+        }
+        if(scr == NULL) {
+            nn_setError(C, "no screen");
+            return NN_EBADCALL;
+        }
+        scr->width = w;
+        scr->height = h;
+        if(scr->viewportWidth > w)
+            scr->viewportWidth = w;
+        if(scr->viewportHeight > h)
+            scr->viewportHeight = h;
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  getViewport 
+    if(req->action == NN_GPU_GETVIEWPORT) {
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr == NULL) {
+            nn_setError(C, "no screen");
+            return NN_EBADCALL;
+        }
+        ncl_lockScreen(scr);
+        req->resolution.width = scr->viewportWidth;
+        req->resolution.height = scr->viewportHeight;
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  setViewport 
+    if(req->action == NN_GPU_SETVIEWPORT) {
+        int w = req->resolution.width;
+        int h = req->resolution.height;
+        nn_lock(ctx, st->lock);
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+        nn_unlock(ctx, st->lock);
+        if(scr == NULL) {
+            nn_setError(C, "no screen");
+            return NN_EBADCALL;
+        }
+        ncl_lockScreen(scr);
+        if(w < 1 || h < 1
+           || w > scr->width || h > scr->height) {
+            ncl_unlockScreen(scr);
+            nn_setError(C,
+                "viewport exceeds resolution");
+            return NN_EBADCALL;
+        }
+        scr->viewportWidth = w;
+        scr->viewportHeight = h;
+        ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+    //  get 
+    if(req->action == NN_GPU_GET) {
+        nn_lock(ctx, st->lock);
+        int active = st->activeBuffer;
+        ncl_ScreenState *scr =
+            (active == 0) ?
+            ncl_getBoundScreen(st, C) : NULL;
+        nn_unlock(ctx, st->lock);
 
-	if(nn_setComponentTypeID(c, NCL_GPU)) goto fail;
+        ncl_ScreenPixel px;
+        if(active == 0) {
+            if(scr == NULL) {
+                nn_setError(C, "no screen");
+                return NN_EBADCALL;
+            }
+            ncl_lockScreen(scr);
+            px = ncl_getRealScreenPixel(
+                scr, req->get.x, req->get.y);
+            ncl_unlockScreen(scr);
+        } else {
+            nn_lock(ctx, st->lock);
+            ncl_VRAMBuf *b =
+                ncl_getVRAMBuf(st, active, C);
+            if(b == NULL) {
+                nn_unlock(ctx, st->lock);
+                return NN_EBADCALL;
+            }
+            px = ncl_vramGet(
+                b, req->get.x, req->get.y);
+            nn_unlock(ctx, st->lock);
+        }
+        req->get.codepoint = px.codepoint;
+        req->get.fg = px.storedFg;
+        req->get.bg = px.storedBg;
+        req->get.fgIdx = (px.realFg < 0)
+            ? px.storedFg : -1;
+        req->get.bgIdx = (px.realBg < 0)
+            ? px.storedBg : -1;
+        return NN_OK;
+    }
+    //  set 
+    if(req->action == NN_GPU_SET) {
+        nn_lock(ctx, st->lock);
+        int fg = st->currentFg;
+        int bg = st->currentBg;
+        bool fgP = st->isFgPalette;
+        bool bgP = st->isBgPalette;
+        int active = st->activeBuffer;
+        ncl_ScreenState *scr =
+            (active == 0) ?
+            ncl_getBoundScreen(st, C) : NULL;
+        nn_unlock(ctx, st->lock);
 
-	return c;
+        int x = req->set.x, y = req->set.y;
+        const char *s = req->set.value;
+        size_t len = req->set.len;
+        bool vert = req->set.vertical;
+
+        ncl_ScreenPixel px;
+        px.storedFg = fg;
+        px.storedBg = bg;
+        px.realFg = fgP ? -1 : fg;
+        px.realBg = bgP ? -1 : bg;
+
+        if(active == 0) {
+            if(scr == NULL) {
+                nn_setError(C, "no screen");
+                return NN_EBADCALL;
+            }
+            ncl_lockScreen(scr);
+            // depth-map direct colors
+            if(!fgP) px.realFg =
+                nn_mapDepth(fg, scr->depth);
+            if(!bgP) px.realBg =
+                nn_mapDepth(bg, scr->depth);
+            size_t i = 0;
+            while(i < len) {
+                size_t cw =
+                    nn_unicode_validateFirstChar(
+                        s + i, len - i);
+                if(cw == 0) { cw = 1; px.codepoint =
+                    (unsigned char)s[i]; }
+                else px.codepoint =
+                    nn_unicode_firstCodepoint(s + i);
+                ncl_setRealScreenPixel(
+                    scr, x, y, px);
+                i += cw;
+                if(vert) y++; else x++;
+            }
+            ncl_unlockScreen(scr);
+        } else {
+            nn_lock(ctx, st->lock);
+            ncl_VRAMBuf *b =
+                ncl_getVRAMBuf(st, active, C);
+            if(b == NULL) {
+                nn_unlock(ctx, st->lock);
+                return NN_EBADCALL;
+            }
+            size_t i = 0;
+            while(i < len) {
+                size_t cw =
+                    nn_unicode_validateFirstChar(
+                        s + i, len - i);
+                if(cw == 0) { cw = 1; px.codepoint =
+                    (unsigned char)s[i]; }
+                else px.codepoint =
+                    nn_unicode_firstCodepoint(s + i);
+                ncl_vramSet(b, x, y, px);
+                i += cw;
+                if(vert) y++; else x++;
+            }
+            nn_unlock(ctx, st->lock);
+        }
+        return NN_OK;
+    }
+    //  copy 
+    if(req->action == NN_GPU_COPY) {
+        int sx = req->copy.x, sy = req->copy.y;
+        int w = req->copy.w, h = req->copy.h;
+        int tx = req->copy.tx, ty = req->copy.ty;
+
+        nn_lock(ctx, st->lock);
+        int active = st->activeBuffer;
+        ncl_ScreenState *scr =
+            (active == 0) ?
+            ncl_getBoundScreen(st, C) : NULL;
+        nn_unlock(ctx, st->lock);
+
+        // overlap-safe iteration order
+        int y0 = (ty > 0) ? sy+h-1 : sy;
+        int y1 = (ty > 0) ? sy-1 : sy+h;
+        int dy = (ty > 0) ? -1 : 1;
+        int x0 = (tx > 0) ? sx+w-1 : sx;
+        int x1 = (tx > 0) ? sx-1 : sx+w;
+        int dx = (tx > 0) ? -1 : 1;
+
+        if(active == 0) {
+            if(scr == NULL) {
+                nn_setError(C, "no screen");
+                return NN_EBADCALL;
+            }
+            ncl_lockScreen(scr);
+            for(int y = y0; y != y1; y += dy)
+            for(int x = x0; x != x1; x += dx) {
+                ncl_ScreenPixel p =
+                    ncl_getRealScreenPixel(
+                        scr, x, y);
+                ncl_setRealScreenPixel(
+                    scr, x+tx, y+ty, p);
+            }
+            ncl_unlockScreen(scr);
+        } else {
+            nn_lock(ctx, st->lock);
+            ncl_VRAMBuf *b =
+                ncl_getVRAMBuf(st, active, C);
+            if(b == NULL) {
+                nn_unlock(ctx, st->lock);
+                return NN_EBADCALL;
+            }
+            for(int y = y0; y != y1; y += dy)
+            for(int x = x0; x != x1; x += dx) {
+                ncl_ScreenPixel p =
+                    ncl_vramGet(b, x, y);
+                ncl_vramSet(b, x+tx, y+ty, p);
+            }
+            nn_unlock(ctx, st->lock);
+        }
+        return NN_OK;
+    }
+    //  fill 
+    if(req->action == NN_GPU_FILL) {
+        nn_lock(ctx, st->lock);
+        int fg = st->currentFg;
+        int bg = st->currentBg;
+        bool fgP = st->isFgPalette;
+        bool bgP = st->isBgPalette;
+        int active = st->activeBuffer;
+        ncl_ScreenState *scr =
+            (active == 0) ?
+            ncl_getBoundScreen(st, C) : NULL;
+        nn_unlock(ctx, st->lock);
+
+        ncl_ScreenPixel px;
+        px.codepoint = req->fill.codepoint;
+        px.storedFg = fg;
+        px.storedBg = bg;
+        px.realFg = fgP ? -1 : fg;
+        px.realBg = bgP ? -1 : bg;
+
+        int x0 = req->fill.x, y0 = req->fill.y;
+        int w = req->fill.w, h = req->fill.h;
+
+        if(active == 0) {
+            if(scr == NULL) {
+                nn_setError(C, "no screen");
+                return NN_EBADCALL;
+            }
+            ncl_lockScreen(scr);
+            if(!fgP) px.realFg =
+                nn_mapDepth(fg, scr->depth);
+            if(!bgP) px.realBg =
+                nn_mapDepth(bg, scr->depth);
+            for(int y = y0; y < y0+h; y++)
+            for(int x = x0; x < x0+w; x++)
+                ncl_setRealScreenPixel(
+                    scr, x, y, px);
+            ncl_unlockScreen(scr);
+        } else {
+            nn_lock(ctx, st->lock);
+            ncl_VRAMBuf *b =
+                ncl_getVRAMBuf(st, active, C);
+            if(b == NULL) {
+                nn_unlock(ctx, st->lock);
+                return NN_EBADCALL;
+            }
+            for(int y = y0; y < y0+h; y++)
+            for(int x = x0; x < x0+w; x++)
+                ncl_vramSet(b, x, y, px);
+            nn_unlock(ctx, st->lock);
+        }
+        return NN_OK;
+    }
+    //  VRAM: getActiveBuffer 
+    if(req->action == NN_GPU_GETACTIVEBUF) {
+        nn_lock(ctx, st->lock);
+        req->buffer.index = st->activeBuffer;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  VRAM: setActiveBuffer 
+    if(req->action == NN_GPU_SETACTIVEBUF) {
+        int idx = req->buffer.index;
+        nn_lock(ctx, st->lock);
+        if(idx != 0 && (idx < 0
+           || idx >= NCL_MAX_VRAMBUF
+           || st->vram[idx] == NULL)) {
+            nn_unlock(ctx, st->lock);
+            nn_setError(C, "invalid buffer index");
+            return NN_EBADCALL;
+        }
+        st->activeBuffer = idx;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  VRAM: buffers 
+    if(req->action == NN_GPU_BUFFERS) {
+        nn_lock(ctx, st->lock);
+        size_t count = 0;
+        for(int i = 1; i < NCL_MAX_VRAMBUF; i++) {
+            if(st->vram[i] != NULL) {
+                nn_pushinteger(C, i);
+                count++;
+            }
+        }
+        nn_unlock(ctx, st->lock);
+        req->bufCount = count;
+        return NN_OK;
+    }
+    //  VRAM: allocateBuffer 
+    if(req->action == NN_GPU_ALLOCBUF) {
+        int w = req->allocBuf.w;
+        int h = req->allocBuf.h;
+        // default to current GPU max if 0
+        if(w <= 0) w = st->conf.maxWidth;
+        if(h <= 0) h = st->conf.maxHeight;
+        size_t cost = (size_t)w * h;
+        nn_lock(ctx, st->lock);
+        if(cost > st->vramFree) {
+            nn_unlock(ctx, st->lock);
+            nn_setError(C, "not enough video memory");
+            return NN_EBADCALL;
+        }
+        int slot = -1;
+        for(int i = 1; i < NCL_MAX_VRAMBUF; i++) {
+            if(st->vram[i] == NULL) {
+                slot = i;
+                break;
+            }
+        }
+        if(slot < 0) {
+            nn_unlock(ctx, st->lock);
+            nn_setError(C, "too many buffers");
+            return NN_EBADCALL;
+        }
+        ncl_VRAMBuf *b = ncl_allocVRAM(ctx, w, h);
+        if(b == NULL) {
+            nn_unlock(ctx, st->lock);
+            nn_setError(C, "allocation failed");
+            return NN_EBADCALL;
+        }
+        st->vram[slot] = b;
+        st->vramFree -= cost;
+        nn_unlock(ctx, st->lock);
+        req->allocBuf.index = slot;
+        return NN_OK;
+    }
+    //  VRAM: freeBuffer 
+    if(req->action == NN_GPU_FREEBUF) {
+        int idx = req->buffer.index;
+        if(idx <= 0 || idx >= NCL_MAX_VRAMBUF) {
+            nn_setError(C, "invalid buffer index");
+            return NN_EBADCALL;
+        }
+        nn_lock(ctx, st->lock);
+        ncl_VRAMBuf *b = st->vram[idx];
+        if(b == NULL) {
+            nn_unlock(ctx, st->lock);
+            nn_setError(C, "no such buffer");
+            return NN_EBADCALL;
+        }
+        st->vramFree += (size_t)b->width * b->height;
+        st->vram[idx] = NULL;
+        if(st->activeBuffer == idx)
+            st->activeBuffer = 0;
+        nn_unlock(ctx, st->lock);
+        ncl_freeVRAM(ctx, b);
+        return NN_OK;
+    }
+    //  VRAM: freeAllBuffers 
+    if(req->action == NN_GPU_FREEALLBUFS) {
+        nn_lock(ctx, st->lock);
+        for(int i = 1; i < NCL_MAX_VRAMBUF; i++) {
+            if(st->vram[i] != NULL) {
+                st->vramFree +=
+                    (size_t)st->vram[i]->width
+                    * st->vram[i]->height;
+                ncl_freeVRAM(ctx, st->vram[i]);
+                st->vram[i] = NULL;
+            }
+        }
+        st->activeBuffer = 0;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  VRAM: freeMemory 
+    if(req->action == NN_GPU_FREEMEM) {
+        nn_lock(ctx, st->lock);
+        req->memory = st->vramFree;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  VRAM: getBufferSize 
+    if(req->action == NN_GPU_GETBUFSIZE) {
+        int idx = req->bufSize.index;
+        if(idx == 0) {
+            // return screen resolution
+            nn_lock(ctx, st->lock);
+            ncl_ScreenState *scr =
+                ncl_getBoundScreen(st, C);
+            nn_unlock(ctx, st->lock);
+            if(scr == NULL) {
+                req->bufSize.w = 0;
+                req->bufSize.h = 0;
+                return NN_OK;
+            }
+            ncl_lockScreen(scr);
+            req->bufSize.w = scr->width;
+            req->bufSize.h = scr->height;
+            ncl_unlockScreen(scr);
+            return NN_OK;
+        }
+        nn_lock(ctx, st->lock);
+        ncl_VRAMBuf *b =
+            ncl_getVRAMBuf(st, idx, C);
+        if(b == NULL) {
+            nn_unlock(ctx, st->lock);
+            return NN_EBADCALL;
+        }
+        req->bufSize.w = b->width;
+        req->bufSize.h = b->height;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    //  VRAM: bitblt 
+    if(req->action == NN_GPU_BITBLT) {
+        int dstI = req->bitblt.dst;
+        int srcI = req->bitblt.src;
+        int col = req->bitblt.col;
+        int row = req->bitblt.row;
+        int w   = req->bitblt.w;
+        int h   = req->bitblt.h;
+        int fc  = req->bitblt.fromCol;
+        int fr  = req->bitblt.fromRow;
+
+        nn_lock(ctx, st->lock);
+        if(srcI == 0 && st->activeBuffer != 0)
+            srcI = st->activeBuffer;
+        ncl_ScreenState *scr =
+            ncl_getBoundScreen(st, C);
+
+        ncl_VRAMBuf *sb = NULL, *db = NULL;
+        if(srcI != 0) {
+            sb = ncl_getVRAMBuf(st, srcI, C);
+            if(sb == NULL) {
+                nn_unlock(ctx, st->lock);
+                return NN_EBADCALL;
+            }
+            if(w == 0) w = sb->width;
+            if(h == 0) h = sb->height;
+        }
+        if(dstI != 0) {
+            db = ncl_getVRAMBuf(st, dstI, C);
+            if(db == NULL) {
+                nn_unlock(ctx, st->lock);
+                return NN_EBADCALL;
+            }
+        }
+        nn_unlock(ctx, st->lock);
+
+        // Lock both resources once for the
+        // entire blit, not per-pixel.
+        bool needScreen =
+            (srcI == 0 || dstI == 0);
+        if(needScreen && scr != NULL)
+            ncl_lockScreen(scr);
+        if(sb != NULL || db != NULL)
+            nn_lock(ctx, st->lock);
+
+        for(int y = 0; y < h; y++) {
+            for(int x = 0; x < w; x++) {
+                ncl_ScreenPixel p;
+                int rx = fc + x, ry = fr + y;
+                if(srcI == 0) {
+                    if(scr == NULL) continue;
+                    p = ncl_getRealScreenPixel(
+                        scr, rx, ry);
+                } else {
+                    p = ncl_vramGet(sb, rx, ry);
+                }
+                int wx = col + x, wy = row + y;
+                if(dstI == 0) {
+                    if(scr == NULL) continue;
+                    p.realFg = nn_mapDepth(
+                        p.storedFg, scr->depth);
+                    p.realBg = nn_mapDepth(
+                        p.storedBg, scr->depth);
+                    ncl_setRealScreenPixel(
+                        scr, wx, wy, p);
+                } else {
+                    ncl_vramSet(db, wx, wy, p);
+                }
+            }
+        }
+
+        if(sb != NULL || db != NULL)
+            nn_unlock(ctx, st->lock);
+        if(needScreen && scr != NULL)
+            ncl_unlockScreen(scr);
+        return NN_OK;
+    }
+
+    if(C) nn_setError(C,
+        "ncl-gpu: not implemented");
+    return NN_EBADCALL;
+}
+
+nn_Component *ncl_createGPU(
+    nn_Universe *universe, const char *address,
+    const nn_GPU *gpu)
+{
+    nn_Context *ctx = nn_getUniverseContext(universe);
+    nn_Lock *lock = NULL;
+    ncl_GPUState *state = NULL;
+    nn_Component *c = NULL;
+
+    lock = nn_createLock(ctx);
+    if(lock == NULL) goto fail;
+
+    state = nn_alloc(ctx, sizeof(*state));
+    if(state == NULL) goto fail;
+
+    state->ctx = ctx;
+    state->lock = lock;
+    state->conf = *gpu;
+    state->vramFree = gpu->totalVRAM;
+    state->screenAddress = NULL;
+    state->currentFg = 0xFFFFFF;
+    state->currentBg = 0x000000;
+    state->activeBuffer = 0;
+    state->isFgPalette = false;
+    state->isBgPalette = false;
+    for(size_t i = 0; i < NCL_MAX_VRAMBUF; i++)
+        state->vram[i] = NULL;
+
+    c = nn_createGPU(universe, address,
+        gpu, state, ncl_gpuHandler);
+    if(c == NULL) goto fail;
+
+    if(nn_setComponentTypeID(c, NCL_GPU)) goto fail;
+    return c;
+
 fail:
-	if(c != NULL) {
-		nn_dropComponent(c);
-		return NULL;
-	}
-	if(lock != NULL) nn_destroyLock(ctx, lock);
-	nn_free(ctx, state, sizeof(*state));
-	return NULL;
+    if(c != NULL) {
+        nn_dropComponent(c);
+        return NULL;
+    }
+    if(lock != NULL) nn_destroyLock(ctx, lock);
+    nn_free(ctx, state, sizeof(*state));
+    return NULL;
 }
 
 void ncl_lockScreen(ncl_ScreenState *state) {
@@ -1349,10 +2217,65 @@ void ncl_setScreenDepth(ncl_ScreenState *state, char depth) {
 	state->depth = depth;
 }
 
-nn_Exit ncl_mountKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
-void ncl_unmountKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
-bool ncl_hasKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
-const char *ncl_getKeyboard(ncl_ScreenState *state, size_t idx);
+nn_Exit ncl_mountKeyboard(ncl_ScreenState *state,
+    const char *keyboardAddress)
+{
+    nn_lock(state->ctx, state->lock);
+    if(state->keyboardCount >= NCL_MAX_KEYBOARD) {
+        nn_unlock(state->ctx, state->lock);
+        return NN_ELIMIT;
+    }
+    char *addr = nn_strdup(
+        state->ctx, keyboardAddress);
+    if(addr == NULL) {
+        nn_unlock(state->ctx, state->lock);
+        return NN_ENOMEM;
+    }
+    state->keyboards[state->keyboardCount++] = addr;
+    nn_unlock(state->ctx, state->lock);
+    return NN_OK;
+}
+
+void ncl_unmountKeyboard(ncl_ScreenState *state,
+    const char *keyboardAddress)
+{
+    nn_lock(state->ctx, state->lock);
+    size_t j = 0;
+    for(size_t i = 0; i < state->keyboardCount; i++) {
+        if(strcmp(state->keyboards[i],
+                  keyboardAddress) == 0) {
+            nn_strfree(state->ctx,
+                state->keyboards[i]);
+        } else {
+            state->keyboards[j++] =
+                state->keyboards[i];
+        }
+    }
+    state->keyboardCount = j;
+    nn_unlock(state->ctx, state->lock);
+}
+
+bool ncl_hasKeyboard(ncl_ScreenState *state,
+    const char *keyboardAddress)
+{
+    nn_lock(state->ctx, state->lock);
+    for(size_t i = 0; i < state->keyboardCount; i++) {
+        if(strcmp(state->keyboards[i],
+                  keyboardAddress) == 0) {
+            nn_unlock(state->ctx, state->lock);
+            return true;
+        }
+    }
+    nn_unlock(state->ctx, state->lock);
+    return false;
+}
+
+const char *ncl_getKeyboard(ncl_ScreenState *state,
+    size_t idx)
+{
+    if(idx >= state->keyboardCount) return NULL;
+    return state->keyboards[idx];
+}
 
 // general stuff
 
