@@ -52,12 +52,6 @@ Color ne_processColor(unsigned int color) {
     return GetColor(color);
 }
 
-double ne_timeProc(void *_) {
-	(void)_;
-	double t = GetTime();
-	return (int)(t*100) / 100.0;
-}
-
 int keycode_to_oc(int keycode) {
     switch (keycode) {
         case KEY_NULL:
@@ -560,8 +554,6 @@ int main(int argc, char **argv) {
 		ctx.state = &sand;
 		ctx.alloc = ne_sandbox_alloc;
 	}
-
-	ctx.time = ne_timeProc;
 
 	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(800, 600, "NeoNucleus Test Emulator");

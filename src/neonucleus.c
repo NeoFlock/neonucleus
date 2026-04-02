@@ -519,8 +519,14 @@ static void *nn_defaultAlloc(void *_, void *memory, size_t oldSize, size_t newSi
 
 static double nn_defaultTime(void *_) {
 #ifndef NN_BAREMETAL
+#ifdef NN_POSIX
+	struct timespec s;
+	if(clock_gettime(CLOCK_REALTIME, &s)) return 0;
+	return s.tv_sec + (double)s.tv_nsec / 1000000000;
+#else
 	// time does not exist... yet!
 	return 0;
+#endif
 #else
 	// time does not exist
 	return 0;
