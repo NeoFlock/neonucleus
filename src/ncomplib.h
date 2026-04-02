@@ -3,6 +3,8 @@
 
 #include "neonucleus.h"
 
+#define NCL_PREFIX "ncl-"
+
 #define NCL_EEPROM "ncl-eeprom"
 #define NCL_FS "ncl-filesystem"
 #define NCL_DRIVE "ncl-drive"
@@ -194,9 +196,6 @@ size_t ncl_getLabel(nn_Component *c, char buf[NN_MAX_LABEL]);
 size_t ncl_setLabel(nn_Component *c, const char *label, size_t len);
 
 nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, const char *path, const nn_Filesystem *fs, bool isReadonly);
-nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
-// data is stored interally
-nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *path, bool isReadonly);
 
 #define NCL_VFS_NAMEMAX 32
 
@@ -207,12 +206,16 @@ nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const
 // and tmpfs.
 nn_Component *ncl_createTmpFS(nn_Universe *universe, const nn_Filesystem *fs);
 
-// creates a temporary EEPROM, with some initial code
-// the data is stored internally
-nn_Component *ncl_createTmpEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const char *code, size_t codelen);
+nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
 
 // creates a temporary drive, with some initial data
 nn_Component *ncl_createTmpDrive(nn_Universe *universe, const nn_EEPROM *eeprom, const char *data, size_t datalen);
+
+// data is stored interally
+nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *path, bool isReadonly);
+// creates a temporary EEPROM, with some initial code
+// the data is stored internally
+nn_Component *ncl_createTmpEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const char *code, size_t codelen);
 
 // Gets the VFS bound to a filesystem, drive or eeprom.
 // Returns the default FS if the component is not recognized.
@@ -293,10 +296,17 @@ typedef struct ncl_ComponentStat {
 	};
 } ncl_ComponentStat;
 
+bool ncl_isNCLID(const char *type);
+bool ncl_isNCLComponent(nn_Component *component);
 void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat);
 // For EEPROMs, filesystems, drives
 // Returns whether it was successful or not.
 bool ncl_makeReadonly(nn_Component *component);
+
+// Returns the amount of data written.
+// The capacity MUST be at least the data size of the EEPROM.
+size_t ncl_getEEPROMData(nn_Component *component, char *buf);
+void ncl_setEEPROMData(nn_Component *component, const char *data, size_t len);
 
 void ncl_lockScreen(ncl_ScreenState *state);
 void ncl_unlockScreen(ncl_ScreenState *state);

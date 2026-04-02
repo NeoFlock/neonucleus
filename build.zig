@@ -58,7 +58,10 @@ fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, buildOpts: LibBuildOpts, 
 
     const targetArg = std.fmt.allocPrint(b.allocator, "-Dtarget={s}", .{targetStr}) catch unreachable;
     defer b.allocator.free(targetArg);
-    const raylib = b.addSystemCommand(&.{ "zig", "build", targetArg });
+
+    // passing it breaks it for some reason?
+    // TODO: make it not break
+    const raylib = b.addSystemCommand(&.{ "zig", "build"});
     raylib.setCwd(b.path("foreign/raylib/"));
     raylib.stdio = .inherit;
 

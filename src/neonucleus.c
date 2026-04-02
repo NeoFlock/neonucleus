@@ -520,16 +520,31 @@ static void *nn_defaultAlloc(void *_, void *memory, size_t oldSize, size_t newSi
 static double nn_defaultTime(void *_) {
 #ifndef NN_BAREMETAL
 #ifdef NN_POSIX
-	struct timespec s;
-	if(clock_gettime(CLOCK_REALTIME, &s)) return 0;
-	return s.tv_sec + (double)s.tv_nsec / 1000000000;
+    struct timespec s;
+    if(clock_gettime(CLOCK_REALTIME, &s)) return 0;
+    return s.tv_sec + (double)s.tv_nsec / 1000000000;
+#elif defined(NN_WINDOWS)
+    // Without this, nn_defaultTime returns 0 on Windows.
+    // This breaks nn_getUptime(), which is (currentTime - creationTimestamp).
+    // If currentTime is always 0, uptime is always negative or 0.
+    // OpenOS relies on computer.uptime() for all timeouts:
+    //   computer.pullSignal(timeout) compares computer.uptime() against a deadline.
+    //   If uptime never advances, pullSignal(2) returns instantly instead of waiting.
+    // To verify: in OpenOS, run `lua -e "print(computer.uptime())"`.
+    //   Before fix: always prints 0 or a tiny constant.
+    //   After fix: prints seconds since boot, increasing each call.
+    // QueryPerformanceCounter is the highest-resolution monotonic clock on Windows.
+    // It is available since Windows 2000 and cannot fail on Vista+.
+    LARGE_INTEGER freq, count;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&count);
+    return (double)count.QuadPart
+         / (double)freq.QuadPart;
 #else
-	// time does not exist... yet!
-	return 0;
+    return 0;
 #endif
 #else
-	// time does not exist
-	return 0;
+    return 0;
 #endif
 }
 
@@ -541,6 +556,26 @@ static size_t nn_defaultRng(void *_) {
 	return 1;
 #endif
 }
+
+#ifdef NN_WINDOWS
+// rand_s() requires _CRT_RAND_S defined before <stdlib.h>.
+// However, we can avoid that dependency by using the Win32
+// API directly. RtlGenRandom (aka SystemFunction036) is
+// available on all Windows versions since XP and does not
+// require linking any extra library it lives in advapi32
+// which is always implicitly linked.
+// It fills a buffer with cryptographically strong random bytes.
+// To verify: print nn_rand() in a loop on Windows.
+BOOLEAN NTAPI SystemFunction036(
+    PVOID RandomBuffer, ULONG RandomBufferLength);
+#pragma comment(lib, "advapi32")
+
+static size_t nn_windowsRng(void *_) {
+    unsigned int v = 0;
+    SystemFunction036(&v, sizeof(v));
+    return v;
+}
+#endif
 
 static void nn_defaultLock(void *state, nn_LockRequest *req) {
 	(void)state;
@@ -605,41 +640,68 @@ static void nn_defaultLock(void *state, nn_LockRequest *req) {
 		return;
 	}
 #elif defined(NN_THREAD_WINDOWS)
-	switch(req->action) {
-	case NN_LOCK_CREATE:;
-		req->lock = CreateMutex(NULL, FALSE, NULL);
-		return; 				// don't fall into destroy
-	case NN_LOCK_DESTROY:;
-		CloseHandle(req->lock);
-		return;
-	case NN_LOCK_LOCK:;
-		WaitForSingleObject(req->lock, INFINITE);
-		return;
-	case NN_LOCK_UNLOCK:;
-		ReleaseMutex(req->lock);
-		return;
-	}
+    // The original code used CreateMutex/WaitForSingleObject/ReleaseMutex.
+    // Windows Mutexes are kernel objects: every lock/unlock is a syscall
+    // into the NT kernel (NtWaitForSingleObject / NtReleaseMutant),
+    // even when uncontended. They also support cross-process sharing
+    // and abandonment detection, none of which NN needs.
+    //
+    // CRITICAL_SECTION is a user-mode construct that uses a spinlock
+    // with a kernel fallback (only enters kernel on actual contention).
+    // For uncontended locks (the common case), EnterCriticalSection
+    // is just an interlocked compare-exchange so no syscall at all.
+    switch(req->action) {
+    case NN_LOCK_CREATE:;
+        CRITICAL_SECTION *cs =
+            malloc(sizeof(CRITICAL_SECTION));
+        if(cs == NULL) { req->lock = NULL; return; }
+        InitializeCriticalSection(cs);
+        req->lock = cs;
+        return;
+    case NN_LOCK_DESTROY:;
+        DeleteCriticalSection(req->lock);
+        free(req->lock);
+        return;
+    case NN_LOCK_LOCK:;
+        EnterCriticalSection(req->lock);
+        return;
+    case NN_LOCK_UNLOCK:;
+        LeaveCriticalSection(req->lock);
+        return;
+    }
 #endif
 
 #endif
 }
 
 void nn_initContext(nn_Context *ctx) {
-	ctx->state = NULL;
-	ctx->alloc = nn_defaultAlloc;
-	ctx->time = nn_defaultTime;
+    ctx->state = NULL;
+    ctx->alloc = nn_defaultAlloc;
+    ctx->time = nn_defaultTime;
 #ifndef NN_BAREMETAL
-	// someone pointed out that running this multiple times
-	// in 1 second can cause the RNG to loop.
-	// However, if you call this function multiple times at all,
-	// that's on you.
-	srand(time(NULL));
-	ctx->rngMaximum = RAND_MAX;
+    // RAND_MAX on MSVC is 32767 (15 bits), and nn_randomUUID() calls nn_rand() & 0xF per hex digit,
+    // but with only 15 bits total per rand() call, the UUIDs have very low entropy. nn_randf() divides by
+    // (rngMaximum+1), so 15 bits gives ~0.00003 granularity instead of ~0.0000000005 with 31 bits.
+    // To verify: generate 1000 UUIDs, check for duplicates
+    //   or patterns. With 15 bits of entropy per call and
+    //   32 hex digits, collisions become plausible.
+    // On Windows we use rand_s() which returns a full
+    // 32-bit cryptographic random number without needing
+    // srand(). On POSIX, rand()+srand() remains fine as
+    // RAND_MAX is typically 2^31-1.
+#ifdef NN_WINDOWS
+    ctx->rngMaximum = UINT_MAX;
+    ctx->rng = nn_windowsRng;
 #else
-	ctx->rngMaximum = 1;
+    srand(time(NULL));
+    ctx->rngMaximum = RAND_MAX;
+    ctx->rng = nn_defaultRng;
 #endif
-	ctx->rng = nn_defaultRng;
-	ctx->lock = nn_defaultLock;
+#else
+    ctx->rngMaximum = 1;
+    ctx->rng = nn_defaultRng;
+#endif
+    ctx->lock = nn_defaultLock;
 }
 
 // some util data structures
@@ -1605,20 +1667,23 @@ void nn_getComponentMethods(nn_Component *c, const char **methodnames, size_t *l
 	*len = enabled;
 }
 
-bool nn_hasComponentMethod(nn_Component *c, const char *method) {
-	nn_MethodEntry *ent = nn_getComponentMethodEntry(c, method);
-	if(ent == NULL) return false;
+bool nn_hasComponentMethod(nn_Component *c,
+    const char *method)
+{
+    nn_MethodEntry *ent =
+        nn_getComponentMethodEntry(c, method);
+    if(ent == NULL) return false;
 
-	nn_ComponentRequest req;
-	req.ctx = &c->universe->ctx;
-	req.computer = NULL;
-	req.state = c->state;
-	req.action = NN_COMP_CHECKMETHOD;
-	req.methodIdx = ent->idx;
-	// by default, yes
-	req.methodEnabled = true;
-	c->handler(&req);
-	return req.methodEnabled;
+    nn_ComponentRequest req;
+    req.ctx = &c->universe->ctx;
+    req.computer = NULL;
+    req.state = c->state;
+    req.classState = c->classState; // Don't remove it. It segfaults.
+    req.action = NN_COMP_CHECKMETHOD;
+    req.methodIdx = ent->idx;
+    req.methodEnabled = true;
+    c->handler(&req);
+    return req.methodEnabled;
 }
 
 const char *nn_getComponentDoc(nn_Component *c, const char *method) {
@@ -3897,98 +3962,898 @@ nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const n
 	return c;
 }
 
-typedef struct nn_ScreenState {
-	nn_Context *ctx;
-	nn_ScreenConfig scrconf;
-	nn_ScreenHandler *handler;
-} nn_ScreenState;
+typedef enum nn_ScreenNum {
+    NN_SCRNUM_ISON,
+    NN_SCRNUM_TURNON,
+    NN_SCRNUM_TURNOFF,
+    NN_SCRNUM_GETASPECTRATIO,
+    NN_SCRNUM_GETKEYBOARDS,
+    NN_SCRNUM_SETPRECISE,
+    NN_SCRNUM_ISPRECISE,
+    NN_SCRNUM_SETTOUCHINVERTED,
+    NN_SCRNUM_ISTOUCHINVERTED,
+    NN_SCRNUM_COUNT,
+} nn_ScreenNum;
+
+typedef struct nn_ScreenClassState {
+    nn_Context *ctx;
+    nn_ScreenConfig scrconf;
+    nn_ScreenHandler *handler;
+} nn_ScreenClassState;
 
 static nn_Exit nn_screenHandler(nn_ComponentRequest *req) {
-	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
-	if(req->action == NN_COMP_SIGNAL) return NN_OK;
-	nn_Context *ctx = req->ctx;
-	nn_ScreenState *state = req->classState;
-	nn_Computer *C = req->computer;
-	nn_ScreenRequest sreq;
-	sreq.ctx = ctx;
-	sreq.state = req->state;
-	sreq.computer = C;
-	sreq.screen = &state->scrconf;
+    if(req->action == NN_COMP_SIGNAL) return NN_OK;
+    nn_Context *ctx = req->ctx;
+    nn_ScreenClassState *cls = req->classState;
+    nn_Computer *C = req->computer;
 
-	if(req->action == NN_COMP_DROP) {
-		sreq.action = NN_SCREEN_DROP;
-		state->handler(&sreq);
-		nn_free(ctx, state, sizeof(*state));
-		return NN_OK;
-	}
+    // Feature-gated methods
+    if(req->action == NN_COMP_CHECKMETHOD) {
+        nn_ScreenNum m = req->methodIdx;
+        if(m == NN_SCRNUM_SETPRECISE
+           || m == NN_SCRNUM_ISPRECISE)
+            req->methodEnabled =
+                (cls->scrconf.features
+                 & NN_SCRF_PRECISE) != 0;
+        if(m == NN_SCRNUM_SETTOUCHINVERTED
+           || m == NN_SCRNUM_ISTOUCHINVERTED)
+            req->methodEnabled =
+                (cls->scrconf.features
+                 & NN_SCRF_TOUCHINVERTED) != 0;
+        return NN_OK;
+    }
 
-	nn_setError(C, "screen: not yet implemented");
-	return NN_EBADCALL;
+    nn_ScreenRequest s;
+    s.ctx = ctx;
+    s.state = req->state;
+    s.computer = C;
+    s.screen = &cls->scrconf;
+
+    if(req->action == NN_COMP_DROP) {
+        s.action = NN_SCREEN_DROP;
+        cls->handler(&s);
+        nn_free(ctx, cls, sizeof(*cls));
+        return NN_OK;
+    }
+
+    nn_ScreenNum m = req->methodIdx;
+    nn_Exit e = NN_OK;
+
+    if(m == NN_SCRNUM_ISON) {
+        s.action = NN_SCREEN_ISON;
+        e = cls->handler(&s);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, s.power.isOn);
+    }
+    if(m == NN_SCRNUM_TURNON) {
+        s.action = NN_SCREEN_TURNON;
+        e = cls->handler(&s);
+        if(e) return e;
+        e = nn_pushbool(C, s.power.wasOn);
+        if(e) return e;
+        e = nn_pushbool(C, s.power.isOn);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    if(m == NN_SCRNUM_TURNOFF) {
+        s.action = NN_SCREEN_TURNOFF;
+        e = cls->handler(&s);
+        if(e) return e;
+        e = nn_pushbool(C, s.power.wasOn);
+        if(e) return e;
+        e = nn_pushbool(C, s.power.isOn);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    if(m == NN_SCRNUM_GETASPECTRATIO) {
+        s.action = NN_SCREEN_GETASPECTRATIO;
+        e = cls->handler(&s);
+        if(e) return e;
+        e = nn_pushinteger(C, s.aspect.w);
+        if(e) return e;
+        e = nn_pushinteger(C, s.aspect.h);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    if(m == NN_SCRNUM_GETKEYBOARDS) {
+        // handler pushes addresses onto C's stack
+        s.action = NN_SCREEN_GETKEYBOARDS;
+        e = cls->handler(&s);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pusharraytable(C, s.kbCount);
+    }
+    if(m == NN_SCRNUM_SETPRECISE) {
+        if(nn_checkboolean(C, 0,
+            "bad argument #1 (boolean expected)"))
+            return NN_EBADCALL;
+        s.action = NN_SCREEN_SETPRECISE;
+        s.flag = nn_toboolean(C, 0);
+        e = cls->handler(&s);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, s.flag);
+    }
+    if(m == NN_SCRNUM_ISPRECISE) {
+        s.action = NN_SCREEN_ISPRECISE;
+        e = cls->handler(&s);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, s.flag);
+    }
+    if(m == NN_SCRNUM_SETTOUCHINVERTED) {
+        if(nn_checkboolean(C, 0,
+            "bad argument #1 (boolean expected)"))
+            return NN_EBADCALL;
+        s.action = NN_SCREEN_SETTOUCHINVERTED;
+        s.flag = nn_toboolean(C, 0);
+        e = cls->handler(&s);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, s.flag);
+    }
+    if(m == NN_SCRNUM_ISTOUCHINVERTED) {
+        s.action = NN_SCREEN_ISTOUCHINVERTED;
+        e = cls->handler(&s);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, s.flag);
+    }
+
+    nn_setError(C, "screen: not implemented");
+    return NN_EBADCALL;
 }
 
-nn_Component *nn_createScreen(nn_Universe *universe, const char *address, const nn_ScreenConfig *scrconf, void *state, nn_ScreenHandler *handler) {
-	nn_Component *c = nn_createComponent(universe, address, "screen");
-	if(c == NULL) return NULL;
-	// TODO: methods
-	nn_Context *ctx = &universe->ctx;
-	nn_ScreenState *scrstate = nn_alloc(ctx, sizeof(*scrstate));
-	if(scrstate == NULL) {
-		nn_dropComponent(c);
-		return NULL;
-	}
-	scrstate->ctx = ctx;
-	scrstate->scrconf = *scrconf;
-	scrstate->handler = handler;
-	nn_setComponentState(c, state);
-	nn_setComponentClassState(c, scrstate);
-	nn_setComponentHandler(c, nn_screenHandler);
-	return c;
+// Replace nn_createScreen entirely:
+nn_Component *nn_createScreen(
+    nn_Universe *universe, const char *address,
+    const nn_ScreenConfig *scrconf, void *state,
+    nn_ScreenHandler *handler)
+{
+    nn_Component *c = nn_createComponent(
+        universe, address, "screen");
+    if(c == NULL) return NULL;
+
+    const nn_Method methods[NN_SCRNUM_COUNT] = {
+        [NN_SCRNUM_ISON] = {
+            "isOn",
+            "function():boolean -- Screen powered?",
+            NN_DIRECT},
+        [NN_SCRNUM_TURNON] = {
+            "turnOn",
+            "function():boolean,boolean -- Turn on",
+            NN_INDIRECT},
+        [NN_SCRNUM_TURNOFF] = {
+            "turnOff",
+            "function():boolean,boolean -- Turn off",
+            NN_INDIRECT},
+        [NN_SCRNUM_GETASPECTRATIO] = {
+            "getAspectRatio",
+            "function():number,number -- Block ratio",
+            NN_DIRECT},
+        [NN_SCRNUM_GETKEYBOARDS] = {
+            "getKeyboards",
+            "function():table -- Attached keyboards",
+            NN_DIRECT},
+        [NN_SCRNUM_SETPRECISE] = {
+            "setPrecise",
+            "function(on:boolean):boolean"
+            " -- High-precision mouse",
+            NN_DIRECT},
+        [NN_SCRNUM_ISPRECISE] = {
+            "isPrecise",
+            "function():boolean -- Precision enabled?",
+            NN_DIRECT},
+        [NN_SCRNUM_SETTOUCHINVERTED] = {
+            "setTouchModeInverted",
+            "function(on:boolean):boolean"
+            " -- Invert touch mode",
+            NN_DIRECT},
+        [NN_SCRNUM_ISTOUCHINVERTED] = {
+            "isTouchModeInverted",
+            "function():boolean -- Touch inverted?",
+            NN_DIRECT},
+    };
+
+    nn_Exit e = nn_setComponentMethodsArray(
+        c, methods, NN_SCRNUM_COUNT);
+    if(e) { nn_dropComponent(c); return NULL; }
+
+    nn_Context *ctx = &universe->ctx;
+    nn_ScreenClassState *cls =
+        nn_alloc(ctx, sizeof(*cls));
+    if(cls == NULL) {
+        nn_dropComponent(c);
+        return NULL;
+    }
+    cls->ctx = ctx;
+    cls->scrconf = *scrconf;
+    cls->handler = handler;
+    nn_setComponentState(c, state);
+    nn_setComponentClassState(c, cls);
+    nn_setComponentHandler(c, nn_screenHandler);
+    return c;
 }
 
-typedef struct nn_GPUState {
-	nn_Context *ctx;
-	nn_GPU gpu;
-	nn_GPUHandler *handler;
-} nn_GPUState;
+typedef enum nn_GPUNum {
+    NN_GPUNUM_BIND,
+    NN_GPUNUM_GETSCREEN,
+    NN_GPUNUM_GETBG,
+    NN_GPUNUM_SETBG,
+    NN_GPUNUM_GETFG,
+    NN_GPUNUM_SETFG,
+    NN_GPUNUM_GETPALETTE,
+    NN_GPUNUM_SETPALETTE,
+    NN_GPUNUM_MAXDEPTH,
+    NN_GPUNUM_GETDEPTH,
+    NN_GPUNUM_SETDEPTH,
+    NN_GPUNUM_MAXRES,
+    NN_GPUNUM_GETRES,
+    NN_GPUNUM_SETRES,
+    NN_GPUNUM_GETVIEWPORT,
+    NN_GPUNUM_SETVIEWPORT,
+    NN_GPUNUM_GET,
+    NN_GPUNUM_SET,
+    NN_GPUNUM_COPY,
+    NN_GPUNUM_FILL,
+    NN_GPUNUM_GETACTIVEBUF,
+    NN_GPUNUM_SETACTIVEBUF,
+    NN_GPUNUM_BUFFERS,
+    NN_GPUNUM_ALLOCBUF,
+    NN_GPUNUM_FREEBUF,
+    NN_GPUNUM_FREEALLBUFS,
+    NN_GPUNUM_TOTALMEM,
+    NN_GPUNUM_FREEMEM,
+    NN_GPUNUM_GETBUFSIZE,
+    NN_GPUNUM_BITBLT,
+    NN_GPUNUM_COUNT,
+} nn_GPUNum;
+
+typedef struct nn_GPUClassState {
+    nn_Context *ctx;
+    nn_GPU gpu;
+    nn_GPUHandler *handler;
+} nn_GPUClassState;
 
 static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
-	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
-	if(req->action == NN_COMP_SIGNAL) return NN_OK;
-	nn_Context *ctx = req->ctx;
-	nn_GPUState *state = req->classState;
-	nn_Computer *C = req->computer;
-	nn_GPURequest greq;
-	greq.ctx = ctx;
-	greq.state = req->state;
-	greq.computer = C;
-	greq.gpu = &state->gpu;
+    if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+    if(req->action == NN_COMP_SIGNAL) return NN_OK;
+    nn_Context *ctx = req->ctx;
+    nn_GPUClassState *cls = req->classState;
+    nn_Computer *C = req->computer;
 
-	if(req->action == NN_COMP_DROP) {
-		greq.action = NN_GPU_DROP;
-		state->handler(&greq);
-		nn_free(ctx, state, sizeof(*state));
-		return NN_OK;
-	}
+    nn_GPURequest g;
+    g.ctx = ctx;
+    g.state = req->state;
+    g.computer = C;
+    g.gpu = &cls->gpu;
 
-	nn_setError(C, "gpu: not yet implemented");
-	return NN_EBADCALL;
+    if(req->action == NN_COMP_DROP) {
+        g.action = NN_GPU_DROP;
+        cls->handler(&g);
+        nn_free(ctx, cls, sizeof(*cls));
+        return NN_OK;
+    }
+
+    nn_GPUNum m = req->methodIdx;
+    nn_Exit e = NN_OK;
+
+    //  bind 
+    if(m == NN_GPUNUM_BIND) {
+        if(nn_checkstring(C, 0,
+            "bad argument #1 (string expected)"))
+            return NN_EBADCALL;
+        e = nn_defaultboolean(C, 1, true);
+        if(e) return e;
+        g.action = NN_GPU_BIND;
+        g.bind.address = nn_tostring(C, 0);
+        g.bind.reset = nn_toboolean(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+    //  getScreen 
+    if(m == NN_GPUNUM_GETSCREEN) {
+        g.action = NN_GPU_GETSCREEN;
+        g.screenAddr[0] = '\0';
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        if(g.screenAddr[0] == '\0')
+            return nn_pushnull(C);
+        return nn_pushstring(C, g.screenAddr);
+    }
+    //  getBackground 
+    if(m == NN_GPUNUM_GETBG) {
+        g.action = NN_GPU_GETBG;
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.color.color);
+        if(e) return e;
+        e = nn_pushbool(C, g.color.isPalette);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    //  setBackground 
+    if(m == NN_GPUNUM_SETBG) {
+        if(nn_checknumber(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        e = nn_defaultboolean(C, 1, false);
+        if(e) return e;
+        g.action = NN_GPU_SETBG;
+        g.color.color = nn_tointeger(C, 0);
+        g.color.isPalette = nn_toboolean(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.color.oldColor);
+        if(e) return e;
+        req->returnCount = 1;
+        if(g.color.oldPaletteIdx >= 0) {
+            e = nn_pushinteger(C, g.color.oldPaletteIdx);
+            if(e) return e;
+            req->returnCount = 2;
+        }
+        return NN_OK;
+    }
+    //  getForeground 
+    if(m == NN_GPUNUM_GETFG) {
+        g.action = NN_GPU_GETFG;
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.color.color);
+        if(e) return e;
+        e = nn_pushbool(C, g.color.isPalette);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    //  setForeground 
+    if(m == NN_GPUNUM_SETFG) {
+        if(nn_checknumber(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        e = nn_defaultboolean(C, 1, false);
+        if(e) return e;
+        g.action = NN_GPU_SETFG;
+        g.color.color = nn_tointeger(C, 0);
+        g.color.isPalette = nn_toboolean(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.color.oldColor);
+        if(e) return e;
+        req->returnCount = 1;
+        if(g.color.oldPaletteIdx >= 0) {
+            e = nn_pushinteger(C, g.color.oldPaletteIdx);
+            if(e) return e;
+            req->returnCount = 2;
+        }
+        return NN_OK;
+    }
+    //  getPaletteColor 
+    if(m == NN_GPUNUM_GETPALETTE) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_GETPALETTE;
+        g.palette.index = nn_tointeger(C, 0);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.palette.color);
+    }
+    //  setPaletteColor 
+    if(m == NN_GPUNUM_SETPALETTE) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        if(nn_checkinteger(C, 1,
+            "bad argument #2 (number expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_SETPALETTE;
+        g.palette.index = nn_tointeger(C, 0);
+        g.palette.color = nn_tointeger(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.palette.oldColor);
+    }
+    //  maxDepth 
+    if(m == NN_GPUNUM_MAXDEPTH) {
+        g.action = NN_GPU_MAXDEPTH;
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.depth.depth);
+    }
+    //  getDepth 
+    if(m == NN_GPUNUM_GETDEPTH) {
+        g.action = NN_GPU_GETDEPTH;
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.depth.depth);
+    }
+    //  setDepth 
+    if(m == NN_GPUNUM_SETDEPTH) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_SETDEPTH;
+        g.depth.depth = (char)nn_tointeger(C, 0);
+        e = cls->handler(&g);
+        if(e) return e;
+        const char *name = nn_depthName(g.depth.oldDepth);
+        if(name == NULL) name = "Unknown";
+        req->returnCount = 1;
+        return nn_pushstring(C, name);
+    }
+    //  maxResolution 
+    if(m == NN_GPUNUM_MAXRES) {
+        g.action = NN_GPU_MAXRES;
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.resolution.width);
+        if(e) return e;
+        e = nn_pushinteger(C, g.resolution.height);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    //  getResolution 
+    if(m == NN_GPUNUM_GETRES) {
+        g.action = NN_GPU_GETRES;
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.resolution.width);
+        if(e) return e;
+        e = nn_pushinteger(C, g.resolution.height);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    //  setResolution 
+    if(m == NN_GPUNUM_SETRES) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        if(nn_checkinteger(C, 1,
+            "bad argument #2 (number expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_SETRES;
+        g.resolution.width = nn_tointeger(C, 0);
+        g.resolution.height = nn_tointeger(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        // push screen_resized via getScreen
+        nn_GPURequest s = g;
+        s.action = NN_GPU_GETSCREEN;
+        s.screenAddr[0] = '\0';
+        cls->handler(&s);
+        if(s.screenAddr[0] != '\0') {
+            nn_pushScreenResized(C, s.screenAddr,
+                g.resolution.width, g.resolution.height);
+        }
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+    //  getViewport 
+    if(m == NN_GPUNUM_GETVIEWPORT) {
+        g.action = NN_GPU_GETVIEWPORT;
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.resolution.width);
+        if(e) return e;
+        e = nn_pushinteger(C, g.resolution.height);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    //  setViewport 
+    if(m == NN_GPUNUM_SETVIEWPORT) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        if(nn_checkinteger(C, 1,
+            "bad argument #2 (number expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_SETVIEWPORT;
+        g.resolution.width = nn_tointeger(C, 0);
+        g.resolution.height = nn_tointeger(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+    //  get 
+    if(m == NN_GPUNUM_GET) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        if(nn_checkinteger(C, 1,
+            "bad argument #2 (number expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_GET;
+        g.get.x = nn_tointeger(C, 0);
+        g.get.y = nn_tointeger(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        char buf[NN_MAX_UNICODE_BUFFER];
+        size_t len = nn_unicode_codepointToChar(
+            buf, g.get.codepoint);
+        e = nn_pushlstring(C, buf, len);
+        if(e) return e;
+        e = nn_pushinteger(C, g.get.fg);
+        if(e) return e;
+        e = nn_pushinteger(C, g.get.bg);
+        if(e) return e;
+        req->returnCount = 3;
+        if(g.get.fgIdx >= 0) {
+            e = nn_pushinteger(C, g.get.fgIdx);
+            if(e) return e;
+        } else {
+            e = nn_pushnull(C);
+            if(e) return e;
+        }
+        if(g.get.bgIdx >= 0) {
+            e = nn_pushinteger(C, g.get.bgIdx);
+            if(e) return e;
+        } else {
+            e = nn_pushnull(C);
+            if(e) return e;
+        }
+        req->returnCount = 5;
+        return NN_OK;
+    }
+    //  set 
+    if(m == NN_GPUNUM_SET) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        if(nn_checkinteger(C, 1,
+            "bad argument #2 (number expected)"))
+            return NN_EBADCALL;
+        if(nn_checkstring(C, 2,
+            "bad argument #3 (string expected)"))
+            return NN_EBADCALL;
+        e = nn_defaultboolean(C, 3, false);
+        if(e) return e;
+        g.action = NN_GPU_SET;
+        g.set.x = nn_tointeger(C, 0);
+        g.set.y = nn_tointeger(C, 1);
+        g.set.value = nn_tolstring(C, 2, &g.set.len);
+        g.set.vertical = nn_toboolean(C, 3);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+    //  copy 
+    if(m == NN_GPUNUM_COPY) {
+        for(int i = 0; i < 6; i++) {
+            if(nn_checkinteger(C, i,
+                "bad argument (number expected)"))
+                return NN_EBADCALL;
+        }
+        g.action = NN_GPU_COPY;
+        g.copy.x  = nn_tointeger(C, 0);
+        g.copy.y  = nn_tointeger(C, 1);
+        g.copy.w  = nn_tointeger(C, 2);
+        g.copy.h  = nn_tointeger(C, 3);
+        g.copy.tx = nn_tointeger(C, 4);
+        g.copy.ty = nn_tointeger(C, 5);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+    //  fill 
+    if(m == NN_GPUNUM_FILL) {
+        for(int i = 0; i < 4; i++) {
+            if(nn_checkinteger(C, i,
+                "bad argument (number expected)"))
+                return NN_EBADCALL;
+        }
+        if(nn_checkstring(C, 4,
+            "bad argument #5 (string expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_FILL;
+        g.fill.x = nn_tointeger(C, 0);
+        g.fill.y = nn_tointeger(C, 1);
+        g.fill.w = nn_tointeger(C, 2);
+        g.fill.h = nn_tointeger(C, 3);
+        g.fill.codepoint = nn_unicode_firstCodepoint(
+            nn_tostring(C, 4));
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+    //  VRAM: getActiveBuffer 
+    if(m == NN_GPUNUM_GETACTIVEBUF) {
+        g.action = NN_GPU_GETACTIVEBUF;
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.buffer.index);
+    }
+    //  VRAM: setActiveBuffer 
+    if(m == NN_GPUNUM_SETACTIVEBUF) {
+        if(nn_checkinteger(C, 0,
+            "bad argument #1 (number expected)"))
+            return NN_EBADCALL;
+        g.action = NN_GPU_SETACTIVEBUF;
+        g.buffer.index = nn_tointeger(C, 0);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.buffer.index);
+    }
+    //  VRAM: buffers 
+    if(m == NN_GPUNUM_BUFFERS) {
+        g.action = NN_GPU_BUFFERS;
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pusharraytable(C, g.bufCount);
+    }
+    //  VRAM: allocateBuffer 
+    if(m == NN_GPUNUM_ALLOCBUF) {
+        e = nn_defaultinteger(C, 0, 0);
+        if(e) return e;
+        e = nn_defaultinteger(C, 1, 0);
+        if(e) return e;
+        g.action = NN_GPU_ALLOCBUF;
+        g.allocBuf.w = nn_tointeger(C, 0);
+        g.allocBuf.h = nn_tointeger(C, 1);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.allocBuf.index);
+    }
+    //  VRAM: freeBuffer 
+    if(m == NN_GPUNUM_FREEBUF) {
+        e = nn_defaultinteger(C, 0, 0);
+        if(e) return e;
+        g.action = NN_GPU_FREEBUF;
+        g.buffer.index = nn_tointeger(C, 0);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+    //  VRAM: freeAllBuffers 
+    if(m == NN_GPUNUM_FREEALLBUFS) {
+        g.action = NN_GPU_FREEALLBUFS;
+        e = cls->handler(&g);
+        if(e) return e;
+        return NN_OK;
+    }
+    //  VRAM: totalMemory 
+    if(m == NN_GPUNUM_TOTALMEM) {
+        req->returnCount = 1;
+        return nn_pushinteger(C, cls->gpu.totalVRAM);
+    }
+    //  VRAM: freeMemory 
+    if(m == NN_GPUNUM_FREEMEM) {
+        g.action = NN_GPU_FREEMEM;
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushinteger(C, g.memory);
+    }
+    //  VRAM: getBufferSize 
+    if(m == NN_GPUNUM_GETBUFSIZE) {
+        e = nn_defaultinteger(C, 0, 0);
+        if(e) return e;
+        g.action = NN_GPU_GETBUFSIZE;
+        g.bufSize.index = nn_tointeger(C, 0);
+        e = cls->handler(&g);
+        if(e) return e;
+        e = nn_pushinteger(C, g.bufSize.w);
+        if(e) return e;
+        e = nn_pushinteger(C, g.bufSize.h);
+        if(e) return e;
+        req->returnCount = 2;
+        return NN_OK;
+    }
+    //  VRAM: bitblt 
+    if(m == NN_GPUNUM_BITBLT) {
+        e = nn_defaultinteger(C, 0, 0);
+        if(e) return e;
+        for(int i = 1; i < 8; i++) {
+            e = nn_defaultinteger(C, i, 0);
+            if(e) return e;
+        }
+        g.action = NN_GPU_BITBLT;
+        g.bitblt.dst     = nn_tointeger(C, 0);
+        g.bitblt.col     = nn_tointeger(C, 1);
+        g.bitblt.row     = nn_tointeger(C, 2);
+        g.bitblt.w       = nn_tointeger(C, 3);
+        g.bitblt.h       = nn_tointeger(C, 4);
+        g.bitblt.src     = nn_tointeger(C, 5);
+        g.bitblt.fromCol = nn_tointeger(C, 6);
+        g.bitblt.fromRow = nn_tointeger(C, 7);
+        e = cls->handler(&g);
+        if(e) return e;
+        req->returnCount = 1;
+        return nn_pushbool(C, true);
+    }
+
+    nn_setError(C, "gpu: not implemented");
+    return NN_EBADCALL;
 }
 
-nn_Component *nn_createGPU(nn_Universe *universe, const char *address, const nn_GPU *gpu, void *state, nn_GPUHandler *handler) {
-	nn_Component *c = nn_createComponent(universe, address, "gpu");
-	if(c == NULL) return NULL;
-	// TODO: methods
-	nn_Context *ctx = &universe->ctx;
-	nn_GPUState *gpustate = nn_alloc(ctx, sizeof(*gpustate));
-	if(gpustate == NULL) {
-		nn_dropComponent(c);
-		return NULL;
-	}
-	gpustate->ctx = ctx;
-	gpustate->gpu = *gpu;
-	gpustate->handler = handler;
-	nn_setComponentState(c, state);
-	nn_setComponentClassState(c, gpustate);
-	nn_setComponentHandler(c, nn_gpuHandler);
-	return c;
+// Replace nn_createGPU entirely:
+nn_Component *nn_createGPU(
+    nn_Universe *universe, const char *address,
+    const nn_GPU *gpu, void *state,
+    nn_GPUHandler *handler)
+{
+    nn_Component *c = nn_createComponent(
+        universe, address, "gpu");
+    if(c == NULL) return NULL;
+
+    const nn_Method methods[NN_GPUNUM_COUNT] = {
+        [NN_GPUNUM_BIND] = {
+            "bind",
+            "function(address:string[,reset:boolean])"
+            ":boolean -- Bind to screen",
+            NN_INDIRECT},
+        [NN_GPUNUM_GETSCREEN] = {
+            "getScreen",
+            "function():string -- Bound screen address",
+            NN_DIRECT},
+        [NN_GPUNUM_GETBG] = {
+            "getBackground",
+            "function():number,boolean -- Current bg",
+            NN_DIRECT},
+        [NN_GPUNUM_SETBG] = {
+            "setBackground",
+            "function(color:number[,palette:boolean])"
+            ":number[,number] -- Set bg",
+            NN_DIRECT},
+        [NN_GPUNUM_GETFG] = {
+            "getForeground",
+            "function():number,boolean -- Current fg",
+            NN_DIRECT},
+        [NN_GPUNUM_SETFG] = {
+            "setForeground",
+            "function(color:number[,palette:boolean])"
+            ":number[,number] -- Set fg",
+            NN_DIRECT},
+        [NN_GPUNUM_GETPALETTE] = {
+            "getPaletteColor",
+            "function(index:number):number"
+            " -- Get palette color",
+            NN_DIRECT},
+        [NN_GPUNUM_SETPALETTE] = {
+            "setPaletteColor",
+            "function(index:number,value:number):number"
+            " -- Set palette color",
+            NN_DIRECT},
+        [NN_GPUNUM_MAXDEPTH] = {
+            "maxDepth",
+            "function():number -- Max color depth",
+            NN_DIRECT},
+        [NN_GPUNUM_GETDEPTH] = {
+            "getDepth",
+            "function():number -- Current depth",
+            NN_DIRECT},
+        [NN_GPUNUM_SETDEPTH] = {
+            "setDepth",
+            "function(depth:number):string -- Set depth",
+            NN_DIRECT},
+        [NN_GPUNUM_MAXRES] = {
+            "maxResolution",
+            "function():number,number -- Max resolution",
+            NN_DIRECT},
+        [NN_GPUNUM_GETRES] = {
+            "getResolution",
+            "function():number,number -- Resolution",
+            NN_DIRECT},
+        [NN_GPUNUM_SETRES] = {
+            "setResolution",
+            "function(w:number,h:number):boolean"
+            " -- Set resolution",
+            NN_DIRECT},
+        [NN_GPUNUM_GETVIEWPORT] = {
+            "getViewport",
+            "function():number,number -- Viewport size",
+            NN_DIRECT},
+        [NN_GPUNUM_SETVIEWPORT] = {
+            "setViewport",
+            "function(w:number,h:number):boolean"
+            " -- Set viewport",
+            NN_DIRECT},
+        [NN_GPUNUM_GET] = {
+            "get",
+            "function(x:number,y:number):string,"
+            "number,number,number?,number? -- Read pixel",
+            NN_DIRECT},
+        [NN_GPUNUM_SET] = {
+            "set",
+            "function(x:number,y:number,s:string"
+            "[,vertical:boolean]):boolean -- Write text",
+            NN_DIRECT},
+        [NN_GPUNUM_COPY] = {
+            "copy",
+            "function(x,y,w,h,tx,ty):boolean"
+            " -- Copy region",
+            NN_DIRECT},
+        [NN_GPUNUM_FILL] = {
+            "fill",
+            "function(x,y,w,h,char):boolean"
+            " -- Fill region",
+            NN_DIRECT},
+        [NN_GPUNUM_GETACTIVEBUF] = {
+            "getActiveBuffer",
+            "function():number -- Active buffer index",
+            NN_DIRECT},
+        [NN_GPUNUM_SETACTIVEBUF] = {
+            "setActiveBuffer",
+            "function(index:number):number"
+            " -- Set active buffer",
+            NN_DIRECT},
+        [NN_GPUNUM_BUFFERS] = {
+            "buffers",
+            "function():table -- List buffer indices",
+            NN_DIRECT},
+        [NN_GPUNUM_ALLOCBUF] = {
+            "allocateBuffer",
+            "function([w:number,h:number]):number"
+            " -- Allocate VRAM page",
+            NN_DIRECT},
+        [NN_GPUNUM_FREEBUF] = {
+            "freeBuffer",
+            "function([index:number]):boolean"
+            " -- Free VRAM page",
+            NN_DIRECT},
+        [NN_GPUNUM_FREEALLBUFS] = {
+            "freeAllBuffers",
+            "function() -- Free all VRAM pages",
+            NN_DIRECT},
+        [NN_GPUNUM_TOTALMEM] = {
+            "totalMemory",
+            "function():number -- Total VRAM",
+            NN_DIRECT},
+        [NN_GPUNUM_FREEMEM] = {
+            "freeMemory",
+            "function():number -- Free VRAM",
+            NN_DIRECT},
+        [NN_GPUNUM_GETBUFSIZE] = {
+            "getBufferSize",
+            "function([index:number]):number,number"
+            " -- Buffer dimensions",
+            NN_DIRECT},
+        [NN_GPUNUM_BITBLT] = {
+            "bitblt",
+            "function([dst,col,row,w,h,src,fc,fr])"
+            ":boolean -- Blit between buffers",
+            NN_DIRECT},
+    };
+
+    nn_Exit e = nn_setComponentMethodsArray(
+        c, methods, NN_GPUNUM_COUNT);
+    if(e) { nn_dropComponent(c); return NULL; }
+
+    nn_Context *ctx = &universe->ctx;
+    nn_GPUClassState *cls = nn_alloc(ctx, sizeof(*cls));
+    if(cls == NULL) {
+        nn_dropComponent(c);
+        return NULL;
+    }
+    cls->ctx = ctx;
+    cls->gpu = *gpu;
+    cls->handler = handler;
+    nn_setComponentState(c, state);
+    nn_setComponentClassState(c, cls);
+    nn_setComponentHandler(c, nn_gpuHandler);
+    return c;
 }
