@@ -15,7 +15,6 @@
 // to use the numerical accuracy better
 #define NN_COMPONENT_CALLBUDGET 10000
 
-// NN_ATOMIC_NONE accepts 1 args, others 2
 #ifdef NN_ATOMIC_NONE
 typedef size_t nn_refc_t;
 
@@ -26,6 +25,32 @@ void nn_incRef(nn_refc_t *refc, size_t n) {
 bool nn_decRef(nn_refc_t *refc, size_t n) {
 	(*refc) -= n;
 	return (*refc) == 0;
+}
+#elif defined(NN_ATOMIC_MSVC)
+// MSVC lacks C11 <stdatomic.h> in C mode, but has interlocked intrinsics.
+// _InterlockedExchangeAdd operates on long (32-bit),
+// _InterlockedExchangeAdd64 operates on __int64 (64-bit).
+// We pick the right one based on pointer size since size_t matches that.
+#include <intrin.h>
+
+typedef volatile size_t nn_refc_t;
+
+void nn_incRef(nn_refc_t *refc, size_t n) {
+#if defined(_WIN64)
+    _InterlockedExchangeAdd64((__int64 volatile *)refc, (__int64)n);
+#else
+    _InterlockedExchangeAdd((long volatile *)refc, (long)n);
+#endif
+}
+
+bool nn_decRef(nn_refc_t *refc, size_t n) {
+#if defined(_WIN64)
+    __int64 old = _InterlockedExchangeAdd64((__int64 volatile *)refc, -(__int64)n);
+    return (size_t)old == n;
+#else
+    long old = _InterlockedExchangeAdd((long volatile *)refc, -(long)n);
+    return (size_t)old == n;
+#endif
 }
 #else
 // we need atomics for thread-safe reference counting that will be used

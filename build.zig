@@ -51,9 +51,14 @@ const LuaVersion = enum {
     lua54,
 };
 
-fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, c: *std.Build.Step.Compile) void {
+fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, buildOpts: LibBuildOpts, c: *std.Build.Step.Compile) void {
     // TODO: find out how to send our target to this build cmd
-    const raylib = b.addSystemCommand(&.{ "zig", "build" });
+    const targetStr = buildOpts.target.result.zigTriple(b.allocator) catch unreachable;
+    defer b.allocator.free(targetStr);
+
+    const targetArg = std.fmt.allocPrint(b.allocator, "-Dtarget={s}", .{targetStr}) catch unreachable;
+    defer b.allocator.free(targetArg);
+    const raylib = b.addSystemCommand(&.{ "zig", "build", targetArg });
     raylib.setCwd(b.path("foreign/raylib/"));
     raylib.stdio = .inherit;
 
@@ -179,7 +184,7 @@ pub fn build(b: *std.Build) !void {
         if (sysraylib_flag) {
             emulator.linkSystemLibrary("raylib");
         } else {
-            compileRaylib(b, os, emulator);
+            compileRaylib(b, os, opts, emulator);
         }
 
         const luaVer = b.option(LuaVersion, "lua", "The version of Lua to use.") orelse LuaVersion.lua53;

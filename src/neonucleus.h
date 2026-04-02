@@ -37,8 +37,8 @@ extern "C" {
 
 
 #if defined(_MSC_VER) && !defined(__cplusplus)
-#ifndef NN_ATOMIC_NONE
-#define NN_ATOMIC_NONE
+#ifndef NN_ATOMIC_MSVC
+#define NN_ATOMIC_MSVC
 #endif
 #endif
 
