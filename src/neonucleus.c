@@ -1708,6 +1708,10 @@ const char *nn_getComponentTypeID(nn_Component *c) {
 	return c->internalID;
 }
 
+const char *nn_getComponentAddress(nn_Component *c) {
+	return c->address;
+}
+
 static nn_Exit nn_pushComponentAdded(nn_Computer *c, const char *address, const char *type) {
 	nn_Exit e = nn_pushstring(c, "component_added");
 	if(e) return e;
@@ -2381,24 +2385,28 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.readsPerTick = 4,
 		.writesPerTick = 2,
 		.dataEnergyCost = 256.0 / NN_MiB,
+		.maxReadSize = 4096,
 	},
 	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 2 * NN_MiB,
 		.readsPerTick = 4,
 		.writesPerTick = 2,
 		.dataEnergyCost = 512.0 / NN_MiB,
+		.maxReadSize = 8192,
 	},
 	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 4 * NN_MiB,
 		.readsPerTick = 7,
 		.writesPerTick = 3,
 		.dataEnergyCost = 1024.0 / NN_MiB,
+		.maxReadSize = 16384,
 	},
 	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 8 * NN_MiB,
 		.readsPerTick = 13,
 		.writesPerTick = 5,
 		.dataEnergyCost = 2048.0 / NN_MiB,
+		.maxReadSize = 32768,
 	},
 };
 
@@ -2408,6 +2416,7 @@ const nn_Filesystem nn_defaultFloppy = NN_INIT(nn_Filesystem) {
 	.readsPerTick = 1,
 	.writesPerTick = 1,
 	.dataEnergyCost = 8.0 / NN_MiB,
+	.maxReadSize = 2048,
 };
 
 const nn_Filesystem nn_defaultTmpFS = NN_INIT(nn_Filesystem) {
@@ -2422,9 +2431,10 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 1 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 2,
-		.readsPerTick = 10,
-		.writesPerTick = 5,
-		.rpm = 1800,
+		.cacheLineSize = 2,
+		.readsPerTick = 20,
+		.writesPerTick = 10,
+		.rpm = 3600,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 256.0 / NN_MiB,
 	},
@@ -2432,9 +2442,10 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 2 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 4,
-		.readsPerTick = 20,
-		.writesPerTick = 10,
-		.rpm = 1800,
+		.cacheLineSize = 4,
+		.readsPerTick = 30,
+		.writesPerTick = 15,
+		.rpm = 5400,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 512.0 / NN_MiB,
 	},
@@ -2442,9 +2453,10 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 4 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 8,
-		.readsPerTick = 30,
-		.writesPerTick = 15,
-		.rpm = 1800,
+		.cacheLineSize = 4,
+		.readsPerTick = 40,
+		.writesPerTick = 20,
+		.rpm = 7200,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 1024.0 / NN_MiB,
 	},
@@ -2452,9 +2464,10 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 8 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 16,
+		.cacheLineSize = 8,
 		.readsPerTick = 40,
 		.writesPerTick = 20,
-		.rpm = 1800,
+		.rpm = 7200,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 2048.0 / NN_MiB,
 	},
@@ -2464,8 +2477,9 @@ const nn_Drive nn_floppyDrive = {
 	.capacity = 512 * NN_KiB,
 	.sectorSize = 512,
 	.platterCount = 1,
-	.readsPerTick = 5,
-	.writesPerTick = 2,
+	.cacheLineSize = 2,
+	.readsPerTick = 10,
+	.writesPerTick = 5,
 	.rpm = 1800,
 	.onlySpinForwards = true,
 	.dataEnergyCost = 128.0 / NN_MiB,
@@ -2477,7 +2491,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.maxWidth = 50,
 		.maxHeight = 16,
 		.maxDepth = 1,
-		.defaultPalette = NULL,
+		.defaultPalette = nn_ocpalette4,
 		.paletteColors = 0,
 		.editableColors = 0,
 		.features = NN_SCRF_NONE,
@@ -3396,118 +3410,11 @@ nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const 
 	return c;
 }
 
-typedef struct nn_VEEState {
-	char *code;
-	size_t codelen;
-	char *data;
-	size_t datalen;
-	char label[NN_MAX_LABEL];
-	size_t labellen;
-	char arch[NN_MAX_ARCHNAME];
-	size_t archlen;
-} nn_VEEState;
-
-static nn_Exit nn_veepromHandler(nn_EEPROMRequest *request) {
-	nn_VEEState *state = request->state;
-	nn_Computer *C = request->computer;
-	const nn_EEPROM *eeprom = request->eeprom;
-	nn_Context *ctx = request->ctx;
-	if(request->action == NN_EEPROM_DROP) {
-		nn_free(ctx, state->code, eeprom->size);
-		nn_free(ctx, state->data, eeprom->dataSize);
-		nn_free(ctx, state, sizeof(*state));
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_GET) {
-		nn_memcpy(request->buf, state->code, state->codelen);
-		request->buflen = state->codelen;
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_GETDATA) {
-		nn_memcpy(request->buf, state->data, state->datalen);
-		request->buflen = state->datalen;
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_GETLABEL) {
-		nn_memcpy(request->buf, state->label, state->labellen);
-		request->buflen = state->labellen;
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_GETARCH) {
-		nn_memcpy(request->buf, state->arch, state->archlen);
-		request->buflen = state->archlen;
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_SET) {
-		state->codelen = request->buflen;
-		nn_memcpy(state->code, request->robuf, state->codelen);
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_SETDATA) {
-		state->datalen = request->buflen;
-		nn_memcpy(state->data, request->robuf, state->datalen);
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_SETLABEL) {
-		if(request->buflen > NN_MAX_LABEL) request->buflen = NN_MAX_LABEL;
-		state->labellen = request->buflen;
-		nn_memcpy(state->label, request->robuf, state->labellen);
-		return NN_OK;
-	}
-	if(request->action == NN_EEPROM_SETARCH) {
-		if(request->buflen > NN_MAX_ARCHNAME) request->buflen = NN_MAX_ARCHNAME;
-		state->archlen = request->buflen;
-		nn_memcpy(state->arch, request->robuf, state->archlen);
-		return NN_OK;
-	}
-	nn_setError(C, "veeprom: not implemented yet");
-	return NN_EBADCALL;
-}
-
-nn_Component *nn_createVEEPROM(nn_Universe *universe, const char *address, const nn_VEEPROM *veeprom, const nn_EEPROM *eeprom) {
-	nn_Context *ctx = &universe->ctx;
-	char *code = NULL;
-	char *data = NULL;
-	nn_VEEState *state = NULL;
-
-	code = nn_alloc(ctx, eeprom->size);
-	if(code == NULL) goto fail;
-	data = nn_alloc(ctx, eeprom->dataSize);
-	if(data == NULL) goto fail;
-	state = nn_alloc(ctx, sizeof(*state));
-	if(state == NULL) goto fail;
-
-	state->code = code;
-	nn_memcpy(code, veeprom->code, veeprom->codelen);
-	state->codelen = veeprom->codelen;
-	state->data = data;
-	nn_memcpy(data, veeprom->data, veeprom->datalen);
-	state->datalen = veeprom->datalen;
-	nn_memcpy(state->label, veeprom->label, veeprom->labellen);
-	state->labellen = veeprom->labellen;
-	if(veeprom->arch == NULL) {
-		state->archlen = 0;
-	} else {
-		state->archlen = nn_strlen(veeprom->arch);
-	}
-	nn_memcpy(state->arch, veeprom->arch, state->archlen);
-
-	nn_Component *c = nn_createEEPROM(universe, address, eeprom, state, nn_veepromHandler);
-	if(c == NULL) goto fail;
-
-	return c;
-
-fail:
-	nn_free(ctx, code, eeprom->size);
-	nn_free(ctx, data, eeprom->dataSize);
-	nn_free(ctx, state, sizeof(*state));
-	return NULL;
-}
-
 typedef enum nn_FSNum {
 	// drive stuff
 	NN_FSNUM_SPACETOTAL,
 	NN_FSNUM_SPACEUSED,
+	NN_FSNUM_GETMAXREAD,
 	NN_FSNUM_GETLABEL,
 	NN_FSNUM_SETLABEL,
 	NN_FSNUM_ISRO,
@@ -3553,6 +3460,7 @@ static nn_Exit nn_fsPathCheck(nn_Computer *C, char buf[NN_MAX_PATH], const char 
 static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 	if(req->action == NN_COMP_SIGNAL) return NN_OK;
 	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+	nn_Context *ctx = req->ctx;
 	nn_FSState *state = req->classState;
 	nn_FSRequest freq;
 	freq.ctx = req->ctx;
@@ -3562,7 +3470,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 	if(req->action == NN_COMP_DROP) {
 		freq.action = NN_FS_DROP;
 		state->handler(&freq);
-		nn_free(req->ctx, state, sizeof(*state));
+		nn_free(ctx, state, sizeof(*state));
 		return NN_OK;
 	}
 	nn_Computer *C = req->computer;
@@ -3579,6 +3487,10 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		if(e) return e;
 		req->returnCount = 1;
 		return nn_pushinteger(C, freq.spaceUsed);
+	}
+	if(method == NN_FSNUM_GETMAXREAD) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, state->fs.maxReadSize);
 	}
 	if(method == NN_FSNUM_GETLABEL) {
 		char buf[NN_MAX_LABEL];
@@ -3628,23 +3540,32 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 	}
 	if(method == NN_FSNUM_READ) {
 		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
-		e = nn_defaultinteger(C, 1, NN_MAX_READ);
+		e = nn_defaultinteger(C, 1, state->fs.maxReadSize);
 		if(e) return e;
 		if(nn_checknumber(C, 1, "bad argument #2 (number expected)")) return NN_EBADCALL;
 		double requested = nn_tonumber(C, 1);
-		if(requested > NN_MAX_READ) requested = NN_MAX_READ;
+		if(requested > state->fs.maxReadSize) requested = state->fs.maxReadSize;
 		freq.action = NN_FS_READ;
 		freq.fd = nn_tointeger(C, 0);
-		char buf[NN_MAX_READ];
+		char *buf = nn_alloc(ctx, state->fs.maxReadSize);
+		if(buf == NULL) return NN_ENOMEM;
 		freq.read.buf = buf;
 		freq.read.len = requested;
 		e = state->handler(&freq);
-		if(e) return e;
-		if(freq.read.buf == NULL) return NN_OK;
+		if(e) {
+			nn_free(ctx, buf, state->fs.maxReadSize);
+			return e;
+		}
+		if(freq.read.buf == NULL) {
+			nn_free(ctx, buf, state->fs.maxReadSize);
+			return NN_OK;
+		}
 		nn_costComponent(C, req->compAddress, state->fs.readsPerTick);
 		nn_removeEnergy(C, state->fs.dataEnergyCost * freq.read.len);
 		req->returnCount = 1;
-		return nn_pushlstring(C, buf, freq.read.len);
+		e = nn_pushlstring(C, buf, freq.read.len);
+		nn_free(ctx, buf, state->fs.maxReadSize);
+		return e;
 	}
 	if(method == NN_FSNUM_WRITE) {
 		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
@@ -3663,7 +3584,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
 		e = nn_defaultstring(C, 1, "cur");
 		if(e) return e;
-		if(nn_checkinteger(C, 1, "bad argument #2 (whence expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 1, "bad argument #2 (whence expected)")) return NN_EBADCALL;
 		e = nn_defaultinteger(C, 2, 0);
 		if(e) return e;
 		if(nn_checkinteger(C, 2, "bad argument #3 (integer expected)")) return NN_EBADCALL;
@@ -3678,7 +3599,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		if(nn_strcmp(whence, "end") == 0) {
 			seek = NN_SEEK_END;
 		}
-		freq.action = NN_FS_CLOSE;
+		freq.action = NN_FS_SEEK;
 		freq.fd = nn_tointeger(C, 0);
 		freq.seek.whence = seek;
 		freq.seek.off = nn_tointeger(C, 2);
@@ -3686,7 +3607,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		if(e) return e;
 		req->returnCount = 1;
 		nn_costComponent(C, req->compAddress, state->fs.readsPerTick);
-		return nn_pushbool(C, true);
+		return nn_pushinteger(C, freq.seek.off);
 	}
 	if(method == NN_FSNUM_CLOSE) {
 		if(nn_checkinteger(C, 0, "bad argument #1 (fd expected)")) return NN_EBADCALL;
@@ -3843,6 +3764,7 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 	const nn_Method methods[NN_FSNUM_COUNT] = {
 		[NN_FSNUM_SPACETOTAL] = {"spaceTotal", "function(): integer - Capacity of the drive", NN_DIRECT},
 		[NN_FSNUM_SPACEUSED] = {"spaceUsed", "function(): integer - Amount of space used", NN_DIRECT},
+		[NN_FSNUM_GETMAXREAD] = {"getMaxRead", "function(): integer - Capacity of read buffer, the maximum amount of data which can be read", NN_DIRECT},
 		[NN_FSNUM_GETLABEL] = {"getLabel", "function(): string? - Gets the label of the drive, if any", NN_DIRECT},
 		[NN_FSNUM_SETLABEL] = {"setLabel", "function(label?: string): string - Sets the label of the drive. Returns the new label, which may be truncated", NN_INDIRECT},
 		[NN_FSNUM_ISRO] = {"isReadOnly", "function(): boolean - Returns whether the drive is read-only", NN_DIRECT},
@@ -3886,8 +3808,6 @@ static void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSe
 
 	size_t maxSectors = drive->capacity / drive->sectorSize;
 	size_t sectorsPerPlatter = maxSectors / drive->platterCount;
-	// RPM over the number of sectors, over 60 seconds.
-	double latencyPerSector = 1.0 / ((double)drive->rpm / 60 * maxSectors);
 
 	// magic
 	lastSector %= sectorsPerPlatter;
@@ -3901,14 +3821,30 @@ static void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSe
 	} else {
 		sectorDelta = lastSector - newSector;
 	}
+	if(sectorDelta < drive->cacheLineSize) {
+		sectorDelta = 0; // within cache
+	} else {
+		// align to cache line
+		if(sectorDelta % drive->cacheLineSize != 0) {
+			sectorDelta += drive->cacheLineSize - sectorDelta % drive->cacheLineSize;
+		}
+	}
 
-	nn_addIdleTime(C, sectorDelta * latencyPerSector);
+	// RPM over the number of sectors, over 60 seconds.
+	double latency = (double)sectorDelta * 60 / ((double)drive->rpm * maxSectors);
+	nn_addIdleTime(C, latency);
+}
+
+// 1-indexed
+static size_t nn_drive_cachelineOf(size_t sector, size_t perCache) {
+	return (sector - 1) / perCache;
 }
 
 typedef enum nn_DrvNum {
 	NN_DRVNUM_GETCAPACITY,
 	NN_DRVNUM_GETSECTORSIZE,
 	NN_DRVNUM_GETPLATTERCOUNT,
+	NN_DRVNUM_GETCACHESIZE,
 	NN_DRVNUM_ISRO,
 	NN_DRVNUM_GETLABEL,
 	NN_DRVNUM_SETLABEL,
@@ -3936,6 +3872,11 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 	dreq.ctx = ctx;
 	dreq.computer = C;
 	dreq.state = request->state;
+	dreq.drv = &state->drive;
+	nn_Exit e;
+
+	if(request->action == NN_COMP_SIGNAL) return NN_OK;
+	if(request->action == NN_COMP_CHECKMETHOD) return NN_OK;
 
 	if(request->action == NN_COMP_DROP) {
 		dreq.action = NN_DRIVE_DROP;
@@ -3943,7 +3884,87 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 		nn_free(ctx, state, sizeof(*state));
 		return NN_OK;
 	}
-	if(C) nn_setError(C, "bad call");
+	size_t ss = state->drive.sectorSize;
+	size_t cacheline = state->drive.cacheLineSize;
+	size_t cacheByteSize = cacheline * ss;
+	size_t sectorCount = state->drive.capacity / ss;
+	unsigned int method = request->methodIdx;
+	if(method == NN_DRVNUM_GETCAPACITY) {
+		request->returnCount = 1;
+		return nn_pushinteger(C, state->drive.capacity);
+	}
+	if(method == NN_DRVNUM_GETSECTORSIZE) {
+		request->returnCount = 1;
+		return nn_pushinteger(C, ss);
+	}
+	if(method == NN_DRVNUM_GETCACHESIZE) {
+		request->returnCount = 1;
+		return nn_pushinteger(C, cacheline);
+	}
+	if(method == NN_DRVNUM_ISRO) {
+		dreq.action = NN_DRIVE_ISRO;
+		e = state->handler(&dreq);
+		if(e) return e;
+		request->returnCount = 1;
+		return nn_pushbool(C, dreq.readonly);
+	}
+	if(method == NN_DRVNUM_GETLABEL) {
+		dreq.action = NN_DRIVE_GETLABEL;
+		char buf[NN_MAX_LABEL];
+		dreq.getlabel.buf = buf;
+		dreq.getlabel.len = NN_MAX_LABEL;
+		e = state->handler(&dreq);
+		if(e) return e;
+		request->returnCount = 1;
+		return nn_pushlstring(C, dreq.getlabel.buf, dreq.getlabel.len);
+	}
+	if(method == NN_DRVNUM_SETLABEL) {
+		e = nn_defaultstring(C, 0, "");
+		if(e) return e;
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DRIVE_SETLABEL;
+		dreq.setlabel.label = nn_tolstring(C, 0, &dreq.setlabel.len);
+		e = state->handler(&dreq);
+		if(e) return e;
+		request->returnCount = 1;
+		return nn_pushlstring(C, dreq.setlabel.label, dreq.setlabel.len);
+	}
+	if(method == NN_DRVNUM_READSECTOR) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		int sec = nn_tointeger(C, 0);
+		if(sec < 1 || sec > sectorCount) {
+			nn_setError(C, "sector out of bounds");
+			return NN_EBADCALL;
+		}
+		int curPos = 0;
+		dreq.action = NN_DRIVE_CURPOS;
+		e = state->handler(&dreq);
+		if(e) return e;
+		curPos = dreq.curpos;
+
+		if(nn_drive_cachelineOf(curPos, cacheline) != nn_drive_cachelineOf(sec, cacheline)) {
+			nn_drive_seekPenalty(C, curPos, sec, &state->drive);
+			nn_costComponent(C, request->compAddress, state->drive.readsPerTick);
+		}
+
+		char *sector = nn_alloc(ctx, ss);
+		if(sector == NULL) return NN_ENOMEM;
+
+		dreq.action = NN_DRIVE_READSECTOR;
+		dreq.readSector.sector = sec;
+		dreq.readSector.buf = sector;
+		e = state->handler(&dreq);
+		if(e) {
+			nn_free(ctx, sector, ss);
+			return e;
+		}
+		request->returnCount = 1;
+		e = nn_pushlstring(C, sector, ss);
+		nn_free(ctx, sector, ss);
+		return e;
+	}
+
+	if(C) nn_setError(C, "drive: not implemented yet");
 	return NN_EBADCALL;
 }
 
@@ -3954,6 +3975,7 @@ nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const n
 		[NN_DRVNUM_GETCAPACITY] = {"getCapacity", "function(): integer - Get drive capacity", NN_DIRECT},
 		[NN_DRVNUM_GETSECTORSIZE] = {"getSectorSize", "function(): integer - Get sector size", NN_DIRECT},
 		[NN_DRVNUM_GETPLATTERCOUNT] = {"getPlatterCount", "function(): integer - Get number of platters on this drive", NN_DIRECT},
+		[NN_DRVNUM_GETCACHESIZE] = {"getCacheSize", "function(): integer - Get number of sectors cached in a single read", NN_DIRECT},
 		[NN_DRVNUM_ISRO] = {"isReadOnly", "function(): boolean - Get whether the drive is read-only", NN_DIRECT},
 		[NN_DRVNUM_GETLABEL] = {"getLabel", "function(): string? - Get drive label", NN_DIRECT},
 		[NN_DRVNUM_SETLABEL] = {"setLabel", "function(label: string?): string - Set drive label", NN_INDIRECT},

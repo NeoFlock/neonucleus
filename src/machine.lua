@@ -3,6 +3,8 @@
 -- Do not use in a serious context, you will be hacked.
 -- There is no sandboxing here.
 
+os.exit = nil
+os.execute = nil
 
 local sysyieldobj = {}
 local coroutine = coroutine

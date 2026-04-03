@@ -86,9 +86,6 @@ void *_alloca(size_t);
 #define NN_MAX_STACK 256
 // the maximum size a path is allowed to have, including the NULL terminator!
 #define NN_MAX_PATH 256
-// the maximum amount of bytes which can be read from a file.
-// You are given a buffer you are meant to fill at least partially, this is simply the limit of that buffer's size.
-#define NN_MAX_READ 8192
 // the maximum size of a label
 #define NN_MAX_LABEL 256
 // maximum size of a wakeup message
@@ -641,6 +638,7 @@ const char *nn_getComponentDoc(nn_Component *c, const char *method);
 nn_MethodFlags nn_getComponentMethodFlags(nn_Component *c, const char *method);
 const char *nn_getComponentType(nn_Component *c);
 const char *nn_getComponentTypeID(nn_Component *c);
+const char *nn_getComponentAddress(nn_Component *c);
 
 // Adds a component to the computer on a given slot.
 // This will also queue a component_added signal if the computer is in a running state.
@@ -937,19 +935,7 @@ typedef nn_Exit (nn_EEPROMHandler)(nn_EEPROMRequest *request);
 // Tier 4- The best EEPROM
 extern const nn_EEPROM nn_defaultEEPROMs[4];
 
-typedef struct nn_VEEPROM {
-	const char *code;
-	size_t codelen;
-	const char *data;
-	size_t datalen;
-	const char *label;
-	size_t labellen;
-	const char *arch;
-	bool isReadonly;
-} nn_VEEPROM;
-
 nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const nn_EEPROM *eeprom, void *state, nn_EEPROMHandler *handler);
-nn_Component *nn_createVEEPROM(nn_Universe *universe, const char *address, const nn_VEEPROM *veeprom, const nn_EEPROM *eeprom);
 
 // Filesystem class
 
@@ -964,6 +950,11 @@ typedef struct nn_Filesystem {
 	// The energy cost of an actual read/write.
 	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
 	double dataEnergyCost;
+	// maximum size of a read.
+	// Do note that this entire buffer is allocated, and thus if you
+	// set it to a high number, you may get weird high allocations.
+	// This also determines read performance.
+	size_t maxReadSize;
 } nn_Filesystem;
 
 typedef enum nn_FSAction {
@@ -1095,18 +1086,22 @@ typedef struct nn_Drive {
 	// However, if it has 2 platters, it'd be seen as 1 to 4 being at the same angle as 5 to 8, which
 	// would mean only 3 rotations.
 	size_t platterCount;
+	// how many sectors are cached together.
+	// Each platter has "its own cache."
+	size_t cacheLineSize;
 	// how many reads can be issued per tick.
-	// Reading either a sector or a byte counts as 1 read.
+	// Anything that kicks out the current cacheline counts as a read.
 	size_t readsPerTick;
 	// how many writes can be issued per tick.
 	// Writing a sector counts as 1 write.
-	// Writing a byte counts as 1 read and 1 write,
+	// Writing a byte counts as 1 read (may be eaten by cache) and 1 write,
 	// you can imagine it as reading the sector, editing the byte,
 	// then writing the sector back.
 	size_t writesPerTick;
 	// Set to 0 for *infinite*, effectively an SSD.
 	// This would mean there is 0 penalty for seeking (technically unreliastic even for an SSD).
 	// This is simply used to compute idle time. It is in literal full rotations per minute.
+	// It is aligned to the cache lines.
 	size_t rpm;
 	// If false, it behaves like a normal OC drive, where the drive can spin backwards to seek.
 	// However, this is unrealistic, as doing so may crack the sensitive platter and make the
@@ -1130,8 +1125,8 @@ typedef enum nn_DriveAction {
 	NN_DRIVE_GETLABEL,
 	// set or remove current label
 	NN_DRIVE_SETLABEL,
-	// get the last read position
-	NN_DRIVE_LASTREADPOS,
+	// get the current head position, as a sector
+	NN_DRIVE_CURPOS,
 	// read a sector
 	NN_DRIVE_READSECTOR,
 	// write a sector
@@ -1140,13 +1135,15 @@ typedef enum nn_DriveAction {
 	NN_DRIVE_READBYTE,
 	// write a byte
 	NN_DRIVE_WRITEBYTE,
+	// is drive read-only
+	NN_DRIVE_ISRO,
 } nn_DriveAction;
 
 typedef struct nn_DriveRequest {
 	nn_Context *ctx;
 	nn_Computer *computer;
 	void *state;
-	const nn_Filesystem *fs;
+	const nn_Drive *drv;
 	nn_DriveAction action;
 	union {
 		struct {
@@ -1157,7 +1154,7 @@ typedef struct nn_DriveRequest {
 			const char *label;
 			size_t len;
 		} setlabel;
-		size_t lastReadPos;
+		size_t curpos;
 		struct {
 			// 1-indexed
 			size_t sector;
@@ -1178,6 +1175,7 @@ typedef struct nn_DriveRequest {
 			size_t byte;
 			unsigned char value;
 		} writeByte;
+		bool readonly;
 	};
 } nn_DriveRequest;
 

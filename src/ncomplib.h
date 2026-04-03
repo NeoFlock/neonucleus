@@ -11,9 +11,7 @@
 #define NCL_GPU "ncl-gpu"
 #define NCL_SCREEN "ncl-screen"
 
-#define NCL_TMPEEPROM "ncl-tmpeeprom"
 #define NCL_TMPFS "ncl-tmpfs"
-#define NCL_TMPDRIVE "ncl-tmpdrive"
 
 // Default file cost.
 // This is for a normal HDD/floppy.
@@ -194,34 +192,30 @@ nn_Exit ncl_loadComponentState(nn_Component *comp, const ncl_EncodedState *state
 
 size_t ncl_getLabel(nn_Component *c, char buf[NN_MAX_LABEL]);
 size_t ncl_setLabel(nn_Component *c, const char *label, size_t len);
+size_t ncl_setCLabel(nn_Component *c, const char *label);
 
 nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, const char *path, const nn_Filesystem *fs, bool isReadonly);
 
-#define NCL_VFS_NAMEMAX 32
-
 // Creates a tmpfs.
 // This component is mostly treated like a normal filesystem,
-// except you obviously cannot bind a tmpfs to it.
+// except you obviously cannot bind a vfs to it.
 // Do note, it is illegal to mix encoded state between normal filesystem
 // and tmpfs.
-nn_Component *ncl_createTmpFS(nn_Universe *universe, const nn_Filesystem *fs);
+nn_Component *ncl_createTmpFS(nn_Universe *universe, const char *address, const nn_Filesystem *fs, size_t fileCost, bool isReadonly);
 
-nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const char *path, const nn_Drive *drive, bool isReadonly);
-
-// creates a temporary drive, with some initial data
-nn_Component *ncl_createTmpDrive(nn_Universe *universe, const nn_EEPROM *eeprom, const char *data, size_t datalen);
+// this drive has its data in RAM.
+// However, the data is not encoded in its state.
+// Remember to read the entire drive and save it somewhere before dropping it.
+nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const nn_Drive *drive, const char *data, size_t len, bool isReadonly);
 
 // data is stored interally
-nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const char *path, bool isReadonly);
-// creates a temporary EEPROM, with some initial code
-// the data is stored internally
-nn_Component *ncl_createTmpEEPROM(nn_Universe *universe, const nn_EEPROM *eeprom, const char *code, size_t codelen);
+nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const nn_EEPROM *eeprom, const char *code, size_t codelen, bool isReadonly);
 
-// Gets the VFS bound to a filesystem, drive or eeprom.
+// Gets the VFS bound to a filesystem or drive.
 // Returns the default FS if the component is not recognized.
 ncl_VFS ncl_getVFS(nn_Component *component);
 
-// Sets the VFS bound to a filesystem, drive or eeprom.
+// Sets the VFS bound to a filesystem or drive.
 // This determines the filesystem the operations are run in.
 // Returns the old VFS.
 ncl_VFS ncl_setVFS(nn_Component *component, ncl_VFS vfs);
@@ -263,7 +257,6 @@ typedef struct ncl_ComponentStat {
 			const nn_EEPROM *conf;
 			size_t codeUsed;
 			size_t dataUsed;
-			const char *codepath;
 		} eeprom;
 		struct {
 			const nn_Filesystem *conf;
@@ -275,7 +268,6 @@ typedef struct ncl_ComponentStat {
 		struct {
 			const nn_Drive *conf;
 			size_t lastSector;
-			const char *path;
 		} drive;
 		struct {
 			const nn_GPU *conf;
@@ -307,6 +299,25 @@ bool ncl_makeReadonly(nn_Component *component);
 // The capacity MUST be at least the data size of the EEPROM.
 size_t ncl_getEEPROMData(nn_Component *component, char *buf);
 void ncl_setEEPROMData(nn_Component *component, const char *data, size_t len);
+
+// Returns the amount of data written.
+// The capacity MUST be at least the size of the EEPROM.
+size_t ncl_getEEPROMCode(nn_Component *component, char *buf);
+void ncl_setEEPROMCode(nn_Component *component, const char *data, size_t len);
+
+size_t ncl_getEEPROMArch(nn_Component *component, char buf[NN_MAX_ARCHNAME]);
+void ncl_setEEPROMArch(nn_Component *component, const char *arch, size_t len);
+
+// Reads part of a drive.
+// Off is 0-indexed.
+size_t ncl_readDrive(nn_Component *component, size_t offset, char *buf, size_t len);
+// Writes to part of a drive.
+// Off is 0-indexed.
+void ncl_writeDrive(nn_Component *component, size_t offset, const char *buf, size_t len);
+// Returns the internal memory buffer with the drive data,
+// and if len is not NULL, will also write the capacity.
+// This is in case you do not want to risk OOM while saving the state.
+char *ncl_getDriveBuffer(nn_Component *component, size_t *len);
 
 void ncl_lockScreen(ncl_ScreenState *state);
 void ncl_unlockScreen(ncl_ScreenState *state);

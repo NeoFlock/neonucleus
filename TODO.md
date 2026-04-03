@@ -1,10 +1,8 @@
 # For MVP functionality
 
-- `gpu`, `screen` class implementations
 - write a tester OS, basically a menu with tests to run
-- move veeprom into NCL as tmpeeprom
 - tmpdrive
-- tmpfs
+- tmpfs (reork the whole thing)
 - device info
 - userdata support
 
@@ -53,6 +51,7 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 - `serial` component, for serial communications with other devices (USB?)
 - `iron_noteblock` component
 - `colorful_lamp` component
+- OpenSolidState flash storage
 
 # To make it good
 
@@ -67,3 +66,9 @@ NOTE: we're mostly bottlenecked by the architecture (typically a Lua VM) and the
 
 - make signals use a circular buffer instead of a simple array
 - use more arenas if possible
+
+# Drive costs
+
+The drive has platters just like in OC, as well as a cache line.
+The read cost is only factored in if `cachelineOf(lastSector) != cachelineOf(newSector)`.
+Seek cost is also in whole cache lines.

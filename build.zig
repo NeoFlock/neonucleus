@@ -195,6 +195,7 @@ pub fn build(b: *std.Build) !void {
             .files = &.{
                 "src/luaarch.c",
                 "src/main.c",
+                "src/glyphcache.c",
             },
             .flags = &.{
                 if (opts.baremetal) "-DNN_BAREMETAL" else "",

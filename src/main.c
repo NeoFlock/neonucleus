@@ -5,12 +5,12 @@
 
 #include "neonucleus.h"
 #include "ncomplib.h"
+#include "glyphcache.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <raylib.h>
-#include <errno.h>
 
 #ifdef NN_WINDOWS
 #include <setjmp.h>
@@ -364,31 +364,44 @@ int main(int argc, char **argv) {
 		{"log", "log(msg: string) - Log to stdout", NN_DIRECT},
 		{NULL},
 	};
-	nn_Component *ocelotCard = nn_createComponent(u, "ocelot", "ocelot");
+	nn_Component *ocelotCard = nn_createComponent(u, NULL, "ocelot");
 	nn_setComponentMethods(ocelotCard, sandboxMethods);
 	nn_setComponentHandler(ocelotCard, sandbox_handler);
 
-	const nn_VEEPROM veeprom = {
-		.code = minBIOS,
-		.codelen = strlen(minBIOS),
-		.data = NULL,
-		.datalen = 0,
-		.label = NULL,
-		.labellen = 0,
-		.arch = NULL,
-		.isReadonly = false,
-	};
+	nn_Component *eepromCard = ncl_createEEPROM(u, NULL, &nn_defaultEEPROMs[3], minBIOS, strlen(minBIOS), false);
 
-	nn_Component *eepromCard = nn_createVEEPROM(u, "eeprom", &veeprom, &nn_defaultEEPROMs[3]);
+	char mainfspath[NN_MAX_PATH];
+	snprintf(mainfspath, NN_MAX_PATH, "data/%s", mainDir);
+	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &nn_defaultFilesystems[3], true);
+	nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
+	nn_Component *testingfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
 
-	nn_Component *managedfs = ncl_createFilesystem(u, "mainFS", "data/openos", &nn_defaultFilesystems[3], true);
+	const char * const testDriveData = 
+		"local g, s, d = component.list('gpu')(), component.list('screen')(), component.list('drive')()\n"
+		"component.invoke(g, 'bind', s, true)\n"
+		"component.invoke(g, 'set', 1, 1, 'starting...')\n"
+		"local start = computer.uptime()\n"
+		"local bc = component.invoke(d, 'getCapacity') / component.invoke(d, 'getSectorSize')\n"
+		"for i=1,bc do component.invoke(d, 'readSector', i) end\n"
+		"local now = computer.uptime()\n"
+		"component.invoke(g, 'set', 1, 2, 'took ' .. (now - start) .. 's')\n"
+		"while computer.uptime() < now + 3 do computer.pullSignal(0.05) end\n"
+		"computer.shutdown(true)\n"
+	;
+	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_floppyDrive, testDriveData, strlen(testDriveData), false);
+
+	ncl_setCLabel(managedfs, "Main Filesystem");
+	ncl_setCLabel(testingfs, "Secondary Filesystem");
+	ncl_setCLabel(testDrive, "Unmanaged Storage");
 
 	size_t ramTotal = 0;
 	ramTotal += nn_ramSizes[5];
 	
 	SetExitKey(KEY_NULL);
 
-	Font font = LoadFont("unscii-16-full.ttf");
+	const char *fontPath = getenv("NN_FONT");
+	if(fontPath == NULL) fontPath = "unscii-16-full.ttf";
+	ncl_GlyphCache *gc = ncl_createGlyphCache(fontPath, 20);
 	double tickDelay = 0.05;
 
 	if(getenv("NN_TICKDELAY") != NULL) {
@@ -404,7 +417,7 @@ int main(int argc, char **argv) {
 	double wattage = 0;
 
 	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
-	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[2]);
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
@@ -420,7 +433,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-
 restart:;
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
 	if(showStats) {
@@ -434,12 +446,17 @@ restart:;
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);
 
+	//nn_setTmpAddress(c, nn_getComponentAddress(tmpfs));
+
 	nn_mountComponent(c, screen, -1);
 	nn_mountComponent(c, ocelotCard, -1);
+	//nn_mountComponent(c, tmpfs, -1);
+    nn_mountComponent(c, keyboard, -1);
 	nn_mountComponent(c, eepromCard, 0);
 	nn_mountComponent(c, managedfs, 1);
 	nn_mountComponent(c, gpuCard, 2);
-    nn_mountComponent(c, keyboard, -1);
+	nn_mountComponent(c, testingfs, 3);
+	nn_mountComponent(c, testDrive, 4);
 	while(true) {
 		if(WindowShouldClose()) break;
 
@@ -448,15 +465,20 @@ restart:;
 
 		// drawing the screen
 		{
-			int offX = 0;
-			int offY = 0;
-			int cheight = 20;
-			int cwidth = MeasureText("A", cheight);
-
 			ncl_ScreenState *scrbuf = nn_getComponentState(screen);
 			ncl_lockScreen(scrbuf);
 			size_t scrw, scrh;
-			ncl_getScreenResolution(scrbuf, &scrw, &scrh);
+			ncl_getScreenViewport(scrbuf, &scrw, &scrh);
+
+			int cheight = GetScreenHeight() / scrh;
+			if(cheight != ncl_cellHeight(gc)) {
+				ncl_destroyGlyphCache(gc);
+				gc = ncl_createGlyphCache(fontPath, cheight);
+			}
+			int cwidth = ncl_cellWidth(gc);
+			int offX = (GetScreenWidth() - cwidth * scrw) / 2;
+			int offY = (GetScreenHeight() - cheight * scrh) / 2;
+
 			for(int y = 1; y <= scrh; y++) {
 				for(int x = 1; x <= scrw; x++) {
 					ncl_Pixel p = ncl_getScreenPixel(scrbuf, x, y);
@@ -464,11 +486,16 @@ restart:;
 						offX + (x - 1) * cwidth,
 						offY + (y - 1) * cheight,
 					};
+					ncl_needGlyph(gc, p.codepoint);
 					DrawRectangle(pos.x, pos.y, cwidth, cheight, ne_processColor(p.bgColor));
-					DrawTextCodepoint(font, p.codepoint, pos, cheight, ne_processColor(p.fgColor));
+					if(p.codepoint != 0) {
+						ncl_drawGlyph(gc, p.codepoint, pos, cheight, ne_processColor(p.fgColor));
+					}
 				}
 			}
+			DrawRectangleLines(offX, offY, cwidth * scrw, cheight * scrh, WHITE);
 			ncl_unlockScreen(scrbuf);
+			ncl_flushGlyphs(gc);
 		}
 
 		int statY = 10;
@@ -492,7 +519,8 @@ restart:;
 
 		// 1: clipboard
 		if(IsMouseButtonPressed(MOUSE_BUTTON_MIDDLE)) {
-			nn_pushClipboard(c, "mainKB", GetClipboardText(), player);
+			const char *t = GetClipboardText();
+			if(t != NULL) nn_pushClipboard(c, "mainKB", t, player);
 		}
 
 		while(1) {
@@ -571,12 +599,15 @@ cleanup:;
 	nn_dropComponent(ocelotCard);
 	nn_dropComponent(eepromCard);
 	nn_dropComponent(managedfs);
+	nn_dropComponent(tmpfs);
+	nn_dropComponent(testingfs);
+    nn_dropComponent(testDrive);
 	nn_dropComponent(screen);
 	nn_dropComponent(gpuCard);
     nn_dropComponent(keyboard);
 	// rip the universe
 	nn_destroyUniverse(u);
-	UnloadFont(font);
+	ncl_destroyGlyphCache(gc);
 	CloseWindow();
 	free(sand.buf);
 	return 0;
