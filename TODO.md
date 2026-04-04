@@ -1,5 +1,6 @@
 # For MVP functionality
 
+- implement the RAID merger algorithm (merges multiple drives or filesystems together into a bigger config)
 - write a tester OS, basically a menu with tests to run
 - tmpdrive
 - tmpfs (reork the whole thing)
