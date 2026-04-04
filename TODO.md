@@ -66,9 +66,3 @@ NOTE: we're mostly bottlenecked by the architecture (typically a Lua VM) and the
 
 - make signals use a circular buffer instead of a simple array
 - use more arenas if possible
-
-# Drive costs
-
-The drive has platters just like in OC, as well as a cache line.
-The read cost is only factored in if `cachelineOf(lastSector) != cachelineOf(newSector)`.
-Seek cost is also in whole cache lines.

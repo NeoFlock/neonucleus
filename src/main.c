@@ -382,7 +382,8 @@ int main(int argc, char **argv) {
 		"component.invoke(g, 'set', 1, 1, 'starting sequential bench...')\n"
 		"local start = computer.uptime()\n"
 		"local cap = component.invoke(d, 'getCapacity')\n"
-		"local bc = component.invoke(d, 'getCapacity') / component.invoke(d, 'getSectorSize')\n"
+		"local ss = component.invoke(d, 'getSectorSize')\n"
+		"local bc = cap / ss\n"
 		"for i=1,bc do component.invoke(d, 'readSector', i) end\n"
 		"local now = computer.uptime()\n"
 		"component.invoke(g, 'set', 1, 2, 'took ' .. (now - start) .. 's')\n"
@@ -391,15 +392,15 @@ int main(int argc, char **argv) {
 		"component.invoke(g, 'bind', s, true)\n"
 		"component.invoke(g, 'set', 1, 1, 'starting random bench...')\n"
 		"start = computer.uptime()\n"
-		"local shortcut = 4\n"
-		"for i=1,bc/shortcut do local i = math.random(1, bc) component.invoke(d, 'readSector', i) end\n"
+		"local rand = 256\n"
+		"for i=1,rand do local i = math.random(1, bc) component.invoke(d, 'readSector', i) end\n"
 		"now = computer.uptime()\n"
 		"component.invoke(g, 'set', 1, 2, 'took ' .. (now - start) .. 's')\n"
-		"component.invoke(g, 'set', 1, 3, 'random read speed: ' .. (cap / shortcut / (now - start)) .. 'B/s')\n"
+		"component.invoke(g, 'set', 1, 3, 'random read speed: ' .. (rand * ss / (now - start)) .. 'B/s')\n"
 		"while computer.uptime() < now + 3 do computer.pullSignal(0.05) end\n"
 		"computer.shutdown(true)\n"
 	;
-	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_floppyDrive, testDriveData, strlen(testDriveData), false);
+	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_defaultSSDs[3], testDriveData, strlen(testDriveData), false);
 
 	ncl_setCLabel(managedfs, "Main Filesystem");
 	ncl_setCLabel(testingfs, "Secondary Filesystem");
@@ -450,6 +451,7 @@ restart:;
 		// collects stats
 		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
 	}
+	nn_setCallBudget(c, 0);
 
 	// default for 64-bit
 	if(sizeof(void *) > 4) nn_setMemoryScale(c, 1.8);

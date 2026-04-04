@@ -2423,7 +2423,7 @@ const nn_Filesystem nn_defaultTmpFS = NN_INIT(nn_Filesystem) {
 	.spaceTotal = 64 * NN_KiB,
 	.readsPerTick = 1024,
 	.writesPerTick = 512,
-	.dataEnergyCost = 512.0 / NN_MiB,
+	.dataEnergyCost = 0.1 / NN_MiB,
 };
 
 const nn_Drive nn_defaultDrives[4] = {
@@ -2436,7 +2436,7 @@ const nn_Drive nn_defaultDrives[4] = {
 		.writesPerTick = 10,
 		.rpm = 3600,
 		.onlySpinForwards = false,
-		.dataEnergyCost = 256.0 / NN_MiB,
+		.dataEnergyCost = 4.0 / NN_MiB,
 	},
 	NN_INIT(nn_Drive) {
 		.capacity = 2 * NN_MiB,
@@ -2447,29 +2447,29 @@ const nn_Drive nn_defaultDrives[4] = {
 		.writesPerTick = 15,
 		.rpm = 5400,
 		.onlySpinForwards = false,
-		.dataEnergyCost = 512.0 / NN_MiB,
+		.dataEnergyCost = 8.0 / NN_MiB,
 	},
 	NN_INIT(nn_Drive) {
 		.capacity = 4 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 8,
-		.cacheLineSize = 4,
+		.cacheLineSize = 8,
 		.readsPerTick = 40,
 		.writesPerTick = 20,
 		.rpm = 7200,
 		.onlySpinForwards = false,
-		.dataEnergyCost = 1024.0 / NN_MiB,
+		.dataEnergyCost = 16.0 / NN_MiB,
 	},
 	NN_INIT(nn_Drive) {
 		.capacity = 8 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 16,
-		.cacheLineSize = 8,
+		.cacheLineSize = 16,
 		.readsPerTick = 60,
 		.writesPerTick = 30,
 		.rpm = 7200,
 		.onlySpinForwards = false,
-		.dataEnergyCost = 2048.0 / NN_MiB,
+		.dataEnergyCost = 32.0 / NN_MiB,
 	},
 };
 
@@ -2482,9 +2482,67 @@ const nn_Drive nn_floppyDrive = {
 	.writesPerTick = 5,
 	.rpm = 1800,
 	.onlySpinForwards = true,
-	.dataEnergyCost = 128.0 / NN_MiB,
+	.dataEnergyCost = 1.0 / NN_MiB,
 };
 
+const nn_Drive nn_defaultSSDs[4] = {
+	NN_INIT(nn_Drive) {
+		.capacity = 512 * NN_KiB,
+		.sectorSize = 512,
+		.platterCount = 2,
+		.cacheLineSize = 2,
+		.readsPerTick = 20,
+		.writesPerTick = 10,
+		.rpm = 0,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 64.0 / NN_MiB,
+	},
+	NN_INIT(nn_Drive) {
+		.capacity = 1 * NN_MiB,
+		.sectorSize = 512,
+		.platterCount = 4,
+		.cacheLineSize = 4,
+		.readsPerTick = 30,
+		.writesPerTick = 15,
+		.rpm = 0,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 128.0 / NN_MiB,
+	},
+	NN_INIT(nn_Drive) {
+		.capacity = 2 * NN_MiB,
+		.sectorSize = 512,
+		.platterCount = 8,
+		.cacheLineSize = 8,
+		.readsPerTick = 40,
+		.writesPerTick = 20,
+		.rpm = 0,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 256.0 / NN_MiB,
+	},
+	NN_INIT(nn_Drive) {
+		.capacity = 4 * NN_MiB,
+		.sectorSize = 512,
+		.platterCount = 16,
+		.cacheLineSize = 16,
+		.readsPerTick = 60,
+		.writesPerTick = 30,
+		.rpm = 0,
+		.onlySpinForwards = false,
+		.dataEnergyCost = 512.0 / NN_MiB,
+	},
+};
+
+const nn_Drive nn_floppySSD = {
+	.capacity = 256 * NN_KiB,
+	.sectorSize = 512,
+	.platterCount = 1,
+	.cacheLineSize = 2,
+	.readsPerTick = 10,
+	.writesPerTick = 5,
+	.rpm = 0,
+	.onlySpinForwards = true,
+	.dataEnergyCost = 16.0 / NN_MiB,
+};
 
 const nn_ScreenConfig nn_defaultScreens[4] = {
 	NN_INIT(nn_ScreenConfig) {
@@ -2667,7 +2725,7 @@ static void nn_splitColor(int color, double *r, double *g, double *b) {
 	*b = (double)_b / 255;
 }
 
-static double nn_colorLuminance(int color) {
+double nn_colorLuminance(int color) {
 	double r, g, b;
 	nn_splitColor(color, &r, &g, &b);
 	// taken from https://stackoverflow.com/questions/687261/converting-rgb-to-grayscale-intensity
@@ -3945,6 +4003,7 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 		if(nn_drive_cachelineOf(curPos, cacheline) != nn_drive_cachelineOf(sec, cacheline)) {
 			nn_drive_seekPenalty(C, curPos, sec, &state->drive);
 			nn_costComponent(C, request->compAddress, state->drive.readsPerTick);
+			nn_removeEnergy(C, state->drive.dataEnergyCost * cacheline * ss);
 		}
 
 		char *sector = nn_alloc(ctx, ss);

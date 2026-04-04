@@ -1118,6 +1118,9 @@ typedef struct nn_Drive {
 extern const nn_Drive nn_defaultDrives[4];
 extern const nn_Drive nn_floppyDrive;
 
+extern const nn_Drive nn_defaultSSDs[4];
+extern const nn_Drive nn_floppySSD;
+
 typedef enum nn_DriveAction {
 	// drive gone
 	NN_DRIVE_DROP,
@@ -1449,6 +1452,8 @@ extern int nn_ocpalette8[256];
 // initializes the contents of the palettes.
 void nn_initPalettes();
 
+// Returns a number from 0 to 1 representing the perceived luminance.
+double nn_colorLuminance(int color);
 // Expensive.
 // Maps a color to the closest match in a palette.
 int nn_mapColor(int color, int *palette, size_t len);
