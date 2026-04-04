@@ -266,6 +266,23 @@ void nn_memset(void *dest, int x, size_t len) {
 	for(size_t i = 0; i < len; i++) out[i] = (char)x;
 }
 
+void nn_memreverse(void *dest, size_t len) {
+	size_t mid = len/2;
+	char *bytes = (char *)dest;
+	for(size_t i = 0; i < mid; i++) {
+		size_t j = len - i - 1;
+		char tmp = bytes[i];
+		bytes[i] = bytes[j];
+		bytes[j] = tmp;
+	}
+}
+
+bool nn_isLittleEndian() {
+	union {char c; size_t x;} test;
+	test.x = 1;
+	return test.c == 1;
+}
+
 // taken from https://wiki.osdev.org/CRC32
 // OSDev wiki is really useful sometimes
 // TODO: maybe allow one that uses compiler intrinsics
@@ -911,10 +928,13 @@ static const nn_HashContext nn_methodHasher = {
 	.handler = (nn_HashHandler *)nn_methodHash,
 };
 
-// currently just a wrapper around a context
-// but will be way more in the future
 typedef struct nn_Universe {
 	nn_Context ctx;
+	void *userdata;
+	// 0 for unbounded
+	size_t memoryLimit;
+	// 0 for unbounded
+	size_t storageLimit;
 } nn_Universe;
 
 typedef struct nn_ComponentEntry {
@@ -1030,16 +1050,51 @@ typedef struct nn_Computer {
 	char *users[NN_MAX_USERS];
 } nn_Computer;
 
-nn_Universe *nn_createUniverse(nn_Context *ctx) {
+nn_Universe *nn_createUniverse(nn_Context *ctx, void *userdata) {
 	nn_Universe *u = nn_alloc(ctx, sizeof(nn_Universe));
 	if(u == NULL) return NULL;
 	u->ctx = *ctx;
+	u->userdata = userdata;
+	u->memoryLimit = 0;
+	u->storageLimit = 0;
 	return u;
 }
 
 void nn_destroyUniverse(nn_Universe *universe) {
 	nn_Context ctx = universe->ctx;
 	nn_free(&ctx, universe, sizeof(nn_Universe));
+}
+
+void *nn_getUniverseData(nn_Universe *universe) {
+	return universe->userdata;
+}
+
+size_t nn_getUniverseMemoryLimit(nn_Universe *universe) {
+	return universe->memoryLimit;
+}
+
+void nn_setUniverseMemoryLimit(nn_Universe *universe, size_t limit) {
+	universe->memoryLimit = limit;
+}
+
+size_t nn_limitMemory(nn_Universe *universe, size_t memory) {
+	if(universe->memoryLimit == 0) return memory;
+	if(memory > universe->memoryLimit) memory = universe->memoryLimit;
+	return memory;
+}
+
+size_t nn_getUniverseStorageLimit(nn_Universe *universe) {
+	return universe->storageLimit;
+}
+
+void nn_setUniverseStorageLimit(nn_Universe *universe, size_t limit) {
+	universe->storageLimit = limit;
+}
+
+size_t nn_limitStorage(nn_Universe *universe, size_t storage) {
+	if(universe->memoryLimit == 0) return storage;
+	if(storage > universe->memoryLimit) storage = universe->storageLimit;
+	return storage;
 }
 
 double nn_default_energyHandler(void *state, nn_Computer *computer, double amount) {
@@ -1061,6 +1116,8 @@ size_t nn_ramSizes[8] = {
 
 nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char *address, size_t totalMemory, size_t maxComponents, size_t maxDevices) {
 	nn_Context *ctx = &universe->ctx;
+
+	totalMemory = nn_limitMemory(universe, totalMemory);
 
 	nn_Computer *c = nn_alloc(ctx, sizeof(nn_Computer));
 	if(c == NULL) return NULL;
@@ -2491,8 +2548,8 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.sectorSize = 512,
 		.platterCount = 2,
 		.cacheLineSize = 2,
-		.readsPerTick = 20,
-		.writesPerTick = 10,
+		.readsPerTick = 10,
+		.writesPerTick = 5,
 		.rpm = 0,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 64.0 / NN_MiB,
@@ -2502,8 +2559,8 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.sectorSize = 512,
 		.platterCount = 4,
 		.cacheLineSize = 4,
-		.readsPerTick = 30,
-		.writesPerTick = 15,
+		.readsPerTick = 15,
+		.writesPerTick = 7,
 		.rpm = 0,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 128.0 / NN_MiB,
@@ -2513,8 +2570,8 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.sectorSize = 512,
 		.platterCount = 8,
 		.cacheLineSize = 8,
-		.readsPerTick = 40,
-		.writesPerTick = 20,
+		.readsPerTick = 20,
+		.writesPerTick = 10,
 		.rpm = 0,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 256.0 / NN_MiB,
@@ -2524,8 +2581,8 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.sectorSize = 512,
 		.platterCount = 16,
 		.cacheLineSize = 16,
-		.readsPerTick = 60,
-		.writesPerTick = 30,
+		.readsPerTick = 30,
+		.writesPerTick = 15,
 		.rpm = 0,
 		.onlySpinForwards = false,
 		.dataEnergyCost = 512.0 / NN_MiB,
@@ -2537,8 +2594,8 @@ const nn_Drive nn_floppySSD = {
 	.sectorSize = 512,
 	.platterCount = 1,
 	.cacheLineSize = 2,
-	.readsPerTick = 10,
-	.writesPerTick = 5,
+	.readsPerTick = 5,
+	.writesPerTick = 2,
 	.rpm = 0,
 	.onlySpinForwards = true,
 	.dataEnergyCost = 16.0 / NN_MiB,
@@ -2553,6 +2610,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.paletteColors = 0,
 		.editableColors = 0,
 		.features = NN_SCRF_NONE,
+		.energyPerPixel = 0.05,
 	},
 	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 80,
@@ -2562,6 +2620,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.paletteColors = 16,
 		.editableColors = 0,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED,
+		.energyPerPixel = 0.05,
 	},
 	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 160,
@@ -2571,6 +2630,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.paletteColors = 256,
 		.editableColors = 16,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE | NN_SCRF_EDITABLECOLORS,
+		.energyPerPixel = 0.05,
 	},
 	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 240,
@@ -2580,6 +2640,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.paletteColors = 256,
 		.editableColors = 256,
 		.features = NN_SCRF_NONE | NN_SCRF_EDITABLECOLORS,
+		.energyPerPixel = 0.05,
 	},
 };
 
@@ -3280,6 +3341,117 @@ nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, co
 	return nn_pushSignal(computer, 3);
 }
 
+nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddress, int side, int oldValue, int newValue, int color);
+
+nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName);
+
+typedef enum nn_NetworkValueTag {
+	NN_NETVAL_NULL = 0x00,
+	NN_NETVAL_TRUE = 0x01,
+	NN_NETVAL_FALSE = 0x02,
+	NN_NETVAL_NUM = 0x03,
+	NN_NETVAL_STR = 0x04,
+	NN_NETVAL_RESOURCE = 0x05,
+	NN_NETVAL_TABLE = 0x06,
+} nn_NetworkValueTag;
+
+static size_t nn_sizeOfNetworkValue(nn_Value val);
+
+static size_t nn_sizeOfNetworkContents(nn_Value *vals, size_t len) {
+	size_t s = 0;
+	for(size_t i = 0; i < len; i++) s += nn_sizeOfNetworkValue(vals[i]);
+	return s;
+}
+
+static size_t nn_sizeOfNetworkValue(nn_Value val) {
+	// 1-byte tag, + value-dependant encoding
+	size_t n = 1;
+	switch(val.type) {
+	case NN_VAL_NULL:
+	case NN_VAL_BOOL:
+		break;
+	case NN_VAL_NUM:
+		n += sizeof(double);
+		break;
+	case NN_VAL_STR:
+		n += sizeof(size_t) + val.string->len;
+		break;
+	case NN_VAL_USERDATA:
+		n += sizeof(size_t);
+		break;
+	case NN_VAL_TABLE:
+		n += sizeof(size_t) + nn_sizeOfNetworkContents(val.table->vals, val.table->len);
+		break;
+	}
+	return n;
+}
+
+static size_t nn_encodeNetworkValue(nn_Value val, char *buf) {
+	size_t n = 0;
+	switch(val.type) {
+	case NN_VAL_NULL:
+		*buf = NN_NETVAL_NULL;
+		return 1;
+	case NN_VAL_BOOL:
+		*buf = val.boolean ? NN_NETVAL_TRUE : NN_NETVAL_FALSE;
+		return 1;
+	case NN_VAL_NUM:
+		*buf = NN_NETVAL_NUM;
+		nn_memcpy(buf + 1, &val.number, sizeof(double));
+		return 1 + sizeof(double);
+	case NN_VAL_STR:
+		*buf = NN_NETVAL_STR;
+		nn_memcpy(buf + 1, &val.string->len, sizeof(size_t));
+		nn_memcpy(buf + 1 + sizeof(size_t), val.string->data, val.string->len);
+		return 1 + sizeof(size_t) + val.string->len;
+	case NN_VAL_USERDATA:
+		*buf = NN_NETVAL_RESOURCE;
+		nn_memcpy(buf + 1, &val.userdataIdx, sizeof(size_t));
+		return 1 + sizeof(size_t);
+	case NN_VAL_TABLE:
+		*buf = NN_NETVAL_TABLE;
+		n = 1;
+		nn_memcpy(buf + n, &val.table->len, sizeof(size_t));
+		n += sizeof(size_t);
+		for(size_t i = 0; i < val.table->len; i++) {
+			n += nn_encodeNetworkValue(val.table->vals[i], buf + n);
+		}
+		return n;
+	}
+	*buf = NN_NETVAL_NULL;
+	return 1;
+}
+
+nn_Exit nn_encodeNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents, size_t valueCount) {
+	if(computer->stackSize < valueCount) return NN_EBELOWSTACK;
+	nn_Value *vals = computer->callstack + computer->stackSize - valueCount;
+	size_t len = nn_sizeOfNetworkContents(vals, valueCount);
+
+	contents->ctx = &computer->universe->ctx;
+	contents->valueCount = valueCount;
+	contents->buflen = len;
+	contents->buf = nn_alloc(contents->ctx, len);
+	if(contents->buf == NULL) return NN_ENOMEM;
+	nn_memset(contents->buf, 0, len);
+
+	size_t n = 0;
+	for(size_t i = 0; i < valueCount; i++) {
+		n += nn_encodeNetworkValue(vals[i], contents->buf + n);
+	}
+
+	return NN_OK;
+}
+
+nn_Exit nn_copyNetworkContents(nn_Context *ctx, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount);
+
+void nn_dropNetworkContents(nn_EncodedNetworkContents *contents) {
+	nn_free(contents->ctx, contents->buf, contents->buflen);
+}
+
+nn_Exit nn_pushNetworkContents(nn_Computer *computer, const nn_EncodedNetworkContents *contents);
+
+nn_Exit nn_pushModemMessage(nn_Computer *computer, const char *modemAddress, const char *sender, int port, double distance, const nn_EncodedNetworkContents *contents);
+
 typedef enum nn_EENum {
 	NN_EENUM_GETSIZE,
 	NN_EENUM_GETDATASIZE,
@@ -3860,6 +4032,22 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 	return c;
 }
 
+bool nn_mergeFilesystems(nn_Filesystem *merged, const nn_Filesystem *fs, size_t len) {
+	if(len == 0) return false;
+	*merged = fs[0];
+	for(size_t i = 1; i < len; i++) {
+		merged->readsPerTick += fs[i].readsPerTick;
+		merged->writesPerTick += fs[i].writesPerTick;
+		if(merged->maxReadSize < fs[i].maxReadSize) merged->maxReadSize = fs[i].maxReadSize;
+		merged->dataEnergyCost += fs[i].dataEnergyCost;
+		merged->spaceTotal += fs[i].spaceTotal;
+	}
+	merged->readsPerTick /= len;
+	merged->writesPerTick /= len;
+	merged->dataEnergyCost /= len;
+	return true;
+}
+
 static void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSector, const nn_Drive *drive) {
 	// Check if SSD
 	if(drive->rpm == 0) return;
@@ -4062,6 +4250,36 @@ nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const n
 	nn_setComponentClassState(c, drvstate);
 	nn_setComponentHandler(c, nn_drvHandler);
 	return c;
+}
+
+bool nn_mergeDrives(nn_Drive *merged, const nn_Drive *drives, size_t len) {
+	if(len == 0) return false;
+	*merged = drives[0];
+	for(size_t i = 1; i < len; i++) {
+		nn_Drive d = drives[i];
+		// invalid SSD/HDD combo
+		if(d.rpm == 0 && merged->rpm != 0) return false;
+		if(d.rpm != 0 && merged->rpm == 0) return false;
+		// conflicting sector sizes
+		if(d.sectorSize != merged->sectorSize) return false;
+		if(d.rpm != 0) {
+			if(d.onlySpinForwards && !merged->onlySpinForwards) return false;
+			if(!d.onlySpinForwards && merged->onlySpinForwards) return false;
+		}
+
+		merged->readsPerTick += d.readsPerTick;
+		merged->writesPerTick += d.writesPerTick;
+		merged->dataEnergyCost += d.dataEnergyCost;
+		merged->rpm += d.rpm;
+		merged->capacity += d.capacity;
+		merged->cacheLineSize += d.cacheLineSize;
+		merged->platterCount += d.platterCount;
+	}
+	merged->readsPerTick /= len;
+	merged->writesPerTick /= len;
+	merged->dataEnergyCost /= len;
+	merged->rpm /= len;
+	return true;
 }
 
 typedef enum nn_ScreenNum {
@@ -4656,14 +4874,16 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         g.copy.h  = nn_tointeger(C, 3);
         g.copy.tx = nn_tointeger(C, 4);
         g.copy.ty = nn_tointeger(C, 5);
+		// prevent issues
+		if(g.copy.w < 0) g.copy.w = 0;
+		if(g.copy.w > g.gpu->maxWidth) g.copy.w = g.gpu->maxWidth;
+		if(g.copy.h < 0) g.copy.h = 0;
+		if(g.copy.h > g.gpu->maxHeight) g.copy.h = g.gpu->maxHeight;
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
 		nn_costComponent(C, req->compAddress, cls->gpu.copyPerTick);
-		// prevent issues
-		if(g.copy.tx < 1) g.copy.tx = 1;
-		if(g.copy.ty < 1) g.copy.ty = 1;
-		nn_removeEnergy(C, cls->gpu.energyPerWrite * g.copy.tx * g.copy.ty);
+		nn_removeEnergy(C, cls->gpu.energyPerWrite * g.copy.w  * g.copy.h);
         return nn_pushbool(C, true);
     }
     //  fill 
@@ -4681,15 +4901,17 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         g.fill.y = nn_tointeger(C, 1);
         g.fill.w = nn_tointeger(C, 2);
         g.fill.h = nn_tointeger(C, 3);
+		// prevent issues
+		if(g.fill.w < 0) g.fill.w = 0;
+		if(g.fill.w > g.gpu->maxWidth) g.fill.w = g.gpu->maxWidth;
+		if(g.fill.h < 0) g.fill.h = 0;
+		if(g.fill.h > g.gpu->maxHeight) g.fill.h = g.gpu->maxHeight;
         g.fill.codepoint = nn_unicode_firstCodepoint(
             nn_tostring(C, 4));
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
 		nn_costComponent(C, req->compAddress, cls->gpu.fillPerTick);
-		// prevent issues
-		if(g.fill.w < 1) g.fill.w = 1;
-		if(g.fill.h < 1) g.fill.h = 1;
 		nn_removeEnergy(C, (g.fill.codepoint == ' ' ? cls->gpu.energyPerClear : cls->gpu.energyPerWrite) * g.fill.w * g.fill.h);
         return nn_pushbool(C, true);
     }
@@ -4798,6 +5020,15 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         g.bitblt.src     = nn_tointeger(C, 5);
         g.bitblt.fromCol = nn_tointeger(C, 6);
         g.bitblt.fromRow = nn_tointeger(C, 7);
+		if(g.bitblt.w < 0) g.copy.w = 0;
+		if(g.bitblt.w > g.gpu->maxWidth) g.bitblt.w = g.gpu->maxWidth;
+		if(g.bitblt.h < 0) g.copy.h = 0;
+		if(g.bitblt.h > g.gpu->maxHeight) g.bitblt.h = g.gpu->maxHeight;
+		if(g.bitblt.dst == 0 || g.bitblt.src == 0) {
+			// taxed as a copy
+			nn_costComponent(C, req->compAddress, g.gpu->copyPerTick);
+			nn_removeEnergy(C, g.gpu->energyPerWrite * g.bitblt.w * g.bitblt.h);
+		}
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;

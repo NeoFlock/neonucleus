@@ -77,7 +77,6 @@ void *_alloca(size_t);
 #define NN_KiB (1024)
 #define NN_MiB (1024 * NN_KiB)
 #define NN_GiB (1024 * NN_MiB)
-// probably recursive: #define NN_TiB (1024 * NN_TiB)
 #define NN_TiB ((size_t)1024 * NN_GiB)
 
 // the alignment an allocation should have
@@ -309,8 +308,15 @@ typedef enum nn_Exit {
 // This stores necessary data between computers
 typedef struct nn_Universe nn_Universe;
 
-nn_Universe *nn_createUniverse(nn_Context *ctx);
+nn_Universe *nn_createUniverse(nn_Context *ctx, void *userdata);
 void nn_destroyUniverse(nn_Universe *universe);
+void *nn_getUniverseData(nn_Universe *universe);
+size_t nn_getUniverseMemoryLimit(nn_Universe *universe);
+size_t nn_limitMemory(nn_Universe *universe, size_t memory);
+void nn_setUniverseMemoryLimit(nn_Universe *universe, size_t limit);
+size_t nn_getUniverseStorageLimit(nn_Universe *universe);
+void nn_setUniverseStorageLimit(nn_Universe *universe, size_t limit);
+size_t nn_limitStorage(nn_Universe *universe, size_t storage);
 
 // The actual computer
 typedef struct nn_Computer nn_Computer;
@@ -1071,6 +1077,8 @@ extern const nn_Filesystem nn_defaultTmpFS;
 
 nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, const nn_Filesystem *fs, void *state, nn_FSHandler *handler);
 
+bool nn_mergeFilesystems(nn_Filesystem *merged, const nn_Filesystem *fs, size_t len);
+
 // Drive class
 
 typedef struct nn_Drive {
@@ -1186,6 +1194,8 @@ typedef nn_Exit (nn_DriveHandler)(nn_DriveRequest *request);
 
 nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const nn_Drive *drive, void *state, nn_DriveHandler *handler);
 
+bool nn_mergeDrives(nn_Drive *merged, const nn_Drive *drives, size_t len);
+
 // Screen class
 
 typedef enum nn_ScreenFeatures {
@@ -1226,6 +1236,10 @@ typedef struct nn_ScreenConfig {
 	int editableColors;
 	// the maximum depth of the screen
 	char maxDepth;
+	// energy per fully white pixel.
+	// Scaled to mathc luminance of each pixel.
+	// This is meant to be per Minecraft tick, so 20 times per second.
+	double energyPerPixel;
 } nn_ScreenConfig;
 
 // OC has 3 tiers, NN adds a 4th one as well.
@@ -1694,12 +1708,21 @@ typedef struct nn_EncodedNetworkContents {
 // an encoding anyways.
 // This only encodes the contents, not the sender, hops, or other metadata which may be needed in the queue.
 // This does not pop the values, in case you need them afterwards. If you don't just call nn_popn().
-// The encoding is universal, so it is perfectly fine to store on-disk.
+// The encoding is architecture-dependent, so be careful with storing it on-disk.
+// Do note that the architecture-dependent parts are sizeof(double), sizeof(size_t) and endianness.
+// The encoding is simple:
+// - 0x00 for null
+// - 0x01 for true
+// - 0x02 for false
+// - 0x03 + <bytes of double> for a number
+// - 0x04 + <bytes of size_t length> + <bytes> for a string
+// - 0x05 + <bytes of size_t id> for resource
+// - 0x06 + <bytes of size_t length> + <values> for a table
 nn_Exit nn_encodeNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents, size_t valueCount);
 // Allocates a copy of [buf] and stores it in contents.
 // This is useful for copying network contents, either from storage or from another buffer.
-nn_Exit nn_copyNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount);
-void nn_dropNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents);
+nn_Exit nn_copyNetworkContents(nn_Context *ctx, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount);
+void nn_dropNetworkContents(nn_EncodedNetworkContents *contents);
 // Pushes the encoded contents onto the stack.
 // This does not drop the network contents.
 nn_Exit nn_pushNetworkContents(nn_Computer *computer, const nn_EncodedNetworkContents *contents);
@@ -1707,7 +1730,7 @@ nn_Exit nn_pushNetworkContents(nn_Computer *computer, const nn_EncodedNetworkCon
 // push a modem_message, can be queued by both modems and tunnels.
 // This does not check if the modem has that port open, so make sure to check it yourself.
 // It does not check if the distance is within the modem's range, if it is wireless, and thus does not send it.
-// Note that if a relay with a card should change the sender.
+// Note that relays should change the sender.
 nn_Exit nn_pushModemMessage(nn_Computer *computer, const char *modemAddress, const char *sender, int port, double distance, const nn_EncodedNetworkContents *contents);
 
 #ifdef __cplusplus

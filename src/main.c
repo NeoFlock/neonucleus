@@ -356,7 +356,7 @@ int main(int argc, char **argv) {
 	InitWindow(800, 600, "NeoNucleus Test Emulator");
 
 	// create the universe
-	nn_Universe *u = nn_createUniverse(&ctx);
+	nn_Universe *u = nn_createUniverse(&ctx, NULL);
 
 	nn_Architecture arch = getLuaArch();
 
@@ -370,9 +370,17 @@ int main(int argc, char **argv) {
 
 	nn_Component *eepromCard = ncl_createEEPROM(u, NULL, &nn_defaultEEPROMs[3], minBIOS, strlen(minBIOS), false);
 
+	nn_Filesystem mainfsconf;
+	nn_Filesystem fsparts[] = {
+		nn_defaultFilesystems[3],
+		nn_defaultFilesystems[3],
+		nn_defaultFilesystems[3],
+	};
+	nn_mergeFilesystems(&mainfsconf, fsparts, sizeof(fsparts) / sizeof(fsparts[0]));
+
 	char mainfspath[NN_MAX_PATH];
 	snprintf(mainfspath, NN_MAX_PATH, "data/%s", mainDir);
-	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &nn_defaultFilesystems[3], true);
+	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &mainfsconf, true);
 	nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
 	nn_Component *testingfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
 
@@ -400,7 +408,12 @@ int main(int argc, char **argv) {
 		"while computer.uptime() < now + 3 do computer.pullSignal(0.05) end\n"
 		"computer.shutdown(true)\n"
 	;
-	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_defaultSSDs[3], testDriveData, strlen(testDriveData), false);
+	nn_Drive driveconf;
+	nn_Drive driveparts[] = {
+		nn_floppySSD,
+	};
+	nn_mergeDrives(&driveconf, driveparts, sizeof(driveparts) / sizeof(driveparts[0]));
+	nn_Component *testDrive = ncl_createDrive(u, NULL, &driveconf, testDriveData, strlen(testDriveData), false);
 
 	ncl_setCLabel(managedfs, "Main Filesystem");
 	ncl_setCLabel(testingfs, "Secondary Filesystem");
@@ -452,6 +465,22 @@ restart:;
 		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
 	}
 	nn_setCallBudget(c, 0);
+	
+	nn_EncodedNetworkContents contents;
+	nn_pushstring(c, "stuff");
+	nn_pushnull(c);
+	nn_pushnumber(c, 5.3);
+	nn_pushbool(c, false);
+	nn_encodeNetworkContents(c, &contents, 4);
+
+	nn_dropNetworkContents(&contents);
+
+	printf("size: %zu\n", contents.buflen);
+	for(size_t i = 0; i < contents.buflen; i++) {
+		unsigned char byte = contents.buf[i];
+		printf("%02X ", byte);
+	}
+	printf("\n");
 
 	// default for 64-bit
 	if(sizeof(void *) > 4) nn_setMemoryScale(c, 1.8);
@@ -468,7 +497,7 @@ restart:;
 	nn_mountComponent(c, eepromCard, 0);
 	nn_mountComponent(c, managedfs, 1);
 	nn_mountComponent(c, gpuCard, 2);
-	nn_mountComponent(c, testingfs, 3);
+	//nn_mountComponent(c, testingfs, 3);
 	nn_mountComponent(c, testDrive, 4);
 	while(true) {
 		if(WindowShouldClose()) break;
@@ -575,6 +604,8 @@ restart:;
 		if(tickNow >= nextTick) {
 			nextTick = tickNow + tickDelay;
 			nn_clearstack(c);
+
+			nn_removeEnergy(c, ncl_getScreenEnergyUsage(nn_getComponentState(screen)));
 
 			if(getenv("NN_NOIDLE") != NULL) nn_resetIdleTime(c);
 			nn_Exit e = nn_tick(c);

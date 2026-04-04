@@ -3186,6 +3186,20 @@ const char *ncl_getKeyboard(ncl_ScreenState *state,
     return state->keyboards[idx];
 }
 
+double ncl_getScreenEnergyUsage(ncl_ScreenState *state) {
+	double sum = 0;
+	for(int y = 1; y <= state->viewportHeight; y++) {
+		for(int x = 1; x <= state->viewportWidth; x++) {
+			ncl_Pixel p = ncl_getScreenPixel(state, x, y);
+			sum += state->conf.energyPerPixel * nn_colorLuminance(p.bgColor);
+			if(p.codepoint != 0 && p.codepoint != ' ') {
+				sum += state->conf.energyPerPixel * nn_colorLuminance(p.fgColor);
+			}
+		}
+	}
+	return sum;
+}
+
 // general stuff
 
 bool ncl_isNCLID(const char *type) {
