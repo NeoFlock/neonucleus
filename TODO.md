@@ -212,6 +212,9 @@ Heavily inspired by ossm_flash
 - `getLayers(): integer`, returns the layering amount, for example 3 for TLC. Effectively an indication for lifetime, with higher being worse.
 - `readSector(sec: integer): string`, read a sector
 - `writeSector(sec: integer, data: string): boolean`, write a sector
+- `readByte(byte: integer): integer`, reads a signed byte
+- `readUByte(byte: integer): integer`, reads an unsigned byte
+- `writeByte(byte: integer, val: integer): boolean`, writes a byte
 - `isReadonly(): boolean`, check whether flash is read-only
 - `getLabel(): string?`, get drive label
 - `setLabel(label: string?): string?`, get drive label
