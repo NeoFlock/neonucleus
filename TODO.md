@@ -1,7 +1,6 @@
 # For MVP functionality
 
-- move SSDs to nandflash
-- remove HDD cachelines (they're pointless)
+- NCL computer states, as computers that can be turned on/off/beep/etc.
 - write a tester OS, basically a menu with tests to run
 - tmpfs (rework the whole thing)
 - device info

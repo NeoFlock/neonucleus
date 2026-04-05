@@ -273,8 +273,11 @@ void nn_unlock(nn_Context *ctx, nn_Lock *lock);
 
 double nn_currentTime(nn_Context *ctx);
 
+// generate a random RNG from 0 to the maximum
 size_t nn_rand(nn_Context *ctx);
+// generate a random float [0, 1)
 double nn_randf(nn_Context *ctx);
+// generate a random float [0, 1]
 double nn_randfi(nn_Context *ctx);
 
 typedef char nn_uuid[37];
@@ -1103,7 +1106,7 @@ typedef struct nn_Drive {
 	// you can imagine it as reading the sector, editing the byte,
 	// then writing the sector back.
 	size_t writesPerTick;
-	// Set to 0 for *infinite*, effectively an SSD.
+	// Set to 0 for *infinite*, effectively an SSD with infinite lifespan.
 	// This would mean there is 0 penalty for seeking (technically unreliastic even for an SSD).
 	// This is simply used to compute idle time. It is in literal full rotations per minute.
 	// It is aligned to the cache lines.
@@ -1123,8 +1126,6 @@ typedef struct nn_Drive {
 extern const nn_Drive nn_defaultDrives[4];
 extern const nn_Drive nn_floppyDrive;
 
-extern const nn_Drive nn_defaultSSDs[4];
-extern const nn_Drive nn_floppySSD;
 
 typedef enum nn_DriveAction {
 	// drive gone
@@ -1139,8 +1140,6 @@ typedef enum nn_DriveAction {
 	NN_DRIVE_READSECTOR,
 	// write a sector
 	NN_DRIVE_WRITESECTOR,
-	// read a byte
-	NN_DRIVE_READBYTE,
 	// write a byte
 	NN_DRIVE_WRITEBYTE,
 	// is drive read-only
@@ -1177,11 +1176,6 @@ typedef struct nn_DriveRequest {
 			// 1-indexed
 			size_t byte;
 			unsigned char value;
-		} readByte;
-		struct {
-			// 1-indexed
-			size_t byte;
-			unsigned char value;
 		} writeByte;
 		bool readonly;
 	};
@@ -1192,6 +1186,99 @@ typedef nn_Exit (nn_DriveHandler)(nn_DriveRequest *request);
 nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const nn_Drive *drive, void *state, nn_DriveHandler *handler);
 
 bool nn_mergeDrives(nn_Drive *merged, const nn_Drive *drives, size_t len);
+
+typedef struct nn_NandFlash {
+	// capacity of flash
+	size_t capacity;
+	// sector size
+	size_t sectorSize;
+	// reads per tick
+	size_t readsPerTick;
+	// writes per tick
+	size_t writesPerTick;
+	// The layering, in bits.
+	// 1 is SLC, 2 is MLC, 3 is TLC, etc.
+	// This number may amplify how quickly the total write count increases.
+	size_t cellLevel;
+	// the maximum amount of write amplification.
+	// Set to 0 to disable amplification RNG.
+	// The game will generate, using Context RNG, a real number from [0, 1]
+	// then raise it to writeAmplificationExponent,
+	// then multiply it by this number, and by the cell level.
+	// then clamp it to be at least 1 and at most this maximum.
+	unsigned int maxWriteAmplification;
+	int writeAmplificationExponent;
+	// the maximum amount of writes *per sector.*
+	// Set to 0 to make the nandflash eternal.
+	size_t maxWriteCount;
+	// how much per byte
+	double dataEnergyCost;
+} nn_NandFlash;
+
+typedef enum nn_FlashAction {
+	NN_FLASH_DROP,
+	NN_FLASH_GETLABEL,
+	NN_FLASH_SETLABEL,
+	NN_FLASH_ISRO,
+	// read a sector
+	NN_FLASH_READSECTOR,
+	// write a sector
+	// also adds an amount of writes
+	NN_FLASH_WRITESECTOR,
+	// write a sector
+	// also adds an amount of writes
+	NN_FLASH_WRITEBYTE,
+	// get the amount of writes
+	NN_FLASH_GETWRITES,
+} nn_FlashAction;
+
+typedef struct nn_FlashRequest {
+	nn_Context *ctx;
+	nn_Computer *computer;
+	void *state;
+	const nn_NandFlash *flash;
+	nn_FlashAction action;
+	union {
+		struct {
+			char *buf;
+			size_t len;
+		} getlabel;
+		struct {
+			const char *buf;
+			size_t len;
+		} setlabel;
+		struct {
+			char *buf;
+			// 1-indexed
+			size_t sec;
+		} readsector;
+		struct {
+			const char *buf;
+			// 1-indexed
+			size_t sec;
+			// how many writes to add
+			size_t writesAdded;
+		} writesector;
+		struct {
+			size_t byte;
+			char val;
+			// how many writes to add
+			size_t writesAdded;
+		} writebyte;
+		// for GETWRITES
+		size_t writeCount;
+		bool readonly;
+	};
+} nn_FlashRequest;
+
+typedef nn_Exit (nn_FlashHandler)(nn_FlashRequest *request);
+
+extern const nn_NandFlash nn_defaultSSDs[4];
+extern const nn_NandFlash nn_floppySSD;
+
+nn_Component *nn_createFlash(nn_Universe *universe, const char *address, const nn_NandFlash *drive, void *state, nn_FlashHandler *handler);
+
+bool nn_mergeFlash(nn_NandFlash *merged, const nn_NandFlash *flash, size_t len);
 
 // Screen class
 

@@ -2537,57 +2537,62 @@ const nn_Drive nn_floppyDrive = {
 	.dataEnergyCost = 1.0 / NN_MiB,
 };
 
-const nn_Drive nn_defaultSSDs[4] = {
-	NN_INIT(nn_Drive) {
+const nn_NandFlash nn_defaultSSDs[4] = {
+	NN_INIT(nn_NandFlash) {
 		.capacity = 512 * NN_KiB,
 		.sectorSize = 512,
-		.platterCount = 2,
 		.readsPerTick = 10,
 		.writesPerTick = 5,
-		.rpm = 0,
-		.onlySpinForwards = false,
+		.cellLevel = 1,
+		.maxWriteCount = 1<<10,
+		.maxWriteAmplification = 4,
+		.writeAmplificationExponent = 2,
 		.dataEnergyCost = 64.0 / NN_MiB,
 	},
-	NN_INIT(nn_Drive) {
+	NN_INIT(nn_NandFlash) {
 		.capacity = 1 * NN_MiB,
 		.sectorSize = 512,
-		.platterCount = 4,
 		.readsPerTick = 15,
 		.writesPerTick = 7,
-		.rpm = 0,
-		.onlySpinForwards = false,
+		.cellLevel = 2,
+		.maxWriteCount = 1<<10,
+		.maxWriteAmplification = 8,
+		.writeAmplificationExponent = 2,
 		.dataEnergyCost = 128.0 / NN_MiB,
 	},
-	NN_INIT(nn_Drive) {
+	NN_INIT(nn_NandFlash) {
 		.capacity = 2 * NN_MiB,
 		.sectorSize = 512,
-		.platterCount = 8,
 		.readsPerTick = 20,
 		.writesPerTick = 10,
-		.rpm = 0,
-		.onlySpinForwards = false,
+		.cellLevel = 3,
+		.maxWriteCount = 1<<10,
+		.maxWriteAmplification = 12,
+		.writeAmplificationExponent = 2,
 		.dataEnergyCost = 256.0 / NN_MiB,
 	},
-	NN_INIT(nn_Drive) {
+	NN_INIT(nn_NandFlash) {
 		.capacity = 4 * NN_MiB,
 		.sectorSize = 512,
-		.platterCount = 16,
 		.readsPerTick = 30,
 		.writesPerTick = 15,
-		.rpm = 0,
-		.onlySpinForwards = false,
+		.cellLevel = 4,
+		.maxWriteCount = 1<<10,
+		.maxWriteAmplification = 16,
+		.writeAmplificationExponent = 2,
 		.dataEnergyCost = 512.0 / NN_MiB,
 	},
 };
 
-const nn_Drive nn_floppySSD = {
+const nn_NandFlash nn_floppySSD = {
 	.capacity = 256 * NN_KiB,
 	.sectorSize = 512,
-	.platterCount = 1,
 	.readsPerTick = 5,
 	.writesPerTick = 2,
-	.rpm = 0,
-	.onlySpinForwards = true,
+	.cellLevel = 1,
+	.maxWriteCount = 1<<10,
+	.maxWriteAmplification = 4,
+	.writeAmplificationExponent = 2,
 	.dataEnergyCost = 16.0 / NN_MiB,
 };
 
@@ -3432,15 +3437,116 @@ nn_Exit nn_encodeNetworkContents(nn_Computer *computer, nn_EncodedNetworkContent
 	return NN_OK;
 }
 
-nn_Exit nn_copyNetworkContents(nn_Context *ctx, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount);
+nn_Exit nn_copyNetworkContents(nn_Context *ctx, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount) {
+	contents->ctx = ctx;
+	contents->valueCount = valueCount;
+	contents->buflen = buflen;
+	contents->buf = nn_alloc(ctx, buflen);
+	if(contents->buf == NULL) return NN_ENOMEM;
+	nn_memcpy(contents->buf, buf, buflen);
+	return NN_OK;
+}
 
 void nn_dropNetworkContents(nn_EncodedNetworkContents *contents) {
 	nn_free(contents->ctx, contents->buf, contents->buflen);
 }
 
-nn_Exit nn_pushNetworkContents(nn_Computer *computer, const nn_EncodedNetworkContents *contents);
+static nn_Exit nn_decodeNetworkValue(nn_Value *val, nn_Context *ctx, const char *buf, size_t *len) {
+	size_t decodedLen = 0, off = 0;
+	nn_Value tmpval;
+	switch((nn_NetworkValueTag)buf[0]) {
+	case NN_NETVAL_NULL:
+		*len = 1;
+		val->type = NN_VAL_NULL;
+		return NN_OK;
+	case NN_NETVAL_TRUE:
+	case NN_NETVAL_FALSE:
+		*len = 1;
+		val->type = NN_VAL_BOOL;
+		val->boolean = buf[0] == NN_NETVAL_TRUE;
+		return NN_OK;
+	case NN_NETVAL_NUM:
+		*len = 1 + sizeof(double);
+		val->type = NN_VAL_NUM;
+		nn_memcpy(&val->number, buf + 1, sizeof(double));
+		return NN_OK;
+	case NN_NETVAL_STR:
+		nn_memcpy(&decodedLen, buf + 1, sizeof(size_t));
+		val->type = NN_VAL_STR;
+		val->string = nn_alloc(ctx, sizeof(nn_String) + decodedLen + 1);
+		if(val->string == NULL) return NN_ENOMEM;
+		val->string->ctx = *ctx;
+		val->string->refc = 1;
+		val->string->len = decodedLen;
+		nn_memcpy(val->string->data, buf + 1 + sizeof(size_t), decodedLen);
+		val->string->data[decodedLen] = '\0';
+		*len = 1 + sizeof(size_t) + decodedLen;
+		return NN_OK;
+	case NN_NETVAL_RESOURCE:
+		val->type = NN_VAL_USERDATA;
+		nn_memcpy(&val->userdataIdx, buf + 1, sizeof(size_t));
+		*len = 1 + sizeof(size_t);
+		return NN_OK;
+	case NN_NETVAL_TABLE:
+		val->type = NN_VAL_TABLE;
+		nn_memcpy(&decodedLen, buf + 1, sizeof(size_t));
+		val->table = nn_alloc(ctx, sizeof(nn_Table) + sizeof(nn_Value) * decodedLen * 2);
+		if(val->table == NULL) return NN_ENOMEM;
+		val->table->ctx = *ctx;
+		val->table->refc = 1;
+		val->table->len = decodedLen;
+		off = 1 + sizeof(size_t);
+		for(size_t i = 0; i < decodedLen*2; i++) {
+			size_t tmplen = 0;
+			nn_Exit e = nn_decodeNetworkValue(&tmpval, ctx, buf + off, &tmplen);
+			if(e) {
+				for(size_t j = 0; j < i; j++) nn_dropValue(val->table->vals[j]);
+				return e;
+			}
+			val->table->vals[i] = tmpval;
+			off += tmplen;
+		}
+		*len = off;
+		return NN_OK;
+	}
+	*len = 1;
+	val->type = NN_VAL_NULL;
+	return NN_OK;
+}
 
-nn_Exit nn_pushModemMessage(nn_Computer *computer, const char *modemAddress, const char *sender, int port, double distance, const nn_EncodedNetworkContents *contents);
+nn_Exit nn_pushNetworkContents(nn_Computer *C, const nn_EncodedNetworkContents *contents) {
+	nn_Value val;
+	size_t off = 0;
+	for(size_t i = 0; i < contents->valueCount; i++) {
+		size_t len = 0;
+		nn_Exit e = nn_decodeNetworkValue(&val, &C->universe->ctx, contents->buf + off, &len);
+		if(e) return e;
+		e = nn_pushvalue(C, val);
+		if(e) {
+			nn_dropValue(val);
+			return e;
+		}
+		off += len;
+	}
+	return NN_OK;
+}
+
+nn_Exit nn_pushModemMessage(nn_Computer *C, const char *modemAddress, const char *sender, int port, double distance, const nn_EncodedNetworkContents *contents) {
+	size_t signalVals = 5 + contents->valueCount;
+	nn_Exit e = nn_pushstring(C, "modem_message");
+	if(e) return e;
+	e = nn_pushstring(C, modemAddress);
+	if(e) return e;
+	e = nn_pushstring(C, sender);
+	if(e) return e;
+	e = nn_pushinteger(C, port);
+	if(e) return e;
+	e = nn_pushnumber(C, distance);
+	if(e) return e;
+	e = nn_pushNetworkContents(C, contents);
+	if(e) return e;
+	return nn_pushSignal(C, signalVals);
+}
 
 typedef enum nn_EENum {
 	NN_EENUM_GETSIZE,
@@ -4133,6 +4239,7 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 		e = state->handler(&dreq);
 		if(e) return e;
 		request->returnCount = 1;
+		if(dreq.getlabel.len == 0) return nn_pushnull(C);
 		return nn_pushlstring(C, dreq.getlabel.buf, dreq.getlabel.len);
 	}
 	if(method == NN_DRVNUM_SETLABEL) {
@@ -4246,6 +4353,248 @@ bool nn_mergeDrives(nn_Drive *merged, const nn_Drive *drives, size_t len) {
 	merged->writesPerTick /= len;
 	merged->dataEnergyCost /= len;
 	merged->rpm /= len;
+	return true;
+}
+
+static size_t nn_flash_writesAdded(nn_Context *ctx, const nn_NandFlash *flash) {
+	double x = nn_randfi(ctx);
+	double m = 1;
+	// TODO: use O(log N) algorithm instead of O(N)
+	for(size_t i = 0; i < flash->writeAmplificationExponent; i++) m *= x;
+
+	size_t max = flash->maxWriteAmplification * flash->cellLevel;
+	size_t amount = m * max;
+	if(amount < 1) amount = 1;
+	if(amount > max) amount = max;
+	return amount;
+}
+
+typedef enum nn_FlashNum {
+	NN_FLASHNUM_GETCAPACITY,
+	NN_FLASHNUM_GETSECTORSIZE,
+	NN_FLASHNUM_GETLAYERS,
+	NN_FLASHNUM_GETWEARLEVEL,
+	NN_FLASHNUM_ISRO,
+	NN_FLASHNUM_GETLABEL,
+	NN_FLASHNUM_SETLABEL,
+	NN_FLASHNUM_READSECTOR,
+	NN_FLASHNUM_WRITESECTOR,
+	NN_FLASHNUM_READBYTE,
+	NN_FLASHNUM_READUBYTE,
+	NN_FLASHNUM_WRITEBYTE,
+
+	NN_FLASHNUM_COUNT,
+} nn_FlashNum;
+
+typedef struct nn_FlashState {
+	nn_Context *ctx;
+	nn_NandFlash flash;
+	nn_FlashHandler *handler;
+} nn_FlashState;
+
+static nn_Exit nn_flashHandler(nn_ComponentRequest *request) {
+	nn_Context *ctx = request->ctx;
+	nn_Computer *C = request->computer;
+	nn_FlashState *state = request->classState;
+
+	nn_FlashRequest freq;
+	freq.ctx = ctx;
+	freq.computer = C;
+	freq.state = request->state;
+	freq.flash = &state->flash;
+	nn_Exit e;
+
+	if(request->action == NN_COMP_SIGNAL) return NN_OK;
+	if(request->action == NN_COMP_CHECKMETHOD) return NN_OK;
+
+	if(request->action == NN_COMP_DROP) {
+		freq.action = NN_FLASH_DROP;
+		state->handler(&freq);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+	size_t ss = state->flash.sectorSize;
+	size_t sectorCount = state->flash.capacity / ss;
+	size_t maxWrite = state->flash.maxWriteCount;
+	nn_FlashNum method = request->methodIdx;
+	if(method == NN_FLASHNUM_GETCAPACITY) {
+		request->returnCount = 1;
+		return nn_pushinteger(C, state->flash.capacity);
+	}
+	if(method == NN_FLASHNUM_GETSECTORSIZE) {
+		request->returnCount = 1;
+		return nn_pushinteger(C, ss);
+	}
+	if(method == NN_FLASHNUM_GETLAYERS) {
+		request->returnCount = 1;
+		return nn_pushinteger(C, state->flash.cellLevel);
+	}
+	if(method == NN_FLASHNUM_GETWEARLEVEL) {
+		freq.action = NN_FLASH_GETWRITES;
+		e = state->handler(&freq);
+		if(e) return e;
+		request->returnCount = 1;
+		// would crash the math
+		if(maxWrite == 0) return nn_pushnumber(C, 100.0);
+		if(sectorCount == 0) return nn_pushnumber(C, 100.0);
+		double num = freq.writeCount * 100.0 / sectorCount / maxWrite;
+		return nn_pushnumber(C, num);
+	}
+	if(method == NN_FLASHNUM_ISRO) {
+		freq.action = NN_FLASH_ISRO;
+		e = state->handler(&freq);
+		if(e) return e;
+		request->returnCount = 1;
+		return nn_pushbool(C, freq.readonly);
+	}
+	if(method == NN_FLASHNUM_GETLABEL) {
+		freq.action = NN_FLASH_GETLABEL;
+		char buf[NN_MAX_LABEL];
+		freq.getlabel.buf = buf;
+		freq.getlabel.len = NN_MAX_LABEL;
+		e = state->handler(&freq);
+		if(e) return e;
+		request->returnCount = 1;
+		if(freq.getlabel.len == 0) return nn_pushnull(C);
+		return nn_pushlstring(C, freq.getlabel.buf, freq.getlabel.len);
+	}
+	if(method == NN_FLASHNUM_SETLABEL) {
+		e = nn_defaultstring(C, 0, "");
+		if(e) return e;
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		freq.action = NN_FLASH_SETLABEL;
+		freq.setlabel.buf = nn_tolstring(C, 0, &freq.setlabel.len);
+		e = state->handler(&freq);
+		if(e) return e;
+		request->returnCount = 1;
+		return nn_pushlstring(C, freq.setlabel.buf, freq.setlabel.len);
+	}
+	if(method == NN_FLASHNUM_READSECTOR) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		int sec = nn_tointeger(C, 0);
+		if(sec < 1 || sec > sectorCount) {
+			nn_setError(C, "sector out of bounds");
+			return NN_EBADCALL;
+		}
+		nn_costComponent(C, request->compAddress, state->flash.readsPerTick);
+		nn_removeEnergy(C, state->flash.dataEnergyCost * ss);
+
+		char *sector = nn_alloc(ctx, ss);
+		if(sector == NULL) return NN_ENOMEM;
+
+		freq.action = NN_FLASH_READSECTOR;
+		freq.readsector.sec = sec;
+		freq.readsector.buf = sector;
+		e = state->handler(&freq);
+		if(e) {
+			nn_free(ctx, sector, ss);
+			return e;
+		}
+		request->returnCount = 1;
+		e = nn_pushlstring(C, sector, ss);
+		nn_free(ctx, sector, ss);
+		return e;
+	}
+	if(method == NN_FLASHNUM_WRITESECTOR) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
+		int sec = nn_tointeger(C, 0);
+		if(sec < 1 || sec > sectorCount) {
+			nn_setError(C, "sector out of bounds");
+			return NN_EBADCALL;
+		}
+		freq.action = NN_FLASH_GETWRITES;
+		e = state->handler(&freq);
+		if(e) return e;
+		if(freq.writeCount >= maxWrite * sectorCount) {
+			nn_setError(C, "flash is not conductive enough");
+			return NN_EBADCALL;
+		}
+
+		nn_costComponent(C, request->compAddress, state->flash.writesPerTick);
+		nn_removeEnergy(C, state->flash.dataEnergyCost * ss);
+
+		size_t len;
+		const char *sector = nn_tolstring(C, 1, &len);
+		if(len != ss) {
+			nn_setError(C, "incorrect sector size");
+			return NN_EBADCALL;
+		}
+
+		freq.action = NN_FLASH_WRITESECTOR;
+		freq.writesector.sec = sec;
+		freq.writesector.buf = sector;
+		freq.writesector.writesAdded = nn_flash_writesAdded(ctx, &state->flash);
+		e = state->handler(&freq);
+		if(e) return e;
+
+		request->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+
+	if(C) nn_setError(C, "nandflash: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createFlash(nn_Universe *universe, const char *address, const nn_NandFlash *drive, void *state, nn_FlashHandler *handler) {
+	nn_Component *c = nn_createComponent(universe, address, "nandflash");
+	if(c == NULL) return NULL;
+	const nn_Method methods[NN_FLASHNUM_COUNT] = {
+		[NN_FLASHNUM_GETCAPACITY] = {"getCapacity", "function(): integer - Get the capacity of the flash storage", NN_DIRECT},
+		[NN_FLASHNUM_GETSECTORSIZE] = {"getSectorSize", "function(): integer - Get the logical sector size", NN_DIRECT},
+		[NN_FLASHNUM_GETLAYERS] = {"getLayers", "function(): integer - Get the amount of bits in a cell", NN_DIRECT},
+		[NN_FLASHNUM_GETWEARLEVEL] = {"getWearLevel", "function(): number - Gets a number from 0 to 100 indicitive of estimated drive damage", NN_DIRECT},
+		[NN_FLASHNUM_ISRO] = {"isReadonly", "function(): boolean - Checks whether the NAND is read-only", NN_DIRECT},
+		[NN_FLASHNUM_GETLABEL] = {"getLabel", "function(): string? - Get the label of the flash storage", NN_DIRECT},
+		[NN_FLASHNUM_SETLABEL] = {"setLabel", "function(label?: string): string - Set the label, which may be truncated", NN_INDIRECT},
+		[NN_FLASHNUM_READSECTOR] = {"readSector", "function(sector: integer): string - Read contents of a logical sector", NN_DIRECT},
+		[NN_FLASHNUM_WRITESECTOR] = {"writeSector", "function(sector: integer): string - Write contents of a logical sector, may lead to multiple real writes", NN_DIRECT},
+		[NN_FLASHNUM_READBYTE] = {"readByte", "function(byte: integer): integer - Read an individual signed byte", NN_DIRECT},
+		[NN_FLASHNUM_READUBYTE] = {"readUByte", "function(byte: integer): integer - Read an individual unsigned byte", NN_DIRECT},
+		[NN_FLASHNUM_WRITEBYTE] = {"writeByte", "function(byte: integer, value: integer): boolean - Write a byte"},
+	};
+	nn_Exit e = nn_setComponentMethodsArray(c, methods, NN_FLASHNUM_COUNT);
+	if(e) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	nn_Context *ctx = &universe->ctx;
+	nn_FlashState *drvstate = nn_alloc(ctx, sizeof(*drvstate));
+	if(drvstate == NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	drvstate->ctx = ctx;
+	drvstate->flash = *drive;
+	drvstate->handler = handler;
+	nn_setComponentState(c, state);
+	nn_setComponentClassState(c, drvstate);
+	nn_setComponentHandler(c, nn_flashHandler);
+	return c;
+}
+
+bool nn_mergeFlash(nn_NandFlash *merged, const nn_NandFlash *flash, size_t len) {
+	if(len == 0) return false;
+	*merged = flash[0];
+	for(size_t i = 1; i < len; i++) {
+		nn_NandFlash f = flash[i];
+
+		merged->readsPerTick += f.readsPerTick;
+		merged->writesPerTick += f.writesPerTick;
+		merged->dataEnergyCost += f.dataEnergyCost;
+		merged->capacity += f.capacity;
+		merged->maxWriteCount += f.maxWriteCount;
+		merged->maxWriteAmplification += f.maxWriteAmplification;
+		merged->writeAmplificationExponent += f.writeAmplificationExponent;
+		merged->cellLevel += f.cellLevel;
+	}
+	merged->readsPerTick /= len;
+	merged->writesPerTick /= len;
+	merged->dataEnergyCost /= len;
+	merged->maxWriteCount /= len;
+	merged->maxWriteAmplification /= len;
+	merged->writeAmplificationExponent /= len;
+	merged->cellLevel /= len;
 	return true;
 }
 

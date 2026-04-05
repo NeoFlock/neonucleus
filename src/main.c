@@ -385,7 +385,8 @@ int main(int argc, char **argv) {
 	nn_Component *testingfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
 
 	const char * const testDriveData = 
-		"local g, s, d = component.list('gpu')(), component.list('screen')(), component.list('drive')()\n"
+		"local g, s = component.list('gpu')(), component.list('screen')()\n"
+		"local d = computer.getBootAddress()\n"
 		"component.invoke(g, 'bind', s, true)\n"
 		"component.invoke(g, 'set', 1, 1, 'starting sequential bench...')\n"
 		"local start = computer.uptime()\n"
@@ -408,16 +409,13 @@ int main(int argc, char **argv) {
 		"while computer.uptime() < now + 3 do computer.pullSignal(0.05) end\n"
 		"computer.shutdown(true)\n"
 	;
-	nn_Drive driveconf;
-	nn_Drive driveparts[] = {
-		nn_defaultSSDs[3],
-	};
-	nn_mergeDrives(&driveconf, driveparts, sizeof(driveparts) / sizeof(driveparts[0]));
-	nn_Component *testDrive = ncl_createDrive(u, NULL, &driveconf, testDriveData, strlen(testDriveData), false);
+	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_defaultDrives[3], testDriveData, strlen(testDriveData), false);
+	nn_Component *testFlash = ncl_createFlash(u, NULL, &nn_defaultSSDs[3], testDriveData, strlen(testDriveData), false);
 
 	ncl_setCLabel(managedfs, "Main Filesystem");
 	ncl_setCLabel(testingfs, "Secondary Filesystem");
 	ncl_setCLabel(testDrive, "Unmanaged Storage");
+	ncl_setCLabel(testFlash, "Flash Storage");
 
 	size_t ramTotal = 0;
 	ramTotal += nn_ramSizes[5];
@@ -472,8 +470,7 @@ restart:;
 	nn_pushnumber(c, 5.3);
 	nn_pushbool(c, false);
 	nn_encodeNetworkContents(c, &contents, 4);
-
-	nn_dropNetworkContents(&contents);
+	nn_popn(c, 4);
 
 	printf("size: %zu\n", contents.buflen);
 	for(size_t i = 0; i < contents.buflen; i++) {
@@ -499,6 +496,7 @@ restart:;
 	nn_mountComponent(c, gpuCard, 2);
 	//nn_mountComponent(c, testingfs, 3);
 	nn_mountComponent(c, testDrive, 4);
+	nn_mountComponent(c, testFlash, 5);
 	while(true) {
 		if(WindowShouldClose()) break;
 
@@ -580,6 +578,10 @@ restart:;
 				if(keycode == KEY_TAB) unicode = '\t';
 			}
 
+			if(keycode == KEY_F1) {
+				nn_pushModemMessage(c, "bullshit", "someone", 1, 5, &contents);
+			}
+
 			nn_pushKeyDown(c, "mainKB", unicode, keycode_to_oc(keycode), player);
 		}
 
@@ -632,6 +634,7 @@ restart:;
 			}
 			if(state == NN_RESTART) {
 				printf("restart requested\n");
+				nn_dropNetworkContents(&contents);
 				nn_destroyComputer(c);
 				goto restart;
 			}
@@ -646,9 +649,11 @@ cleanup:;
 	nn_dropComponent(tmpfs);
 	nn_dropComponent(testingfs);
     nn_dropComponent(testDrive);
+    nn_dropComponent(testFlash);
 	nn_dropComponent(screen);
 	nn_dropComponent(gpuCard);
     nn_dropComponent(keyboard);
+	nn_dropNetworkContents(&contents);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);

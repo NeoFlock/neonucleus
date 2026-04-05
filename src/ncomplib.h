@@ -8,6 +8,7 @@
 #define NCL_EEPROM "ncl-eeprom"
 #define NCL_FS "ncl-filesystem"
 #define NCL_DRIVE "ncl-drive"
+#define NCL_FLASH "ncl-nandflash"
 #define NCL_GPU "ncl-gpu"
 #define NCL_SCREEN "ncl-screen"
 
@@ -208,6 +209,9 @@ nn_Component *ncl_createTmpFS(nn_Universe *universe, const char *address, const 
 // Remember to read the entire drive and save it somewhere before dropping it.
 nn_Component *ncl_createDrive(nn_Universe *universe, const char *address, const nn_Drive *drive, const char *data, size_t len, bool isReadonly);
 
+// usable like a drive, but is a nandflash component
+nn_Component *ncl_createFlash(nn_Universe *universe, const char *address, const nn_NandFlash *flash, const char *data, size_t len, bool isReadonly);
+
 // data is stored interally
 nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const nn_EEPROM *eeprom, const char *code, size_t codelen, bool isReadonly);
 
@@ -269,6 +273,11 @@ typedef struct ncl_ComponentStat {
 			const nn_Drive *conf;
 			size_t lastSector;
 		} drive;
+		struct {
+			const nn_NandFlash *conf;
+			size_t currentWriteCount;
+			double wearlevel;
+		} flash;
 		struct {
 			const nn_GPU *conf;
 			size_t vramFree;

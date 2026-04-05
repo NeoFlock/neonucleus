@@ -631,6 +631,18 @@ typedef struct ncl_DriveState {
 	size_t labellen;
 } ncl_DriveState;
 
+typedef struct ncl_FlashState {
+	nn_Context *ctx;
+	nn_Lock *lock;
+	nn_NandFlash conf;
+	bool isReadonly;
+	size_t usage;
+	size_t writeCount;
+	char *data;
+	char label[NN_MAX_LABEL];
+	size_t labellen;
+} ncl_FlashState;
+
 typedef struct ncl_EEState {
 	nn_Context *ctx;
 	nn_Lock *lock;
@@ -1264,6 +1276,7 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 			}
 		}
 		nn_destroyLock(ctx, tmpfs->lock);
+		nn_free(ctx, tmpfs, sizeof(*tmpfs));
 		return NN_OK;
 	}
 	if(req->action == NN_FS_SPACEUSED) {
@@ -1651,6 +1664,7 @@ static nn_Exit ncl_drvHandler(nn_DriveRequest *request) {
 	size_t ss = drv->conf.sectorSize;
 
 	if(request->action == NN_DRIVE_DROP) {
+		nn_destroyLock(ctx, drv->lock);
 		nn_free(ctx, drv->data, drv->conf.capacity);
 		nn_free(ctx, drv, sizeof(*drv));
 		return NN_OK;
@@ -1661,8 +1675,15 @@ static nn_Exit ncl_drvHandler(nn_DriveRequest *request) {
 		nn_unlock(ctx, drv->lock);
 		return NN_OK;
 	}
+	if(request->action == NN_DRIVE_ISRO) {
+		nn_lock(ctx, drv->lock);
+		request->readonly = drv->isReadonly;
+		nn_unlock(ctx, drv->lock);
+		return NN_OK;
+	}
 	if(request->action == NN_DRIVE_GETLABEL) {
 		nn_lock(ctx, drv->lock);
+		drv->usage++;
 		memcpy(request->getlabel.buf, drv->label, drv->labellen);
 		request->getlabel.len = drv->labellen;
 		nn_unlock(ctx, drv->lock);
@@ -1670,6 +1691,7 @@ static nn_Exit ncl_drvHandler(nn_DriveRequest *request) {
 	}
 	if(request->action == NN_DRIVE_READSECTOR) {
 		nn_lock(ctx, drv->lock);
+		drv->usage++;
 		size_t off = (request->readSector.sector - 1) * ss;
 		memcpy(request->readSector.buf, drv->data + off, ss);
 		drv->lastSector = request->readSector.sector;
@@ -1724,12 +1746,110 @@ fail:
 	return NULL;
 }
 
+static nn_Exit ncl_flashHandler(nn_FlashRequest *request) {
+	nn_Context *ctx = request->ctx;
+	nn_Computer *C = request->computer;
+	ncl_FlashState *drv = request->state;
+	size_t ss = drv->conf.sectorSize;
+
+	if(request->action == NN_FLASH_DROP) {
+		nn_destroyLock(ctx, drv->lock);
+		nn_free(ctx, drv->data, drv->conf.capacity);
+		nn_free(ctx, drv, sizeof(*drv));
+		return NN_OK;
+	}
+	if(request->action == NN_FLASH_GETWRITES) {
+		nn_lock(ctx, drv->lock);
+		request->writeCount = drv->writeCount;
+		nn_unlock(ctx, drv->lock);
+		return NN_OK;
+	}
+	if(request->action == NN_FLASH_ISRO) {
+		nn_lock(ctx, drv->lock);
+		request->readonly = drv->isReadonly;
+		nn_unlock(ctx, drv->lock);
+		return NN_OK;
+	}
+	if(request->action == NN_FLASH_GETLABEL) {
+		nn_lock(ctx, drv->lock);
+		drv->usage++;
+		memcpy(request->getlabel.buf, drv->label, drv->labellen);
+		request->getlabel.len = drv->labellen;
+		nn_unlock(ctx, drv->lock);
+		return NN_OK;
+	}
+	if(request->action == NN_FLASH_READSECTOR) {
+		nn_lock(ctx, drv->lock);
+		drv->usage++;
+		size_t off = (request->readsector.sec - 1) * ss;
+		memcpy(request->readsector.buf, drv->data + off, ss);
+		nn_unlock(ctx, drv->lock);
+		return NN_OK;
+	}
+	if(request->action == NN_FLASH_WRITESECTOR) {
+		nn_lock(ctx, drv->lock);
+		drv->usage++;
+		size_t off = (request->writesector.sec - 1) * ss;
+		memcpy(drv->data + off, request->writesector.buf, ss);
+		drv->writeCount += request->writesector.writesAdded;
+		nn_unlock(ctx, drv->lock);
+		return NN_OK;
+	}
+	
+	if(C) nn_setError(C, "ncl-flash: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *ncl_createFlash(nn_Universe *universe, const char *address, const nn_NandFlash *flash, const char *data, size_t len, bool isReadonly) {
+	nn_Context *ctx = nn_getUniverseContext(universe);
+	nn_Component *c = NULL;
+	nn_Lock *lock = NULL;
+	char *databuf = NULL;
+	ncl_FlashState *state = NULL;
+
+	state = nn_alloc(ctx, sizeof(*state));
+	if(state == NULL) goto fail;
+
+	lock = nn_createLock(ctx);
+	if(lock == NULL) goto fail;
+
+	databuf = nn_alloc(ctx, flash->capacity);
+	if(databuf == NULL) goto fail;
+	if(len > flash->capacity) len = flash->capacity;
+	memcpy(databuf, data, len);
+	memset(databuf + len, 0, flash->capacity - len);
+
+	state->ctx = ctx;
+	state->lock = lock;
+	state->conf = *flash;
+	state->usage = 0;
+	state->labellen = 0;
+	state->writeCount = 0;
+	state->data = databuf;
+	state->isReadonly = isReadonly;
+
+	c = nn_createFlash(universe, address, flash, state, ncl_flashHandler);
+	if(c == NULL) goto fail;
+	if(nn_setComponentTypeID(c, NCL_FLASH)) goto fail;
+	return c;
+fail:
+	if(c != NULL) {
+		nn_dropComponent(c);
+		return NULL;
+	}
+	if(lock != NULL) nn_destroyLock(ctx, lock);
+	nn_free(ctx, databuf, flash->capacity);
+	nn_free(ctx, state, sizeof(*state));
+	return NULL;
+}
+
 static nn_Exit ncl_eepromHandler(nn_EEPROMRequest *req) {
 	nn_Context *ctx = req->ctx;
 	nn_Computer *C = req->computer;
 	ncl_EEState *state = req->state;
 
 	if(req->action == NN_EEPROM_DROP) {
+		nn_destroyLock(ctx, state->lock);
 		nn_free(ctx, state->code, req->eeprom->size);
 		nn_free(ctx, state->data, req->eeprom->dataSize);
 		nn_free(ctx, state, sizeof(*state));
@@ -1891,6 +2011,16 @@ size_t ncl_readDrive(nn_Component *component, size_t offset, char *buf, size_t l
 		nn_unlock(drv->ctx, drv->lock);
 		return len;
 	}
+	if(strcmp(typeid, NCL_FLASH) == 0) {
+		ncl_FlashState *drv = nn_getComponentState(component);
+		if(offset > drv->conf.capacity) return 0;
+		size_t remaining = drv->conf.capacity - offset;
+		if(remaining < len) len = remaining;
+		nn_lock(drv->ctx, drv->lock);
+		memcpy(buf, drv->data + offset, len);
+		nn_unlock(drv->ctx, drv->lock);
+		return len;
+	}
 	return 0;
 }
 
@@ -1906,12 +2036,27 @@ void ncl_writeDrive(nn_Component *component, size_t offset, const char *buf, siz
 		nn_unlock(drv->ctx, drv->lock);
 		return;
 	}
+	if(strcmp(typeid, NCL_FLASH) == 0) {
+		ncl_FlashState *drv = nn_getComponentState(component);
+		if(offset > drv->conf.capacity) return;
+		size_t remaining = drv->conf.capacity - offset;
+		if(remaining < len) len = remaining;
+		nn_lock(drv->ctx, drv->lock);
+		memcpy(drv->data + offset, buf, len);
+		nn_unlock(drv->ctx, drv->lock);
+		return;
+	}
 }
 
 char *ncl_getDriveBuffer(nn_Component *component, size_t *len) {
 	const char *typeid = nn_getComponentTypeID(component);
 	if(strcmp(typeid, NCL_DRIVE) == 0) {
 		ncl_DriveState *drv = nn_getComponentState(component);
+		*len = drv->conf.capacity;
+		return drv->data;
+	}
+	if(strcmp(typeid, NCL_FLASH) == 0) {
+		ncl_FlashState *drv = nn_getComponentState(component);
 		*len = drv->conf.capacity;
 		return drv->data;
 	}
@@ -3245,6 +3390,20 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		nn_unlock(drv->ctx, drv->lock);
 		return;
 	}
+	if(strcmp(ty, NCL_FLASH) == 0) {
+		ncl_FlashState *drv = state;
+		nn_lock(drv->ctx, drv->lock);
+		stat->isReadonly = drv->isReadonly;
+		stat->usageCounter = drv->usage;
+		stat->labellen = drv->labellen;
+		memcpy(stat->label, drv->label, stat->labellen);
+		stat->flash.currentWriteCount = drv->writeCount;
+		// TODO: compute wear level
+		stat->flash.wearlevel = 0;
+		stat->flash.conf = &drv->conf;
+		nn_unlock(drv->ctx, drv->lock);
+		return;
+	}
 	if(strcmp(ty, NCL_EEPROM) == 0) {
 		ncl_EEState *ee = state;
 		nn_lock(ee->ctx, ee->lock);
@@ -3288,6 +3447,14 @@ bool ncl_makeReadonly(nn_Component *component) {
 	}
 	if(strcmp(ty, NCL_DRIVE) == 0) {
 		ncl_DriveState *drv = state;
+		nn_lock(drv->ctx, drv->lock);
+		drv->isReadonly = true;
+		drv->usage++;
+		nn_unlock(drv->ctx, drv->lock);
+		return true;
+	}
+	if(strcmp(ty, NCL_FLASH) == 0) {
+		ncl_FlashState *drv = state;
 		nn_lock(drv->ctx, drv->lock);
 		drv->isReadonly = true;
 		drv->usage++;
@@ -3345,6 +3512,14 @@ size_t ncl_getLabel(nn_Component *c, char buf[NN_MAX_LABEL]) {
 		nn_unlock(s->ctx, s->lock);
 		return len;
 	}
+	if(strcmp(typeid, NCL_FLASH) == 0) {
+		ncl_FlashState *s = nn_getComponentState(c);
+		nn_lock(s->ctx, s->lock);
+		size_t len = s->labellen;
+		memcpy(buf, s->label, len);
+		nn_unlock(s->ctx, s->lock);
+		return len;
+	}
 	return 0;
 }
 
@@ -3377,6 +3552,14 @@ size_t ncl_setLabel(nn_Component *c, const char *label, size_t len) {
 	}
 	if(strcmp(typeid, NCL_DRIVE) == 0) {
 		ncl_DriveState *s = nn_getComponentState(c);
+		nn_lock(s->ctx, s->lock);
+		memcpy(s->label, label, len);
+		s->labellen = len;
+		nn_unlock(s->ctx, s->lock);
+		return len;
+	}
+	if(strcmp(typeid, NCL_FLASH) == 0) {
+		ncl_FlashState *s = nn_getComponentState(c);
 		nn_lock(s->ctx, s->lock);
 		memcpy(s->label, label, len);
 		s->labellen = len;

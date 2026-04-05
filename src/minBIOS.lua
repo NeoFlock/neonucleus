@@ -95,6 +95,13 @@ for addr in component.list("drive", true) do
 	end
 end
 
+for addr in component.list("nandflash", true) do
+	local f = getBootCode(addr)
+	if f then
+		table.insert(bootables, {code = f, addr = addr})
+	end
+end
+
 local function boot(bootable)
 	local w, h = component.invoke(gpu, "maxResolution")
 	component.invoke(gpu, "setResolution", w, h)
