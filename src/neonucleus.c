@@ -2488,7 +2488,6 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 1 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 2,
-		.cacheLineSize = 2,
 		.readsPerTick = 20,
 		.writesPerTick = 10,
 		.rpm = 3600,
@@ -2499,7 +2498,6 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 2 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 4,
-		.cacheLineSize = 4,
 		.readsPerTick = 30,
 		.writesPerTick = 15,
 		.rpm = 5400,
@@ -2510,7 +2508,6 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 4 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 8,
-		.cacheLineSize = 8,
 		.readsPerTick = 40,
 		.writesPerTick = 20,
 		.rpm = 7200,
@@ -2521,7 +2518,6 @@ const nn_Drive nn_defaultDrives[4] = {
 		.capacity = 8 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 16,
-		.cacheLineSize = 16,
 		.readsPerTick = 60,
 		.writesPerTick = 30,
 		.rpm = 7200,
@@ -2534,7 +2530,6 @@ const nn_Drive nn_floppyDrive = {
 	.capacity = 512 * NN_KiB,
 	.sectorSize = 512,
 	.platterCount = 1,
-	.cacheLineSize = 2,
 	.readsPerTick = 10,
 	.writesPerTick = 5,
 	.rpm = 1800,
@@ -2547,7 +2542,6 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.capacity = 512 * NN_KiB,
 		.sectorSize = 512,
 		.platterCount = 2,
-		.cacheLineSize = 2,
 		.readsPerTick = 10,
 		.writesPerTick = 5,
 		.rpm = 0,
@@ -2558,7 +2552,6 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.capacity = 1 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 4,
-		.cacheLineSize = 4,
 		.readsPerTick = 15,
 		.writesPerTick = 7,
 		.rpm = 0,
@@ -2569,7 +2562,6 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.capacity = 2 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 8,
-		.cacheLineSize = 8,
 		.readsPerTick = 20,
 		.writesPerTick = 10,
 		.rpm = 0,
@@ -2580,7 +2572,6 @@ const nn_Drive nn_defaultSSDs[4] = {
 		.capacity = 4 * NN_MiB,
 		.sectorSize = 512,
 		.platterCount = 16,
-		.cacheLineSize = 16,
 		.readsPerTick = 30,
 		.writesPerTick = 15,
 		.rpm = 0,
@@ -2593,7 +2584,6 @@ const nn_Drive nn_floppySSD = {
 	.capacity = 256 * NN_KiB,
 	.sectorSize = 512,
 	.platterCount = 1,
-	.cacheLineSize = 2,
 	.readsPerTick = 5,
 	.writesPerTick = 2,
 	.rpm = 0,
@@ -4067,30 +4057,16 @@ static void nn_drive_seekPenalty(nn_Computer *C, size_t lastSector, size_t newSe
 	} else {
 		sectorDelta = lastSector - newSector;
 	}
-	if(sectorDelta < drive->cacheLineSize) {
-		sectorDelta = 0; // within cache
-	} else {
-		// align to cache line
-		if(sectorDelta % drive->cacheLineSize != 0) {
-			sectorDelta += drive->cacheLineSize - sectorDelta % drive->cacheLineSize;
-		}
-	}
 
 	// RPM over the number of sectors, over 60 seconds.
 	double latency = (double)sectorDelta * 60 / ((double)drive->rpm * maxSectors);
 	nn_addIdleTime(C, latency);
 }
 
-// 1-indexed
-static size_t nn_drive_cachelineOf(size_t sector, size_t perCache) {
-	return (sector - 1) / perCache;
-}
-
 typedef enum nn_DrvNum {
 	NN_DRVNUM_GETCAPACITY,
 	NN_DRVNUM_GETSECTORSIZE,
 	NN_DRVNUM_GETPLATTERCOUNT,
-	NN_DRVNUM_GETCACHESIZE,
 	NN_DRVNUM_ISRO,
 	NN_DRVNUM_GETLABEL,
 	NN_DRVNUM_SETLABEL,
@@ -4131,9 +4107,8 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 		return NN_OK;
 	}
 	size_t ss = state->drive.sectorSize;
-	size_t cacheline = state->drive.cacheLineSize;
-	size_t cacheByteSize = cacheline * ss;
 	size_t sectorCount = state->drive.capacity / ss;
+	size_t perPlatter = sectorCount / state->drive.platterCount;
 	unsigned int method = request->methodIdx;
 	if(method == NN_DRVNUM_GETCAPACITY) {
 		request->returnCount = 1;
@@ -4142,10 +4117,6 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 	if(method == NN_DRVNUM_GETSECTORSIZE) {
 		request->returnCount = 1;
 		return nn_pushinteger(C, ss);
-	}
-	if(method == NN_DRVNUM_GETCACHESIZE) {
-		request->returnCount = 1;
-		return nn_pushinteger(C, cacheline);
 	}
 	if(method == NN_DRVNUM_ISRO) {
 		dreq.action = NN_DRIVE_ISRO;
@@ -4188,11 +4159,9 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 		if(e) return e;
 		curPos = dreq.curpos;
 
-		if(nn_drive_cachelineOf(curPos, cacheline) != nn_drive_cachelineOf(sec, cacheline)) {
-			nn_drive_seekPenalty(C, curPos, sec, &state->drive);
-			nn_costComponent(C, request->compAddress, state->drive.readsPerTick);
-			nn_removeEnergy(C, state->drive.dataEnergyCost * cacheline * ss);
-		}
+		nn_drive_seekPenalty(C, curPos, sec, &state->drive);
+		nn_costComponent(C, request->compAddress, state->drive.readsPerTick);
+		nn_removeEnergy(C, state->drive.dataEnergyCost * ss);
 
 		char *sector = nn_alloc(ctx, ss);
 		if(sector == NULL) return NN_ENOMEM;
@@ -4222,7 +4191,6 @@ nn_Component *nn_createDrive(nn_Universe *universe, const char *address, const n
 		[NN_DRVNUM_GETCAPACITY] = {"getCapacity", "function(): integer - Get drive capacity", NN_DIRECT},
 		[NN_DRVNUM_GETSECTORSIZE] = {"getSectorSize", "function(): integer - Get sector size", NN_DIRECT},
 		[NN_DRVNUM_GETPLATTERCOUNT] = {"getPlatterCount", "function(): integer - Get number of platters on this drive", NN_DIRECT},
-		[NN_DRVNUM_GETCACHESIZE] = {"getCacheSize", "function(): integer - Get number of sectors cached in a single read", NN_DIRECT},
 		[NN_DRVNUM_ISRO] = {"isReadOnly", "function(): boolean - Get whether the drive is read-only", NN_DIRECT},
 		[NN_DRVNUM_GETLABEL] = {"getLabel", "function(): string? - Get drive label", NN_DIRECT},
 		[NN_DRVNUM_SETLABEL] = {"setLabel", "function(label: string?): string - Set drive label", NN_INDIRECT},
@@ -4272,7 +4240,6 @@ bool nn_mergeDrives(nn_Drive *merged, const nn_Drive *drives, size_t len) {
 		merged->dataEnergyCost += d.dataEnergyCost;
 		merged->rpm += d.rpm;
 		merged->capacity += d.capacity;
-		merged->cacheLineSize += d.cacheLineSize;
 		merged->platterCount += d.platterCount;
 	}
 	merged->readsPerTick /= len;

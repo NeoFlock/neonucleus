@@ -1,6 +1,7 @@
 # For MVP functionality
 
-- implement the RAID merger algorithm (merges multiple drives or filesystems together into a bigger config)
+- move SSDs to ossm_flash
+- remove HDD cachelines (they're pointless)
 - write a tester OS, basically a menu with tests to run
 - tmpfs (rework the whole thing)
 - device info
@@ -66,6 +67,24 @@ NOTE: we're mostly bottlenecked by the architecture (typically a Lua VM) and the
 
 - make signals use a circular buffer instead of a simple array
 - use more arenas if possible
+
+# Component extensions
+
+## filesystem
+
+- `getMaxRead(): integer`, returns the maximum size of a read; effectively the ideal buffer size
+
+## drive
+
+- `readUByte(byte: integer): integer`, reads an unsigned byte
+
+## ossm_flash
+
+- `getLabel(): string?`, to get the label
+- `setLabel(label: string?): string?`, to set the label
+- `isReadonly(): boolean`, check if the SSD is read-only
+- `readUByte(byte: integer): integer`, reads an unsigned byte
+- `getWearLevel(): number`, returns a number from 0 to 100, where 0 means full life and 100 means dead
 
 # Unique components
 

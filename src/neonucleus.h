@@ -1094,9 +1094,6 @@ typedef struct nn_Drive {
 	// However, if it has 2 platters, it'd be seen as 1 to 4 being at the same angle as 5 to 8, which
 	// would mean only 3 rotations.
 	size_t platterCount;
-	// how many sectors are cached together.
-	// Each platter has "its own cache."
-	size_t cacheLineSize;
 	// how many reads can be issued per tick.
 	// Anything that kicks out the current cacheline counts as a read.
 	size_t readsPerTick;
