@@ -1,6 +1,6 @@
 # For MVP functionality
 
-- move SSDs to ossm_flash
+- move SSDs to nandflash
 - remove HDD cachelines (they're pointless)
 - write a tester OS, basically a menu with tests to run
 - tmpfs (rework the whole thing)
@@ -78,13 +78,6 @@ NOTE: we're mostly bottlenecked by the architecture (typically a Lua VM) and the
 
 - `readUByte(byte: integer): integer`, reads an unsigned byte
 
-## ossm_flash
-
-- `getLabel(): string?`, to get the label
-- `setLabel(label: string?): string?`, to set the label
-- `isReadonly(): boolean`, check if the SSD is read-only
-- `readUByte(byte: integer): integer`, reads an unsigned byte
-- `getWearLevel(): number`, returns a number from 0 to 100, where 0 means full life and 100 means dead
 
 # Unique components
 
@@ -208,6 +201,20 @@ The `led_matrix` component has:
 
 Intensity is between 0 (off) and 1 (full brightness).
 An LED matrix has really high call budget, thus it is ideal for frequency updating status updates.
+
+## nandflash
+
+Heavily inspired by ossm_flash
+
+- `getWearLevel(): number`, returns a number from 0 to 100, where 0 means full life and 100 means dead
+- `getSectorSize(): integer`, returns the logical sector size
+- `getCapacity(): integer`, the capacity, in bytes, of the flash storage
+- `getLayers(): integer`, returns the layering amount, for example 3 for TLC. Effectively an indication for lifetime, with higher being worse.
+- `readSector(sec: integer): string`, read a sector
+- `writeSector(sec: integer, data: string): boolean`, write a sector
+- `isReadonly(): boolean`, check whether flash is read-only
+- `getLabel(): string?`, get drive label
+- `setLabel(label: string?): string?`, get drive label
 
 ## Speaker
 
