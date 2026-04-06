@@ -1023,6 +1023,7 @@ typedef struct nn_Signal {
 typedef struct nn_Computer {
 	nn_ComputerState state;
 	nn_Universe *universe;
+	nn_Lock *lock;
 	void *userdata;
 	char *address;
 	char *tmpaddress;
@@ -1126,8 +1127,15 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->universe = universe;
 	c->userdata = userdata;
 
+	c->lock = nn_createLock(ctx);
+	if(c->lock == NULL) {
+		nn_free(ctx, c, sizeof(nn_Computer));
+		return NULL;
+	}
+
 	c->address = nn_strdup(ctx, address);
 	if(c->address == NULL) {
+		nn_destroyLock(ctx, c->lock);
 		nn_free(ctx, c, sizeof(nn_Computer));
 		return NULL;
 	}
@@ -1142,6 +1150,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->callBudget = c->totalCallBudget;
 
 	if(nn_hashInit(&c->components, maxComponents, ctx, &nn_componentHasher)) {
+		nn_destroyLock(ctx, c->lock);
 		nn_strfree(ctx, c->address);
 		nn_free(ctx, c, sizeof(nn_Computer));
 		return NULL;
@@ -1161,6 +1170,14 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	// set to empty string
 	c->errorBuffer[0] = '\0';
 	return c;
+}
+
+void nn_lockComputer(nn_Computer *computer) {
+	nn_lock(&computer->universe->ctx, computer->lock);
+}
+
+void nn_unlockComputer(nn_Computer *computer) {
+	nn_unlock(&computer->universe->ctx, computer->lock);
 }
 
 static void nn_dropValue(nn_Value val);
@@ -1195,9 +1212,6 @@ void nn_destroyComputer(nn_Computer *computer) {
 		nn_dropValue(computer->callstack[i]);
 	}
 	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
-		if(c->slot >= 0 || (computer->tmpaddress != NULL && nn_strcmp(computer->tmpaddress, c->address))) {
-			nn_signalComponent(c->comp, computer, NN_CSIGRESET);
-		}
 		nn_dropComponent(c->comp);
 	}
 	for(size_t i = 0; i < computer->signalCount; i++) {
@@ -1800,6 +1814,7 @@ nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot) {
 	};
 	if(!nn_hashPut(&c->components, &ent)) return NN_ELIMIT;
 	nn_retainComponent(comp);
+	nn_signalComponent(comp, c, NN_CSIGMOUNTED);
 	if(c->state == NN_RUNNING) {
 		return nn_pushComponentAdded(c, comp->address, comp->type);
 	}
@@ -1816,6 +1831,7 @@ nn_Exit nn_unmountComponent(nn_Computer *c, const char *address) {
 	if(c->state == NN_RUNNING) {
 		e = nn_pushComponentRemoved(c, address, comp->type);
 	}
+	nn_signalComponent(comp, c, NN_CSIGUNMOUNTED);
 	nn_dropComponent(comp);
 	return e;
 }
@@ -4757,41 +4773,39 @@ nn_Component *nn_createScreen(
     const nn_Method methods[NN_SCRNUM_COUNT] = {
         [NN_SCRNUM_ISON] = {
             "isOn",
-            "function():boolean -- Screen powered?",
+            "function(): boolean - Returns whether the screen is on",
             NN_DIRECT},
         [NN_SCRNUM_TURNON] = {
             "turnOn",
-            "function():boolean,boolean -- Turn on",
+            "function(): boolean, boolean - Turn on",
             NN_INDIRECT},
         [NN_SCRNUM_TURNOFF] = {
             "turnOff",
-            "function():boolean,boolean -- Turn off",
+            "function(): boolean, boolean - Turn off",
             NN_INDIRECT},
         [NN_SCRNUM_GETASPECTRATIO] = {
             "getAspectRatio",
-            "function():number,number -- Block ratio",
+            "function(): integer, integer - Block ratio",
             NN_DIRECT},
         [NN_SCRNUM_GETKEYBOARDS] = {
             "getKeyboards",
-            "function():table -- Attached keyboards",
+            "function(): string[] - Gets the keyboards attached to the screen",
             NN_DIRECT},
         [NN_SCRNUM_SETPRECISE] = {
             "setPrecise",
-            "function(on:boolean):boolean"
-            " -- High-precision mouse",
+            "function(on: boolean): boolean - Enable/disable high-precision mouse events",
             NN_DIRECT},
         [NN_SCRNUM_ISPRECISE] = {
             "isPrecise",
-            "function():boolean -- Precision enabled?",
+            "function():boolean -- Returns whether high-precision mouse events are enabled",
             NN_DIRECT},
         [NN_SCRNUM_SETTOUCHINVERTED] = {
             "setTouchModeInverted",
-            "function(on:boolean):boolean"
-            " -- Invert touch mode",
+            "function(on: boolean): boolean - Enables/disables inverse touch mode, which changes how the user interacts with the screen",
             NN_DIRECT},
         [NN_SCRNUM_ISTOUCHINVERTED] = {
             "isTouchModeInverted",
-            "function():boolean -- Touch inverted?",
+            "function(): boolean - Returns whether inverse touch mode is enabled",
             NN_DIRECT},
     };
 
@@ -5030,7 +5044,9 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         const char *name = nn_depthName(g.depth.oldDepth);
         if(name == NULL) name = "Unknown";
         req->returnCount = 1;
-        return nn_pushstring(C, name);
+        e = nn_pushstring(C, name);
+		if(e) return e;
+		return nn_pushinteger(C, g.depth.oldDepth);
     }
     //  maxResolution 
     if(m == NN_GPUNUM_MAXRES) {
@@ -5368,112 +5384,101 @@ nn_Component *nn_createGPU(
     const nn_Method methods[NN_GPUNUM_COUNT] = {
         [NN_GPUNUM_BIND] = {
             "bind",
-            "function(address:string[,reset:boolean])"
-            ":boolean -- Bind to screen",
+            "function(address: string, reset?:boolean): boolean - Attempts to bind the GPU to a screen",
             NN_INDIRECT},
         [NN_GPUNUM_GETSCREEN] = {
             "getScreen",
-            "function():string -- Bound screen address",
+            "function(): string? - Get the bound screen, if any",
             NN_DIRECT},
         [NN_GPUNUM_GETBG] = {
             "getBackground",
-            "function():number,boolean -- Current bg",
+            "function(): integer, boolean - Returns the current background, and whether its a palette index",
             NN_DIRECT},
         [NN_GPUNUM_SETBG] = {
             "setBackground",
-            "function(color:number[,palette:boolean])"
-            ":number[,number] -- Set bg",
+            "function(color: integer, palette?: boolean): integer, integer? - Sets the current background, returns the old one",
             NN_DIRECT},
         [NN_GPUNUM_GETFG] = {
             "getForeground",
-            "function():number,boolean -- Current fg",
+            "function(): integer,boolean - Returns the current foreground, and whether its a plette index",
             NN_DIRECT},
         [NN_GPUNUM_SETFG] = {
             "setForeground",
-            "function(color:number[,palette:boolean])"
-            ":number[,number] -- Set fg",
+            "function(color: integer, palette: boolean): integer, integer? - Sets the current foreground, returns the old one",
             NN_DIRECT},
         [NN_GPUNUM_GETPALETTE] = {
             "getPaletteColor",
-            "function(index:number):number"
-            " -- Get palette color",
+            "function(index: integer): integer - Returns a color from the palette",
             NN_DIRECT},
         [NN_GPUNUM_SETPALETTE] = {
             "setPaletteColor",
-            "function(index:number,value:number):number"
-            " -- Set palette color",
+            "function(index: integer, value: integer): integer - Changes a color from the palette, returns the old one",
             NN_DIRECT},
         [NN_GPUNUM_MAXDEPTH] = {
             "maxDepth",
-            "function():number -- Max color depth",
+            "function(): integer - Returns the maximum supported color depth (by GPU and/or screen)",
             NN_DIRECT},
         [NN_GPUNUM_GETDEPTH] = {
             "getDepth",
-            "function():number -- Current depth",
+            "function(): integer - Returns the current depth",
             NN_DIRECT},
         [NN_GPUNUM_SETDEPTH] = {
             "setDepth",
-            "function(depth:number):string -- Set depth",
+            "function(depth:integer): string, integer - Change the current depth, returns the name of the old one, and its value",
             NN_DIRECT},
         [NN_GPUNUM_MAXRES] = {
             "maxResolution",
-            "function():number,number -- Max resolution",
+            "function(): integer, integer - Retuns the maximum supported resolution (by GPU and/or screen)",
             NN_DIRECT},
         [NN_GPUNUM_GETRES] = {
             "getResolution",
-            "function():number,number -- Resolution",
+            "function(): integer, integer - Returns the current screen resolution",
             NN_DIRECT},
         [NN_GPUNUM_SETRES] = {
             "setResolution",
-            "function(w:number,h:number):boolean"
-            " -- Set resolution",
+            "function(width: integer, height: integer): boolean - Changes the current screen resolution",
             NN_DIRECT},
         [NN_GPUNUM_GETVIEWPORT] = {
             "getViewport",
-            "function():number,number -- Viewport size",
+            "function(): integer, integer - Get the current viewport, the region of the screen that can actually be seen",
             NN_DIRECT},
         [NN_GPUNUM_SETVIEWPORT] = {
             "setViewport",
-            "function(w:number,h:number):boolean"
-            " -- Set viewport",
+            "function(width: integer, height: integer): boolean - Change the viewport to a new size",
             NN_DIRECT},
         [NN_GPUNUM_GET] = {
             "get",
-            "function(x:number,y:number):string,"
-            "number,number,number?,number? -- Read pixel",
+            "function(x: integer, y: integer): string, integer, integer, integer?, integer? - Get the character, foreground, background, foreground index and "
+			"background index of a pixel",
             NN_DIRECT},
         [NN_GPUNUM_SET] = {
             "set",
-            "function(x:number,y:number,s:string"
-            "[,vertical:boolean]):boolean -- Write text",
+            "function(x: integer, y: integer, s: string, vertical?: boolean): boolean - Set a horizontal/vertical line of text at a given (x,y) coordinate.",
             NN_DIRECT},
         [NN_GPUNUM_COPY] = {
             "copy",
-            "function(x,y,w,h,tx,ty):boolean"
-            " -- Copy region",
+            "function(x: integer, y: integer, w: integer, h: integer, tx: integer, ty: integer): boolean - Copy a region on the screen. (tx, ty) is relative "
+			"to the top-left corner",
             NN_DIRECT},
         [NN_GPUNUM_FILL] = {
             "fill",
-            "function(x,y,w,h,char):boolean"
-            " -- Fill region",
+            "function(x: integer, y: integer, w: integer, h: integer, char: string): boolean - Fill a rectangle with a specific character",
             NN_DIRECT},
         [NN_GPUNUM_GETACTIVEBUF] = {
             "getActiveBuffer",
-            "function():number -- Active buffer index",
+            "function(): integer - Get the current active buffer index, 0 means the bound screen. May return 0 even when there is no screen",
             NN_DIRECT},
         [NN_GPUNUM_SETACTIVEBUF] = {
             "setActiveBuffer",
-            "function(index:number):number"
-            " -- Set active buffer",
+            "function(index: integer): integer - Set the active buffer, returns the old one",
             NN_DIRECT},
         [NN_GPUNUM_BUFFERS] = {
             "buffers",
-            "function():table -- List buffer indices",
+            "function(): integer[] - Returns the list of VRAM buffers; this never includes 0, as it is the screen",
             NN_DIRECT},
         [NN_GPUNUM_ALLOCBUF] = {
             "allocateBuffer",
-            "function([w:number,h:number]):number"
-            " -- Allocate VRAM page",
+            "function(width: integer, height: integer): integer - Allocate a new VRAM buffer",
             NN_DIRECT},
         [NN_GPUNUM_FREEBUF] = {
             "freeBuffer",
@@ -5486,21 +5491,20 @@ nn_Component *nn_createGPU(
             NN_DIRECT},
         [NN_GPUNUM_TOTALMEM] = {
             "totalMemory",
-            "function():number -- Total VRAM",
+            "function(): integer - Returns the VRAM capacity, in pixels",
             NN_DIRECT},
         [NN_GPUNUM_FREEMEM] = {
             "freeMemory",
-            "function():number -- Free VRAM",
+            "function(): integer - Returns the amount of unused VRAM, in pixels",
             NN_DIRECT},
         [NN_GPUNUM_GETBUFSIZE] = {
             "getBufferSize",
-            "function([index:number]):number,number"
-            " -- Buffer dimensions",
+            "function(index?: integer): integer, integer - Returns buffer dimensions",
             NN_DIRECT},
         [NN_GPUNUM_BITBLT] = {
             "bitblt",
-            "function([dst,col,row,w,h,src,fc,fr])"
-            ":boolean -- Blit between buffers",
+            "function(dst: integer, col: integer, row:integer, width:integer, height: integer, src: integer, fromCol: integer, fromRow: integer): boolean - "
+            "Copy from buffer to buffer, buffer to screen or screen to buffer",
             NN_DIRECT},
     };
 
@@ -5520,5 +5524,103 @@ nn_Component *nn_createGPU(
     nn_setComponentState(c, state);
     nn_setComponentClassState(c, cls);
     nn_setComponentHandler(c, nn_gpuHandler);
+    return c;
+}
+
+typedef enum nn_ModemNum {
+	NN_MODEMNUM_ISWIRED,
+	NN_MODEMNUM_ISWIRELESS,
+	NN_MODEMNUM_MAXPACKETSIZE,
+	NN_MODEMNUM_MAXVALUES,
+
+	NN_MODEMNUM_GETSTRENGTH,
+	NN_MODEMNUM_SETSTRENGTH,
+	NN_MODEMNUM_MAXSTRENGTH,
+
+	NN_MODEMNUM_ISOPEN,
+	NN_MODEMNUM_OPEN,
+	NN_MODEMNUM_CLOSE,
+	NN_MODEMNUM_GETPORTS,
+
+	NN_MODEMNUM_SEND,
+	NN_MODEMNUM_BROADCAST,
+
+	NN_MODEMNUM_COUNT,
+} nn_ModemNum;
+
+typedef struct nn_ModemState {
+    nn_Context *ctx;
+    nn_Modem modem;
+    nn_ModemHandler *handler;
+} nn_ModemState;
+
+static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
+	nn_Context *ctx = req->ctx;
+	nn_ModemState *state = req->classState;
+	nn_Computer *C = req->computer;
+	
+	bool isWired = state->modem.isWired;
+	bool isWireless = state->modem.maxRange > 0;
+	nn_ModemNum method = req->methodIdx;
+
+	if(req->action == NN_COMP_CHECKMETHOD) {
+		if(method == NN_MODEMNUM_GETSTRENGTH || method == NN_MODEMNUM_SETSTRENGTH || method == NN_MODEMNUM_MAXSTRENGTH) {
+			req->methodEnabled = isWireless;
+			return NN_OK;
+		}
+		return NN_OK;
+	}
+
+	nn_ModemRequest mreq;
+	mreq.ctx = ctx;
+	mreq.computer = C;
+	mreq.state = req->state;
+	mreq.modem = &state->modem;
+	mreq.localAddress = req->compAddress;
+
+	if(C) nn_setError(C, "modem: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createModem(nn_Universe *universe, const char *address, const nn_Modem *modem, void *state, nn_ModemHandler *handler) {
+    nn_Component *c = nn_createComponent(
+        universe, address, "gpu");
+    if(c == NULL) return NULL;
+
+    const nn_Method methods[NN_MODEMNUM_COUNT] = {
+		[NN_MODEMNUM_ISWIRED] = {"isWired", "function(): boolean - Returns whether the modem supports wired connectivity", NN_DIRECT},
+		[NN_MODEMNUM_ISWIRELESS] = {"isWireless", "function(): boolean - Returns whether the modem supports wireless connectivity", NN_DIRECT},
+		[NN_MODEMNUM_MAXPACKETSIZE] = {"maxPacketSize", "function(): integer - Returns the maximum logical packet size", NN_DIRECT},
+		[NN_MODEMNUM_MAXVALUES] = {"maxValues", "function(): integer - Returns the maximum amount of values", NN_DIRECT},
+
+		[NN_MODEMNUM_GETSTRENGTH] = {"getStrength", "function(): integer - Returns the range of wireless message", NN_DIRECT},
+		[NN_MODEMNUM_SETSTRENGTH] = {"setStrength", "function(strength: integer): integer - Changes the wireless signal strength", NN_INDIRECT},
+		[NN_MODEMNUM_MAXSTRENGTH] = {"maxStrength", "function(): integer - Returns the maximum strength of wireless messages", NN_DIRECT},
+
+		[NN_MODEMNUM_ISOPEN] = {"isOpen", "function(port: integer): boolean - Returns whether a port is open", NN_DIRECT},
+		[NN_MODEMNUM_OPEN] = {"open", "function(port: integer): boolean - Open a port", NN_DIRECT},
+		[NN_MODEMNUM_CLOSE] = {"close", "function(port?: integer): boolean - Close a port, or all ports if none specified", NN_DIRECT},
+		[NN_MODEMNUM_GETPORTS] = {"getOpenPorts", "function(): integer[] - Returns a list of all open ports", NN_DIRECT},
+	
+		[NN_MODEMNUM_SEND] = {"send", "function(targetAddress: string, port: integer, ...): boolean - Send a packet", NN_INDIRECT},
+		[NN_MODEMNUM_BROADCAST] = {"broadcast", "function(port: integer, ...): boolean - Broadcast a packet", NN_INDIRECT},
+    };
+
+    nn_Exit e = nn_setComponentMethodsArray(
+        c, methods, NN_MODEMNUM_COUNT);
+    if(e) { nn_dropComponent(c); return NULL; }
+
+    nn_Context *ctx = &universe->ctx;
+    nn_ModemState *cls = nn_alloc(ctx, sizeof(*cls));
+    if(cls == NULL) {
+        nn_dropComponent(c);
+        return NULL;
+    }
+    cls->ctx = ctx;
+    cls->modem = *modem;
+    cls->handler = handler;
+    nn_setComponentState(c, state);
+    nn_setComponentClassState(c, cls);
+    nn_setComponentHandler(c, nn_modemHandler);
     return c;
 }

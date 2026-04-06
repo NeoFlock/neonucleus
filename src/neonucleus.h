@@ -408,6 +408,8 @@ extern size_t nn_ramSizes[8];
 nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char *address, size_t totalMemory, size_t maxComponents, size_t maxDevices);
 // Destroys the state, effectively shutting down the computer.
 void nn_destroyComputer(nn_Computer *computer);
+void nn_lockComputer(nn_Computer *computer);
+void nn_unlockComputer(nn_Computer *computer);
 // get the userdata pointer
 void *nn_getComputerUserdata(nn_Computer *computer);
 const char *nn_getComputerAddress(nn_Computer *computer);
@@ -571,9 +573,10 @@ typedef struct nn_Method {
 
 // component signals
 
-// tells the component to reset its state
-// sent to the components with slot >= 0 and to tmpfs when computer state is dropped
-#define NN_CSIGRESET "reset"
+// mounted
+#define NN_CSIGMOUNTED "mounted"
+// unmounted
+#define NN_CSIGUNMOUNTED "unmounted"
 
 typedef enum nn_ComponentAction {
 	// component dropped
@@ -1529,6 +1532,122 @@ nn_Component *nn_createScreen(
     nn_ScreenHandler *handler
 );
 
+typedef struct nn_Modem {
+	// maximum range. Set to 0 for non-wireless modems
+	size_t maxRange;
+	// maximum values in a packet
+	size_t maxValues;
+	// maximum logical packet size. Note that the encoding is more efficient than the packet size algorithm estimates
+	size_t maxPacketSize;
+	// the maximum amount of open ports
+	size_t maxOpenPorts;
+	// whether the modem supports wired connectivity.
+	// Support for wireless checks if maxRange > 0.
+	bool isWired;
+	// base energy cost of 1 network message
+	double basePacketCost;
+	// energy cost of a full packet, at the maximum logical size
+	double fullPacketCost;
+	// energy cost per wireless packet strength level
+	double costPerStrength;
+} nn_Modem;
+
+// A buffer with encoded values
+typedef struct nn_EncodedNetworkContents {
+	nn_Context *ctx;
+	char *buf;
+	size_t buflen;
+	size_t valueCount;
+} nn_EncodedNetworkContents;
+
+extern nn_Modem nn_defaultWiredModem;
+extern nn_Modem nn_defaultWirelessModems[2];
+
+typedef enum nn_ModemAction {
+	// modem dropped
+	NN_MODEM_DROP,
+	// modem mounted to a computer, meant to bind
+	NN_MODEM_MOUNTED,
+	// modem unmounted to a computer, meant to unbind
+	NN_MODEM_UNMOUNTED,
+	// check whether a port is open
+	NN_MODEM_ISOPEN,
+	// open a port
+	NN_MODEM_OPEN,
+	// close a port
+	NN_MODEM_CLOSE,
+	// get open ports
+	NN_MODEM_GETPORTS,
+	// send/broadcast a message
+	NN_MODEM_SEND,
+	// get current modem strength
+	NN_MODEM_GETSTRENGTH,
+	// returns the wake message
+	NN_MODEM_GETWAKEMESSAGE,
+	// set the wake message
+	NN_MODEM_SETWAKEMESSAGE,
+} nn_ModemAction;
+
+typedef struct nn_ModemRequest {
+    nn_Context *ctx;
+    nn_Computer *computer;
+    void *state;
+    const nn_Modem *modem;
+	const char *localAddress;
+	nn_ModemAction action;
+	union {
+		struct {
+			size_t port;
+			bool opened;
+		} isOpen;
+		size_t openPort;
+		// NN_CLOSEPORTS means close all
+		size_t closePort;
+		struct {
+			// store the port numbers in this buffer
+			size_t *activePorts;
+			// the amount of active ports.
+			// the initial value is the capacity of activePorts
+			size_t len;
+		} getPorts;
+		struct {
+			const nn_EncodedNetworkContents *contents;
+			// NULL for broadcast
+			const char *address;
+			size_t port;
+		} send;
+		// for getStrength, setStrength.
+		size_t strength;
+		struct {
+			char *buf;
+			size_t len;
+			bool isFuzzy;
+		} getWake;
+		struct {
+			const char *buf;
+			size_t len;
+			bool isFuzzy;
+		} setWake;
+	};
+} nn_ModemRequest;
+
+typedef nn_Exit (nn_ModemHandler)(nn_ModemRequest *req);
+
+nn_Component *nn_createModem(nn_Universe *universe, const char *address, const nn_Modem *modem, void *state, nn_ModemHandler *handler);
+
+typedef struct nn_Tunnel {
+	// maximum range. Set to 0 for wired modems
+	size_t maxRange;
+	// maximum values in a packet
+	size_t maxValues;
+	// maximum logical packet size. Note that the encoding is more efficient than the packet size algorithm estimates
+	size_t maxPacketSize;
+	// the maximum amount of open ports
+	size_t maxOpenPorts;
+} nn_Tunnel;
+
+extern nn_Tunnel nn_defaultTunnel;
+
 // Colors and palettes.
 // Do note that the 
 
@@ -1777,13 +1896,6 @@ nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddres
 // relX, relY and relZ are the relative postion in 3D Cartesian space.
 // entityName can be NULL if the entity has no name.
 nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName);
-
-typedef struct nn_EncodedNetworkContents {
-	nn_Context *ctx;
-	char *buf;
-	size_t buflen;
-	size_t valueCount;
-} nn_EncodedNetworkContents;
 
 // applies basic encoding to a network message. This encoding has a header, and thus should remain backwards-compatible.
 // The encoding serves 2 purposes:
