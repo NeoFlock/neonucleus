@@ -1212,6 +1212,7 @@ void nn_destroyComputer(nn_Computer *computer) {
 		nn_dropValue(computer->callstack[i]);
 	}
 	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
+		nn_signalComponent(c->comp, computer, NN_CSIGUNMOUNTED);
 		nn_dropComponent(c->comp);
 	}
 	for(size_t i = 0; i < computer->signalCount; i++) {
