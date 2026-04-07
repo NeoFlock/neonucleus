@@ -1662,14 +1662,10 @@ typedef nn_Exit (nn_ModemHandler)(nn_ModemRequest *req);
 nn_Component *nn_createModem(nn_Universe *universe, const char *address, const nn_Modem *modem, void *state, nn_ModemHandler *handler);
 
 typedef struct nn_Tunnel {
-	// maximum range. Set to 0 for wired modems
-	size_t maxRange;
 	// maximum values in a packet
 	size_t maxValues;
 	// maximum logical packet size. Note that the encoding is more efficient than the packet size algorithm estimates
 	size_t maxPacketSize;
-	// the maximum amount of open ports
-	size_t maxOpenPorts;
 } nn_Tunnel;
 
 extern nn_Tunnel nn_defaultTunnel;
