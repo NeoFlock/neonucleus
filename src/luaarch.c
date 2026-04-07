@@ -116,6 +116,27 @@ static void luaArch_nnToLua(luaArch *arch, lua_State *L, size_t nnIdx) {
 	luaL_error(L, "bad NN value: %s", nn_typenameof(C, nnIdx));
 }
 
+static int luaArch_computer_beep(lua_State *L) {
+	nn_Beep beep = {.frequency = 1000, .duration = 1, .volume = 1};
+	if(lua_isnumber(L, 1)) {
+		beep.frequency = lua_tonumber(L, 1);
+	}
+	if(lua_isnumber(L, 2)) {
+		beep.duration = lua_tonumber(L, 2);
+	}
+	if(lua_isnumber(L, 3)) {
+		beep.volume = lua_tonumber(L, 3);
+	}
+	if(beep.frequency < 20) beep.frequency = 20;
+	if(beep.duration < 0) beep.duration = 0;
+	if(beep.volume < 0) beep.volume = 0;
+	if(beep.frequency > 20000) beep.frequency = 20000;
+	if(beep.duration > 5) beep.duration = 5;
+	if(beep.volume > 1) beep.volume = 1;
+	nn_setComputerBeep(luaArch_from(L)->computer, beep);
+	return 0;
+}
+
 static int luaArch_computer_freeMemory(lua_State *L) {
 	lua_pushinteger(L, nn_getFreeMemory(luaArch_from(L)->computer));
 	return 1;
@@ -531,6 +552,8 @@ static int luaArch_unicode_wtrunc(lua_State *L) {
 static void luaArch_loadEnv(lua_State *L) {
 	lua_createtable(L, 0, 10);
 	int computer = lua_gettop(L);
+	lua_pushcfunction(L, luaArch_computer_beep);
+	lua_setfield(L, computer, "beep");
 	lua_pushcfunction(L, luaArch_computer_freeMemory);
 	lua_setfield(L, computer, "freeMemory");
 	lua_pushcfunction(L, luaArch_computer_totalMemory);

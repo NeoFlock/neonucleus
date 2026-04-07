@@ -457,7 +457,6 @@ int main(int argc, char **argv) {
 		}
 	}
 
-restart:;
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
 	if(showStats) {
 		// collects stats
@@ -549,6 +548,11 @@ restart:;
 			if(t != NULL) nn_pushClipboard(c, "mainKB", t, player);
 		}
 
+		if(IsKeyPressed(KEY_TAB)) {
+			printf("force crashing\n");
+			nn_forceCrashComputer(c, "get crashed lol");
+		}
+
 		while(1) {
 			int keycode = GetKeyPressed();
 			nn_codepoint unicode = GetCharPressed();
@@ -574,6 +578,11 @@ restart:;
 					keybuf[i].key = 0;
 					nn_pushKeyUp(c, "mainKB", keybuf[i].unicode, key, player);
 				}
+				// unicode keys handled by raylib
+				if(IsKeyPressedRepeat(keybuf[i].key) && keybuf[i].unicode == 0) {
+					int key = keycode_to_oc(keybuf[i].key);
+					nn_pushKeyDown(c, "mainKB", keybuf[i].unicode, key, player);
+				}
 			}
 		}
 
@@ -594,7 +603,6 @@ restart:;
 			if(getenv("NN_NOIDLE") != NULL) nn_resetIdleTime(c);
 			nn_Exit e = nn_tick(c);
 			if(e != NN_OK) {
-				nn_setErrorFromExit(c, e);
 				printf("error: %s\n", nn_getError(c));
 				goto cleanup;
 			}
@@ -616,9 +624,17 @@ restart:;
 			}
 			if(state == NN_RESTART) {
 				printf("restart requested\n");
-				nn_destroyComputer(c);
-				goto restart;
+				nn_stopComputer(c);
+				ncl_resetScreen(nn_getComponentState(screen));
+				nn_addIdleTime(c, 1);
+				continue;
 			}
+		}
+
+		nn_Beep beep;
+		if(nn_getComputerBeep(c, &beep)) {
+			nn_clearComputerBeep(c);
+			printf("beep: %f Hz, %fs, %f%% volume\n", beep.frequency, beep.duration, beep.volume * 100);
 		}
 	}
 

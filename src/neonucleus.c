@@ -784,6 +784,15 @@ void nn_hashDeinit(nn_HashMap *map) {
 	nn_free(map->ctx, map->buf, map->hash->entSize * map->bufsize);
 }
 
+void nn_hashClear(nn_HashMap *map) {
+	for(size_t i = 0; i < map->bufsize; i++) {
+		void *ent = NN_PTROFF(map->buf, i, map->hash->entSize);
+		if(map->hash->handler(NN_HASH_CMP, ent, NULL) == NN_HASH_DIFFERENT) {
+			map->hash->handler(NN_HASH_REMOVE, ent, NULL);
+		}
+	}
+}
+
 size_t nn_hashGetHash(nn_HashMap *map, void *entry) {
 	return map->hash->handler(NN_HASH_HASH, entry, NULL);
 }
@@ -1044,6 +1053,7 @@ typedef struct nn_Computer {
 	size_t userCount;
 	double idleTimestamp;
 	double memoryScale;
+	nn_Beep beep;
 	nn_Value callstack[NN_MAX_STACK];
 	char errorBuffer[NN_MAX_ERROR_SIZE];
 	nn_Architecture archs[NN_MAX_ARCHITECTURES];
@@ -1169,6 +1179,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->memoryScale = 1;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
+	nn_clearComputerBeep(c);
 	return c;
 }
 
@@ -1196,34 +1207,86 @@ static const nn_MethodEntry *nn_getInternalMethod(nn_Component *c, const char *m
 	return nn_hashGet(&c->methodsMap, &lookingFor);
 }
 
-void nn_destroyComputer(nn_Computer *computer) {
-	nn_Context *ctx = &computer->universe->ctx;
+nn_Exit nn_startComputer(nn_Computer *computer) {
+	if(nn_isComputerOn(computer)) {
+		nn_stopComputer(computer);
+	}
+	nn_ArchitectureRequest req;
+	req.computer = computer;
+	req.globalState = computer->arch.state;
+	req.localState = NULL;
+	req.action = NN_ARCH_INIT;
+	nn_Exit err = computer->arch.handler(&req);
+	if(err) {
+		computer->state = NN_CRASHED;
+		nn_setErrorFromExit(computer, err);
+		return err;
+	}
+	computer->archState = req.localState;
+	return NN_OK;
+}
 
-	if(computer->arch.name != NULL && computer->archState != NULL) {
+void nn_stopComputer(nn_Computer *computer) {
+	nn_Context *ctx = &computer->universe->ctx;
+	if(nn_isComputerOn(computer)) {
 		nn_ArchitectureRequest req;
 		req.computer = computer;
 		req.globalState = computer->arch.state;
 		req.localState = computer->archState;
 		req.action = NN_ARCH_DEINIT;
 		computer->arch.handler(&req);
+		computer->archState = NULL;
 	}
-
-	for(size_t i = 0; i < computer->stackSize; i++) {
-		nn_dropValue(computer->callstack[i]);
-	}
-	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
-		nn_signalComponent(c->comp, computer, NN_CSIGUNMOUNTED);
-		nn_dropComponent(c->comp);
-	}
+	computer->state = NN_BOOTUP;
 	for(size_t i = 0; i < computer->signalCount; i++) {
 		nn_Signal s = computer->signals[i];
 		for(size_t j = 0; j < s.len; j++) nn_dropValue(s.values[j]);
 		nn_free(ctx, s.values, sizeof(nn_Value) * s.len);
 	}
+	computer->signalCount = 0;
+}
+
+void nn_forceCrashComputer(nn_Computer *computer, const char *s) {
+	nn_stopComputer(computer);
+	computer->state = NN_CRASHED;
+	nn_setError(computer, s);
+}
+
+bool nn_isComputerOn(nn_Computer *computer) {
+	return computer->archState != NULL;
+}
+
+void nn_setComputerBeep(nn_Computer *computer, nn_Beep beep) {
+	if(beep.duration < 0) beep.duration = 0;
+	computer->beep = beep;
+	nn_addIdleTime(computer, beep.duration);
+}
+
+bool nn_getComputerBeep(nn_Computer *computer, nn_Beep *beep) {
+	*beep = computer->beep;
+	return computer->beep.volume > 0;
+}
+
+void nn_clearComputerBeep(nn_Computer *computer) {
+	computer->beep.volume = 0;
+}
+
+void nn_destroyComputer(nn_Computer *computer) {
+	nn_Context *ctx = &computer->universe->ctx;
+	nn_stopComputer(computer);
+
+	for(size_t i = 0; i < computer->stackSize; i++) {
+		nn_dropValue(computer->callstack[i]);
+	}
 	for(size_t i = 0; i < computer->userCount; i++) {
 		nn_strfree(ctx, computer->users[i]);
 	}
 
+	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
+		nn_signalComponent(c->comp, computer, NN_CSIGUNMOUNTED);
+		nn_dropComponent(c->comp);
+	}
+	nn_destroyLock(ctx, computer->lock);
 	nn_hashDeinit(&computer->components);
 	if(computer->tmpaddress != NULL) nn_strfree(ctx, computer->tmpaddress);
 	nn_strfree(ctx, computer->address);
@@ -1522,6 +1585,9 @@ void nn_resetIdleTime(nn_Computer *computer) {
 }
 
 nn_Exit nn_tick(nn_Computer *computer) {
+	if(computer->state == NN_CRASHED) {
+		return NN_EBADSTATE;
+	}
 	nn_resetCallBudget(computer);
 	nn_resetComponentBudgets(computer);
 	nn_clearstack(computer);
@@ -1531,20 +1597,10 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	computer->idleTimestamp = nn_getUptime(computer);
 	if(computer->state == NN_BOOTUP) {
 		// init state
-		nn_ArchitectureRequest req;
-		req.computer = computer;
-		req.globalState = computer->arch.state;
-		req.localState = NULL;
-		req.action = NN_ARCH_INIT;
-		err = computer->arch.handler(&req);
-		if(err) {
-			computer->state = NN_CRASHED;
-			nn_setErrorFromExit(computer, err);
-			return err;
-		}
-		computer->archState = req.localState;
+		err = nn_startComputer(computer);
+		if(err) return err;
 	} else if(computer->state != NN_RUNNING) {
-		nn_setErrorFromExit(computer, NN_EBADSTATE);
+		if(computer->state != NN_CRASHED) nn_setErrorFromExit(computer, NN_EBADSTATE);
 		return NN_EBADSTATE;
 	}
 	computer->state = NN_RUNNING;
@@ -1561,8 +1617,6 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	}
 	return NN_OK;
 }
-
-// TODO: every component method src/neonucleus.h:530
 
 static nn_Exit nn_defaultComponent(nn_ComponentRequest *request) {
 	return NN_OK;

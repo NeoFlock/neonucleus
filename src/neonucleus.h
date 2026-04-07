@@ -410,6 +410,26 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 void nn_destroyComputer(nn_Computer *computer);
 void nn_lockComputer(nn_Computer *computer);
 void nn_unlockComputer(nn_Computer *computer);
+// stops the computer if an architecture state is already present,
+// will also clear the signal buffer and set the state to NN_BOOTUP.
+nn_Exit nn_startComputer(nn_Computer *computer);
+// destroys the architecture state if present.
+// Will also do other shutdown routines, such as unmounting every
+void nn_stopComputer(nn_Computer *computer);
+void nn_forceCrashComputer(nn_Computer *computer, const char *s);
+// returns whether an architecture state is present
+bool nn_isComputerOn(nn_Computer *computer);
+
+typedef struct nn_Beep {
+	double frequency;
+	double duration;
+	double volume;
+} nn_Beep;
+
+void nn_setComputerBeep(nn_Computer *computer, nn_Beep beep);
+bool nn_getComputerBeep(nn_Computer *computer, nn_Beep *beep);
+void nn_clearComputerBeep(nn_Computer *computer);
+
 // get the userdata pointer
 void *nn_getComputerUserdata(nn_Computer *computer);
 const char *nn_getComputerAddress(nn_Computer *computer);
