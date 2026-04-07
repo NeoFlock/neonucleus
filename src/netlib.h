@@ -136,14 +136,14 @@ void net_tickNetwork(net_Network *network);
 // a simple non-rewriting relay, which does not contribute to the hop counter
 net_Device *net_createJoint(net_Network *network);
 
-net_Device *net_createModem(net_Network *network, const nn_Modem *modem);
+net_Device *net_createModem(net_Network *network, const char *address, const nn_Modem *modem);
 
-net_Device *net_createTunnel(net_Network *network, const nn_Tunnel *tunnel, const char *channel);
+net_Device *net_createTunnel(net_Network *network, const char *address, const nn_Tunnel *tunnel, const char *channel);
 
 // TODO: the arguments. Also, relay configs can change
-net_Device *net_createRelay(net_Network *network);
+net_Device *net_createRelay(net_Network *network, const char *address);
 
-net_Device *net_createNetSplitter(net_Network *network);
+net_Device *net_createNetSplitter(net_Network *network, const char *address);
 
 // has slots matching the sides defined in neonucleus.h
 net_Device *net_createRack(net_Network *network);
