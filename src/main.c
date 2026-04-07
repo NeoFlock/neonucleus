@@ -458,6 +458,7 @@ int main(int argc, char **argv) {
 	}
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
+	nn_Component *wrappedC = nn_wrapComputer(c);
 	if(showStats) {
 		// collects stats
 		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
@@ -472,6 +473,7 @@ int main(int argc, char **argv) {
 
 	//nn_setTmpAddress(c, nn_getComponentAddress(tmpfs));
 
+	nn_mountComponent(c, wrappedC, 255);
 	nn_mountComponent(c, screen, -1);
 	nn_mountComponent(c, ocelotCard, -1);
 	//nn_mountComponent(c, tmpfs, -1);
@@ -494,6 +496,12 @@ int main(int argc, char **argv) {
 			ncl_lockScreen(scrbuf);
 			size_t scrw, scrh;
 			ncl_getScreenViewport(scrbuf, &scrw, &scrh);
+
+			ncl_ScreenFlags scrflags = ncl_getScreenFlags(scrbuf);
+			if((scrflags & NCL_SCREEN_ON) == 0) {
+				ncl_unlockScreen(scrbuf);
+				goto skipDrawScreen;
+			}
 
 			int cheight = GetScreenHeight() / scrh;
 			if(cheight != ncl_cellHeight(gc)) {
@@ -522,6 +530,7 @@ int main(int argc, char **argv) {
 			ncl_unlockScreen(scrbuf);
 			ncl_flushGlyphs(gc);
 		}
+skipDrawScreen:
 
 		int statY = 10;
 		if(sand.buf != NULL) {
@@ -650,6 +659,7 @@ cleanup:;
 	nn_dropComponent(screen);
 	nn_dropComponent(gpuCard);
 	nn_dropComponent(keyboard);
+	nn_dropComponent(wrappedC);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);

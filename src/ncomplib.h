@@ -344,5 +344,7 @@ void ncl_unmountKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
 bool ncl_hasKeyboard(ncl_ScreenState *state, const char *keyboardAddress);
 const char *ncl_getKeyboard(ncl_ScreenState *state, size_t idx);
 double ncl_getScreenEnergyUsage(ncl_ScreenState *state);
+double ncl_getScreenBrightness(ncl_ScreenState *state);
+void ncl_setScreenBrightness(ncl_ScreenState *state, double brightness);
 
 #endif

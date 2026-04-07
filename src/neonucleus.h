@@ -903,6 +903,14 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 // The high-level API of the built-in component classes.
 // These components still make no assumptions about the OS, and still require handlers to connect them to the outside work.
 
+// Wrapping a computer as a component.
+// It's a new instance each time.
+// The computer MUST NOT be dropped before this component is fully gone.
+
+nn_Exit nn_transferErrorFrom(nn_Exit exit, nn_Computer *from, nn_Computer *to);
+nn_Computer *nn_fromWrappedComputer(nn_Component *component);
+nn_Component *nn_wrapComputer(nn_Computer *computer);
+
 // EEPROM class
 
 // reads and writes are always 1/1
@@ -1586,10 +1594,6 @@ extern nn_Modem nn_defaultWirelessModems[2];
 typedef enum nn_ModemAction {
 	// modem dropped
 	NN_MODEM_DROP,
-	// modem mounted to a computer, meant to bind
-	NN_MODEM_MOUNTED,
-	// modem unmounted to a computer, meant to unbind
-	NN_MODEM_UNMOUNTED,
 	// check whether a port is open
 	NN_MODEM_ISOPEN,
 	// open a port
@@ -1602,6 +1606,8 @@ typedef enum nn_ModemAction {
 	NN_MODEM_SEND,
 	// get current modem strength
 	NN_MODEM_GETSTRENGTH,
+	// set current modem strength
+	NN_MODEM_SETSTRENGTH,
 	// returns the wake message
 	NN_MODEM_GETWAKEMESSAGE,
 	// set the wake message

@@ -532,6 +532,7 @@ typedef struct ncl_ScreenState {
 	ncl_ScreenPixel *pixels;
 	ncl_ScreenFlags flags;
 	size_t keyboardCount;
+	double brightness;
 	char *keyboards[NCL_MAX_KEYBOARD];
 } ncl_ScreenState;
 
@@ -2269,11 +2270,12 @@ nn_Component *ncl_createScreen(nn_Universe *universe, const char *address, const
 	screen->palette = palette;
 	screen->resolvedPalette = resolvedPalette;
 	screen->pixels = pixels;
-	screen->flags = 0;
+	screen->flags = NCL_SCREEN_ON;
 	screen->depth = config->maxDepth;
 	screen->viewportWidth = screen->width;
 	screen->viewportHeight = screen->height;
 	screen->keyboardCount = 0;
+	screen->brightness = 1;
 
 	ncl_resetScreen(screen);
 
@@ -3323,6 +3325,7 @@ const char *ncl_getKeyboard(ncl_ScreenState *state,
 }
 
 double ncl_getScreenEnergyUsage(ncl_ScreenState *state) {
+	if((state->flags & NCL_SCREEN_ON) == 0) return 0;
 	double sum = 0;
 	for(int y = 1; y <= state->viewportHeight; y++) {
 		for(int x = 1; x <= state->viewportWidth; x++) {
@@ -3334,6 +3337,14 @@ double ncl_getScreenEnergyUsage(ncl_ScreenState *state) {
 		}
 	}
 	return sum;
+}
+
+double ncl_getScreenBrightness(ncl_ScreenState *state) {
+	return state->brightness;
+}
+
+void ncl_setScreenBrightness(ncl_ScreenState *state, double brightness) {
+	state->brightness = brightness;
 }
 
 // general stuff

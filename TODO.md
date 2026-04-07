@@ -1,9 +1,10 @@
 # For MVP functionality
 
-- NCL computer states, as computers that can be turned on/off/beep/etc.
+- add brightness to screens, which power usage scales with, each different tier has a different max brightness as well
 - write a tester OS, basically a menu with tests to run
-- tmpfs (rework the whole thing)
+- finish tmpfs (rework the whole thing)
 - device info
+- finish `computer` components
 - userdata support
 
 # To re-evaluate
