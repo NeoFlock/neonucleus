@@ -383,6 +383,7 @@ int main(int argc, char **argv) {
 	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &mainfsconf, true);
 	nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
 	nn_Component *testingfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
+	//nn_Component *testingfs = ncl_createFilesystem(u, NULL, "test", &nn_defaultFilesystems[3], false);
 
 	const char * const testDriveData = 
 		"local g, s = component.list('gpu')(), component.list('screen')()\n"
@@ -464,21 +465,6 @@ restart:;
 	}
 	nn_setCallBudget(c, 0);
 	
-	nn_EncodedNetworkContents contents;
-	nn_pushstring(c, "stuff");
-	nn_pushnull(c);
-	nn_pushnumber(c, 5.3);
-	nn_pushbool(c, false);
-	nn_encodeNetworkContents(c, &contents, 4);
-	nn_popn(c, 4);
-
-	printf("size: %zu\n", contents.buflen);
-	for(size_t i = 0; i < contents.buflen; i++) {
-		unsigned char byte = contents.buf[i];
-		printf("%02X ", byte);
-	}
-	printf("\n");
-
 	// default for 64-bit
 	if(sizeof(void *) > 4) nn_setMemoryScale(c, 1.8);
 	
@@ -494,7 +480,7 @@ restart:;
 	nn_mountComponent(c, eepromCard, 0);
 	nn_mountComponent(c, managedfs, 1);
 	nn_mountComponent(c, gpuCard, 2);
-	//nn_mountComponent(c, testingfs, 3);
+	nn_mountComponent(c, testingfs, 3);
 	nn_mountComponent(c, testDrive, 4);
 	nn_mountComponent(c, testFlash, 5);
 	while(true) {
@@ -578,10 +564,6 @@ restart:;
 				if(keycode == KEY_TAB) unicode = '\t';
 			}
 
-			if(keycode == KEY_F1) {
-				nn_pushModemMessage(c, "bullshit", "someone", 1, 5, &contents);
-			}
-
 			nn_pushKeyDown(c, "mainKB", unicode, keycode_to_oc(keycode), player);
 		}
 
@@ -634,7 +616,6 @@ restart:;
 			}
 			if(state == NN_RESTART) {
 				printf("restart requested\n");
-				nn_dropNetworkContents(&contents);
 				nn_destroyComputer(c);
 				goto restart;
 			}
@@ -648,12 +629,11 @@ cleanup:;
 	nn_dropComponent(managedfs);
 	nn_dropComponent(tmpfs);
 	nn_dropComponent(testingfs);
-    nn_dropComponent(testDrive);
-    nn_dropComponent(testFlash);
+	nn_dropComponent(testDrive);
+	nn_dropComponent(testFlash);
 	nn_dropComponent(screen);
 	nn_dropComponent(gpuCard);
-    nn_dropComponent(keyboard);
-	nn_dropNetworkContents(&contents);
+	nn_dropComponent(keyboard);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);

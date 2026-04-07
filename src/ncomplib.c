@@ -1569,16 +1569,7 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 	}
 	if(req->action == NN_FS_MKDIR) {
 		nn_lock(ctx, tmpfs->lock);
-		if(ncl_tmpSpaceFree(tmpfs) < tmpfs->fileCost) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "out of space");
-			return NN_EBADCALL;
-		}
-		if(!ncl_tmpMkdir(tmpfs->root, req->mkdir)) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "operation failed");
-			return NN_EBADCALL;
-		}
+		ncl_tmpMkdir(tmpfs->root, req->mkdir);
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
