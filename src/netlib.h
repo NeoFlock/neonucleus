@@ -93,6 +93,8 @@ typedef void (net_TickFunc)(net_Device *device, size_t tickCount);
 
 net_Network *net_createNetwork(nn_Universe *universe, const net_NetworkLimits *limits);
 void net_destroyNetwork(net_Network *network);
+void net_lockNetwork(net_Device *device);
+void net_unlockNetwork(net_Device *device);
 
 net_Device *net_createDevice(net_Network *network, const char *type, size_t slotCount, net_DevicePosition position);
 void net_destroyDevice(net_Device *device);
@@ -113,6 +115,7 @@ void *net_getDeviceState(net_Device *device);
 // the filter is also meant to be used as a listener
 void net_setDeviceFilter(net_Device *device, net_Filter *filter);
 void net_setDeviceTick(net_Device *device, net_TickFunc *tick);
+void net_tickDevice(net_Device *device);
 void net_setDeviceComponent(net_Device *device, nn_Component *component);
 nn_Component *net_getDeviceComponent(net_Device *device);
 size_t net_getDeviceSlotCount(net_Device *device);
@@ -129,7 +132,14 @@ void net_removeDeviceOneWay(net_Device *device, net_Device *target);
 // disconnects the devices both-ways
 void net_disconnectDevices(net_Device *deviceA, net_Device *deviceB);
 
-void net_tickNetwork(net_Network *network);
+typedef void (net_Visitor)(net_Network *network, void *state, net_Device *device);
+
+// gets the network device count
+size_t net_countNetworkDevices(net_Network *network);
+// get the device, buffer must be big enough for all of them.
+// Make sure to call net_countNetworkDevices.
+// If running stuff on multiple threads, MAKE SURE THE NETWORK IS LOCKED. THIS IS VERY IMPORTANT
+void net_getNetworkDevices(net_Network *network, net_Device **devices);
 
 // network devices
 
