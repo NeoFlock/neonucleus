@@ -28,7 +28,7 @@ typedef struct net_RadioMessageData {
 typedef struct net_NetworkLimits {
 	// maximum radio lifespan in ticks
 	size_t maxRadioLifespan;
-	// radio speed in coordinates per second
+	// radio speed in coordinates per tick
 	double radioSpeed;
 	// maximum connections in a device
 	size_t maxConnections;
@@ -51,6 +51,15 @@ typedef struct net_DevicePosition {
 	// xyz within network
 	double x, y, z;
 } net_DevicePosition;
+
+typedef struct net_RadioPacket {
+	net_DevicePosition initialPosition;
+	size_t tickSpawned;
+	// the tick at which it is dead
+	size_t expirationTick;
+	char *data;
+	size_t datalen;
+} net_Radiopacket;
 
 typedef enum net_MessagePropagation {
 	// direct connections
@@ -140,6 +149,17 @@ size_t net_countNetworkDevices(net_Network *network);
 // Make sure to call net_countNetworkDevices.
 // If running stuff on multiple threads, MAKE SURE THE NETWORK IS LOCKED. THIS IS VERY IMPORTANT
 void net_getNetworkDevices(net_Network *network, net_Device **devices);
+
+size_t net_getNetworkTickCount(net_Network *network);
+// increase the tick count by 1
+// this will also delete dead radio packets
+void net_incNetworkTickCount(net_Network *network);
+// set it to 0
+void net_resetNetworkTickCount(net_Network *network);
+
+void net_spawnRadioPacket(net_Network *network);
+size_t net_countRadioPackets(net_Network *network);
+void net_getRadioPackets(net_Network *network, net_RadioPacket *packets);
 
 // network devices
 
