@@ -111,13 +111,13 @@ The `radio_controller` component, which enables listening to connected radio tow
 
 The `radio_tower` component, which actually receives and sends the waves
 - `isEmitter(): boolean`, whether this tower can, in fact, send radio waves
-- `minFrequency(): number`, the minimum frequency it can detect and transmit
-- `maxFrequency(): number`, the maximum frequency it can detect and transmit
-- `getFrequencyResolution(): integer`, how many frequencies can be listened for in that range. The frequencies sent to the controller are rounded to one of
-these
+- `minFrequency: number`, the minimum frequency it can detect and transmit (getter field)
+- `maxFrequency: number`, the maximum frequency it can detect and transmit (getter field)
+- `resolution: integer`, how many frequencies can be listened for in that range. The frequencies sent to the controller are rounded to one of
+these (getter field)
 - `getRangeOf(frequency: number): number`, to get the maximum range for a given frequency
 - `maxPacketSize(): integer`, to get the maximum size that can be sent at once, typically 32KiB.
-- `getBaseFrequency(): number`, gets the base frequency of radio communications, typically 100 kHz.
+- `baseFrequency: number`, gets the base frequency of radio communications, typically 100 kHz. (getter field)
 - `emit(frequency: number, data: string): boolean`, to emit a radio packet on a given frequency. The frequency must be in range, and will be rounded to one
 within resolution
 
@@ -180,7 +180,7 @@ It also pushes the signals:
 ### Writing to non-erasable drives
 
 Instead of erroring out, it instead ORs the bits between what was there and what is written. This means you can still write the initial contents,
-as the CD starts out 0'd, but subsequent writes are likely to corrupt previous.
+as the CD starts out 0'd, but subsequent writes are likely to corrupt previous ones.
 
 ### CDs vs tape
 
