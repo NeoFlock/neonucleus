@@ -420,6 +420,20 @@ void nn_forceCrashComputer(nn_Computer *computer, const char *s);
 // returns whether an architecture state is present
 bool nn_isComputerOn(nn_Computer *computer);
 
+typedef enum nn_ComputerEvent {
+	// when powered on
+	NN_COMPUTER_POWERON,
+	// when powered off
+	NN_COMPUTER_POWEROFF,
+	// when force-crashed
+	NN_COMPUTER_FORCECRASH,
+	// when crashed
+	NN_COMPUTER_CRASH,
+} nn_ComputerEvent;
+
+typedef void nn_ComputerListener(nn_Computer *computer, nn_ComputerEvent event);
+void nn_setComputerListener(nn_Computer *computer, nn_ComputerListener *listener);
+
 typedef struct nn_Beep {
 	double frequency;
 	double duration;
@@ -1356,6 +1370,12 @@ typedef struct nn_ScreenConfig {
 	// Scaled to mathc luminance of each pixel.
 	// This is meant to be per Minecraft tick, so 20 times per second.
 	double energyPerPixel;
+	// minimum brightness. Default brightness is always 100%
+	// The value here is meant to be scaled such that 1 means 100% brightness
+	double minBrightness;
+	// maximum brightness. Note that brightness rendering is emulator-specific
+	// The value here is meant to be scaled such that 1 means 100% brightness
+	double maxBrightness;
 } nn_ScreenConfig;
 
 // OC has 3 tiers, NN adds a 4th one as well.
@@ -1526,6 +1546,10 @@ typedef enum nn_ScreenAction {
     NN_SCREEN_ISPRECISE,
     NN_SCREEN_SETTOUCHINVERTED,
     NN_SCREEN_ISTOUCHINVERTED,
+	// sets the brightness (from 0 to 1)
+	NN_SCREEN_SETBRIGHT,
+	// get the brightness (from 0 to 1)
+	NN_SCREEN_GETBRIGHT,
 } nn_ScreenAction;
 
 typedef struct nn_ScreenRequest {
@@ -1550,6 +1574,7 @@ typedef struct nn_ScreenRequest {
         // setPrecise / isPrecise /
         // setTouchModeInverted / isTouchModeInverted
         bool flag;
+		double brightness;
     };
 } nn_ScreenRequest;
 

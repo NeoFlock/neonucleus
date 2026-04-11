@@ -2695,6 +2695,8 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.editableColors = 0,
 		.features = NN_SCRF_NONE,
 		.energyPerPixel = 0.05,
+		.minBrightness = 0.5,
+		.maxBrightness = 1,
 	},
 	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 80,
@@ -2705,6 +2707,8 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.editableColors = 0,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED,
 		.energyPerPixel = 0.05,
+		.minBrightness = 0.25,
+		.maxBrightness = 1.2,
 	},
 	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 160,
@@ -2715,6 +2719,8 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.editableColors = 16,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE | NN_SCRF_EDITABLECOLORS,
 		.energyPerPixel = 0.05,
+		.minBrightness = 0.1,
+		.maxBrightness = 1.5,
 	},
 	NN_INIT(nn_ScreenConfig) {
 		.maxWidth = 240,
@@ -2725,6 +2731,8 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.editableColors = 256,
 		.features = NN_SCRF_NONE | NN_SCRF_EDITABLECOLORS,
 		.energyPerPixel = 0.05,
+		.minBrightness = 0.1,
+		.maxBrightness = 2,
 	},
 };
 
@@ -4760,6 +4768,11 @@ typedef enum nn_ScreenNum {
     NN_SCRNUM_ISPRECISE,
     NN_SCRNUM_SETTOUCHINVERTED,
     NN_SCRNUM_ISTOUCHINVERTED,
+	NN_SCRNUM_MINBRIGHTNESS,
+	NN_SCRNUM_MAXBRIGHTNESS,
+	NN_SCRNUM_SETBRIGHTNESS,
+	NN_SCRNUM_GETBRIGHTNESS,
+
     NN_SCRNUM_COUNT,
 } nn_ScreenNum;
 
@@ -4891,6 +4904,31 @@ static nn_Exit nn_screenHandler(nn_ComponentRequest *req) {
         req->returnCount = 1;
         return nn_pushbool(C, s.flag);
     }
+	if(m == NN_SCRNUM_MINBRIGHTNESS) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, cls->scrconf.minBrightness * 100);
+	}
+	if(m == NN_SCRNUM_MAXBRIGHTNESS) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, cls->scrconf.maxBrightness * 100);
+	}
+	if(m == NN_SCRNUM_GETBRIGHTNESS) {
+		s.action = NN_SCREEN_GETBRIGHT;
+		e = cls->handler(&s);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushnumber(C, s.brightness * 100);
+	}
+	if(m == NN_SCRNUM_SETBRIGHTNESS) {
+		if(nn_checknumber(C, 0, "bad argument #1 (number expected)")) return NN_EBADCALL;
+		s.action = NN_SCREEN_SETBRIGHT;
+		s.brightness = nn_tonumber(C, 0) / 100;
+		if(s.brightness < cls->scrconf.minBrightness) s.brightness = cls->scrconf.minBrightness;
+		if(s.brightness > cls->scrconf.maxBrightness) s.brightness = cls->scrconf.maxBrightness;
+		e = cls->handler(&s);
+		if(e) return e;
+		return nn_pushnumber(C, s.brightness * 100);
+	}
 
     nn_setError(C, "screen: not implemented");
     return NN_EBADCALL;
@@ -4943,6 +4981,10 @@ nn_Component *nn_createScreen(
             "isTouchModeInverted",
             "function(): boolean - Returns whether inverse touch mode is enabled",
             NN_DIRECT},
+        [NN_SCRNUM_MINBRIGHTNESS] = {"minBrightness", "function(): number - Returns the minimum brightness", NN_DIRECT},
+        [NN_SCRNUM_MAXBRIGHTNESS] = {"maxBrightness", "function(): number - Returns the maximum brightness", NN_DIRECT},
+        [NN_SCRNUM_GETBRIGHTNESS] = {"getBrightness", "function(): number - Returns the current brightness", NN_DIRECT},
+        [NN_SCRNUM_SETBRIGHTNESS] = {"setBrightness", "function(brightness: number): number - Sets the brightness, returns the new one", NN_DIRECT},
     };
 
     nn_Exit e = nn_setComponentMethodsArray(

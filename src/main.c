@@ -46,10 +46,22 @@ static nn_Exit sandbox_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
-Color ne_processColor(unsigned int color) {
+static unsigned char ne_processColorPart(unsigned char channel, double brightness) {
+	double n = (double)channel / 255;
+	n *= brightness;
+	if(n < 0) n = 0;
+	if(n > 1) n = 1;
+	return n * 255;
+}
+
+Color ne_processColor(unsigned int color, double brightness) {
     color <<= 8;
     color |= 0xFF;
-    return GetColor(color);
+    Color c = GetColor(color);
+	c.r = ne_processColorPart(c.r, brightness);
+	c.g = ne_processColorPart(c.g, brightness);
+	c.b = ne_processColorPart(c.b, brightness);
+	return c;
 }
 
 int keycode_to_oc(int keycode) {
@@ -447,15 +459,6 @@ int main(int argc, char **argv) {
 
     ncl_ScreenState *scrstate = nn_getComponentState(screen);
     ncl_mountKeyboard(scrstate, "mainKB");
-	{
-		// draw test
-		const char *s = "hello there";
-		for(size_t i = 0; s[i]; i++) {
-			unsigned char c = s[i];
-			ncl_ScreenState *scrstate = nn_getComponentState(screen);
-			ncl_setScreenPixel(scrstate, i+1, 1, c, 0xFFFFFF, 0x000000, false, false);
-		}
-	}
 
 	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
 	nn_Component *wrappedC = nn_wrapComputer(c);
@@ -512,6 +515,7 @@ int main(int argc, char **argv) {
 			int offX = (GetScreenWidth() - cwidth * scrw) / 2;
 			int offY = (GetScreenHeight() - cheight * scrh) / 2;
 
+			double scrbright = ncl_getScreenBrightness(scrbuf);
 			for(int y = 1; y <= scrh; y++) {
 				for(int x = 1; x <= scrw; x++) {
 					ncl_Pixel p = ncl_getScreenPixel(scrbuf, x, y);
@@ -520,9 +524,9 @@ int main(int argc, char **argv) {
 						offY + (y - 1) * cheight,
 					};
 					ncl_needGlyph(gc, p.codepoint);
-					DrawRectangle(pos.x, pos.y, cwidth, cheight, ne_processColor(p.bgColor));
+					DrawRectangle(pos.x, pos.y, cwidth, cheight, ne_processColor(p.bgColor, scrbright));
 					if(p.codepoint != 0) {
-						ncl_drawGlyph(gc, p.codepoint, pos, cheight, ne_processColor(p.fgColor));
+						ncl_drawGlyph(gc, p.codepoint, pos, cheight, ne_processColor(p.fgColor, scrbright));
 					}
 				}
 			}
@@ -530,7 +534,7 @@ int main(int argc, char **argv) {
 			ncl_unlockScreen(scrbuf);
 			ncl_flushGlyphs(gc);
 		}
-skipDrawScreen:
+skipDrawScreen:;
 
 		int statY = 10;
 		if(sand.buf != NULL) {

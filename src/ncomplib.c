@@ -2232,6 +2232,18 @@ static nn_Exit ncl_screenHandler(nn_ScreenRequest *req) {
         nn_unlock(ctx, st->lock);
         return NN_OK;
     }
+    if(req->action == NN_SCREEN_GETBRIGHT) {
+        nn_lock(ctx, st->lock);
+		req->brightness = st->brightness;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
+    if(req->action == NN_SCREEN_SETBRIGHT) {
+        nn_lock(ctx, st->lock);
+		st->brightness = req->brightness;
+        nn_unlock(ctx, st->lock);
+        return NN_OK;
+    }
 
     if(C) nn_setError(C, "ncl-screen: bad action");
     return NN_EBADCALL;
