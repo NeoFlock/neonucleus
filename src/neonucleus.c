@@ -1858,7 +1858,7 @@ static nn_Exit nn_pushComponentRemoved(nn_Computer *c, const char *address, cons
 	return nn_pushSignal(c, 3);
 }
 
-nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot) {
+nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot, bool silent) {
 	if(nn_getComponent(c, comp->address) != NULL) return NN_EBADSTATE;
 
 	nn_ComponentEntry ent = {
@@ -1870,25 +1870,43 @@ nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot) {
 	if(!nn_hashPut(&c->components, &ent)) return NN_ELIMIT;
 	nn_retainComponent(comp);
 	nn_signalComponent(comp, c, NN_CSIGMOUNTED);
-	if(c->state == NN_RUNNING) {
+	if(c->state == NN_RUNNING && !silent) {
 		return nn_pushComponentAdded(c, comp->address, comp->type);
 	}
 	return NN_OK;
 }
 
-nn_Exit nn_unmountComponent(nn_Computer *c, const char *address) {
+nn_Exit nn_unmountComponent(nn_Computer *c, const char *address, bool silent) {
 	nn_Component *comp = nn_getComponent(c, address);
 	if(comp == NULL) return NN_OK;
 	nn_ComponentEntry lookingFor = {.address = address};
 	nn_hashRemove(&c->components, &lookingFor);
 
 	nn_Exit e = NN_OK;
-	if(c->state == NN_RUNNING) {
+	if(c->state == NN_RUNNING && !silent) {
 		e = nn_pushComponentRemoved(c, address, comp->type);
 	}
 	nn_signalComponent(comp, c, NN_CSIGUNMOUNTED);
 	nn_dropComponent(comp);
 	return e;
+}
+
+nn_Exit nn_swapComponents(nn_Computer *c, nn_Component *previous, nn_Component *next, int slot) {
+	bool silent = false;
+	if(previous && next) {
+		// means for reasons beyond our understanding the config changed
+		silent = nn_strcmp(previous->address, next->address) == 0;
+	}
+	nn_Exit e;
+	if(previous != NULL) {
+		e = nn_unmountComponent(c, previous->address, silent);
+		if(e) return e;
+	}
+	if(next != NULL) {
+		e = nn_mountComponent(c, next, slot, silent);
+		if(e) return e;
+	}
+	return NN_OK;
 }
 
 static nn_ComponentEntry *nn_getComponentEntry(nn_Computer *c, const char *address) {

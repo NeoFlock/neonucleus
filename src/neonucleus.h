@@ -673,13 +673,14 @@ const char *nn_getComponentTypeID(nn_Component *c);
 const char *nn_getComponentAddress(nn_Component *c);
 
 // Adds a component to the computer on a given slot.
-// This will also queue a component_added signal if the computer is in a running state.
+// This will also queue a component_added signal if the computer is in a running state, unless silent is true.
 // If the component already is mounted, an error is returned.
-nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot);
+nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot, bool silent);
 // Removes a component from the computer.
-// This will also queue a component_removed signal if the computer is in a running state.
+// This will also queue a component_removed signal if the computer is in a running state, unless silent is true.
 // If the component is not mounted, no error is returned.
-nn_Exit nn_unmountComponent(nn_Computer *c, const char *address);
+nn_Exit nn_unmountComponent(nn_Computer *c, const char *address, bool silent);
+nn_Exit nn_swapComponents(nn_Computer *c, nn_Component *previous, nn_Component *next, int slot);
 // gets a component by address. Will return NULL if there is none.
 nn_Component *nn_getComponent(nn_Computer *c, const char *address);
 int nn_getComponentSlot(nn_Computer *c, const char *address);

@@ -473,17 +473,17 @@ int main(int argc, char **argv) {
 
 	//nn_setTmpAddress(c, nn_getComponentAddress(tmpfs));
 
-	nn_mountComponent(c, wrappedC, 255);
-	nn_mountComponent(c, screen, -1);
-	nn_mountComponent(c, ocelotCard, -1);
-	//nn_mountComponent(c, tmpfs, -1);
-    nn_mountComponent(c, keyboard, -1);
-	nn_mountComponent(c, eepromCard, 0);
-	nn_mountComponent(c, managedfs, 1);
-	nn_mountComponent(c, gpuCard, 2);
-	nn_mountComponent(c, testingfs, 3);
-	nn_mountComponent(c, testDrive, 4);
-	nn_mountComponent(c, testFlash, 5);
+	nn_mountComponent(c, wrappedC, 255, false);
+	nn_mountComponent(c, screen, -1, false);
+	nn_mountComponent(c, ocelotCard, -1, false);
+	//nn_mountComponent(c, tmpfs, -1, false);
+    nn_mountComponent(c, keyboard, -1, false);
+	nn_mountComponent(c, eepromCard, 0, false);
+	nn_mountComponent(c, managedfs, 1, false);
+	nn_mountComponent(c, gpuCard, 2, false);
+	nn_mountComponent(c, testingfs, 3, false);
+	nn_mountComponent(c, testDrive, 4, false);
+	nn_mountComponent(c, testFlash, 5, false);
 	while(true) {
 		if(WindowShouldClose()) break;
 
