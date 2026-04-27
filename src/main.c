@@ -480,7 +480,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, screen, -1, false);
 	nn_mountComponent(c, ocelotCard, -1, false);
 	//nn_mountComponent(c, tmpfs, -1, false);
-    nn_mountComponent(c, keyboard, -1, false);
+	nn_mountComponent(c, keyboard, -1, false);
 	nn_mountComponent(c, eepromCard, 0, false);
 	nn_mountComponent(c, managedfs, 1, false);
 	nn_mountComponent(c, gpuCard, 2, false);
@@ -617,6 +617,11 @@ skipDrawScreen:;
 			nn_Exit e = nn_tick(c);
 			if(e != NN_OK) {
 				printf("error: %s\n", nn_getError(c));
+				goto cleanup;
+			}
+			e = nn_tickSynchronized(c);
+			if(e != NN_OK) {
+				printf("sync method error: %s\n", nn_getError(c));
 				goto cleanup;
 			}
 

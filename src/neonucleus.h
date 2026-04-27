@@ -678,6 +678,13 @@ nn_Exit nn_setComponentMethodsArray(nn_Component *c, const nn_Method *methods, s
 // so the GPU can confirm it is being bound to a screen it knows how to use.
 nn_Exit nn_setComponentTypeID(nn_Component *c, const char *internalTypeID);
 
+// Sets the method flags
+void nn_setComponentMethodFlags(nn_Component *c, const char *method, nn_MethodFlags flags);
+// combines method flags
+void nn_addComponentMethodFlags(nn_Component *c, const char *method, nn_MethodFlags flags);
+// removes method flags
+void nn_removeComponentMethodFlags(nn_Component *c, const char *method, nn_MethodFlags flags);
+
 // get component state
 void *nn_getComponentState(nn_Component *c);
 // get component class state

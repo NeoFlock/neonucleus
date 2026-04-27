@@ -1779,6 +1779,34 @@ nn_Exit nn_setComponentTypeID(nn_Component *c, const char *internalTypeID) {
 	return NN_OK;
 }
 
+static nn_MethodEntry *nn_getComponentMethodEntry(nn_Component *c, const char *method) {
+	nn_MethodEntry ent = {
+		.name = method,
+	};
+	return nn_hashGet(&c->methodsMap, &ent);
+}
+
+// Sets the method flags
+void nn_setComponentMethodFlags(nn_Component *c, const char *method, nn_MethodFlags flags) {
+	nn_MethodEntry *ent = nn_getComponentMethodEntry(c, method);
+	if(ent == NULL) return;
+	ent->flags = flags;
+}
+
+// combines method flags
+void nn_addComponentMethodFlags(nn_Component *c, const char *method, nn_MethodFlags flags) {
+	nn_MethodEntry *ent = nn_getComponentMethodEntry(c, method);
+	if(ent == NULL) return;
+	ent->flags |= flags;
+}
+
+// removes method flags
+void nn_removeComponentMethodFlags(nn_Component *c, const char *method, nn_MethodFlags flags) {
+	nn_MethodEntry *ent = nn_getComponentMethodEntry(c, method);
+	if(ent == NULL) return;
+	ent->flags &= ~flags;
+}
+
 void *nn_getComponentState(nn_Component *c) {
 	return c->state;
 }
@@ -1790,13 +1818,6 @@ void *nn_getComponentClassState(nn_Component *c) {
 // counts how many methods are registered. May return too many if some of them are not enabled.
 size_t nn_countComponentMethods(nn_Component *c) {
 	return c->methodCount;
-}
-
-static nn_MethodEntry *nn_getComponentMethodEntry(nn_Component *c, const char *method) {
-	nn_MethodEntry ent = {
-		.name = method,
-	};
-	return nn_hashGet(&c->methodsMap, &ent);
 }
 
 // will fill the methodnames array with the names of the *enabled* methods.

@@ -19,10 +19,10 @@ to be made more portable.
 
 Not everything OC has (as a few of them are really MC-centered) but most of it.
 
-- `data` component (note: maybe add hamming code support?)
+- `data` component (note: deflate, sha256 and aes impl are callbacks, to keep NN small and simple)
 - `modem` component
 - `tunnel` component
-- `internet` component
+- `internet` component (note: NN does not handle internet requests, those are up to the emulator)
 - `relay` component (note: OCDoc still refers to it as `access_point`)
 - `computer` component
 - `geolyzer` component
