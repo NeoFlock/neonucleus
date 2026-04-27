@@ -1608,8 +1608,28 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	req.computer = computer;
 	req.globalState = computer->arch.state;
 	req.localState = computer->archState;
+	req.synchronized = false;
 	req.action = NN_ARCH_TICK;
 	err = computer->arch.handler(&req);
+	if(err) {
+		computer->state = NN_CRASHED;
+		nn_setErrorFromExit(computer, err);
+		return err;
+	}
+	return NN_OK;
+}
+
+nn_Exit nn_tickSynchronized(nn_Computer *computer) {
+	if(!nn_isComputerOn(computer)) return NN_OK;
+	// idling pootr
+	if(nn_isComputerIdle(computer)) return NN_OK;
+	nn_ArchitectureRequest req;
+	req.computer = computer;
+	req.globalState = computer->arch.state;
+	req.localState = computer->archState;
+	req.synchronized = true;
+	req.action = NN_ARCH_TICK;
+	nn_Exit err = computer->arch.handler(&req);
 	if(err) {
 		computer->state = NN_CRASHED;
 		nn_setErrorFromExit(computer, err);

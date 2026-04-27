@@ -377,6 +377,28 @@ static int luaArch_component_doc(lua_State *L) {
 	return 1;
 }
 
+static int luaArch_component_getMethodFlags(lua_State *L) {
+	luaArch *arch = luaArch_from(L);
+	const char *address = luaL_checkstring(L, 1);
+	const char *method = luaL_checkstring(L, 2);
+
+	nn_Component *c = nn_getComponent(arch->computer, address);
+	if(c == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, "no such component");
+		return 2;
+	}
+	nn_MethodFlags f = nn_getComponentMethodFlags(c, method);
+	lua_createtable(L, 0, 3);
+	lua_pushboolean(L, (f & NN_DIRECT) != 0);
+	lua_setfield(L, -2, "direct");
+	lua_pushboolean(L, (f & NN_GETTER) != 0);
+	lua_setfield(L, -2, "getter");
+	lua_pushboolean(L, (f & NN_SETTER) != 0);
+	lua_setfield(L, -2, "setter");
+	return 1;
+}
+
 static int luaArch_component_slot(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	const char *address = luaL_checkstring(L, 1);
@@ -601,6 +623,8 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_setfield(L, component, "doc");
 	lua_pushcfunction(L, luaArch_component_type);
 	lua_setfield(L, component, "type");
+	lua_pushcfunction(L, luaArch_component_getMethodFlags);
+	lua_setfield(L, component, "getMethodFlags");
 	lua_pushcfunction(L, luaArch_component_slot);
 	lua_setfield(L, component, "slot");
 	lua_pushcfunction(L, luaArch_component_methods);
@@ -659,6 +683,8 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 		nn_free(ctx, arch, sizeof(*arch));
 		return NN_OK;
 	case NN_ARCH_TICK:;
+		lua_pushboolean(arch->L, req->synchronized);
+		lua_setglobal(arch->L, "_SYNCED");
 		lua_settop(arch->L, 1);
 		int ret = 0;
 #if LUA_VERSION_NUM >= 504L

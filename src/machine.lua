@@ -2,6 +2,7 @@
 -- Extremely bad.
 -- Do not use in a serious context, you will be hacked.
 -- There is no sandboxing here.
+-- NOTE: we implemented method synchronization in here btw
 
 os.exit = nil
 os.execute = nil
@@ -67,11 +68,9 @@ function component.list(ctype, exact)
 	return desired
 end
 
-local allInvoks = 0
+local syncedMethodStats
 
-function component.invoke(address, method, ...)
-	allInvoks = allInvoks + 1
-	--print(allInvoks)
+local function realInvoke(address, method, ...)
 	local t = {pcall(cinvoke, address, method, ...)}
 	if computer.energy() <= 0 then sysyield() end -- out of power
 	if computer.isOverused() then sysyield() end -- overused
@@ -81,6 +80,19 @@ function component.invoke(address, method, ...)
 		return table.unpack(t, 2)
 	end
 	return nil, t[2]
+end
+
+function component.invoke(address, method, ...)
+	if component.getMethodFlags(address, method).direct then
+		return realInvoke(address, method, ...)
+	else
+		-- must sync
+		syncedMethodStats = {address, method, ...}
+		coroutine.yield()
+		local rets = syncedMethodStats
+		syncedMethodStats = nil
+		return table.unpack(rets)
+	end
 end
 
 local componentCallback = {
@@ -258,10 +270,17 @@ local f = assert(load(code, "=bios"))
 local thread = coroutine.create(f)
 
 while true do
-	local ok, err = resume(thread)
-	if not ok then
-		print(debug.traceback(thread, err))
+	if _SYNCED then
+		if syncedMethodStats then
+			--debug.print("calling synced method")
+			syncedMethodStats = {realInvoke(table.unpack(syncedMethodStats))}
+		end
+	else
+		local ok, err = resume(thread)
+		if not ok then
+			print(debug.traceback(thread, err))
+		end
+		if coroutine.status(thread) == "dead" then break end
 	end
-	if coroutine.status(thread) == "dead" then break end
 	coroutine.yield()
 end

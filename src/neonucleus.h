@@ -220,8 +220,7 @@ typedef struct nn_LockRequest {
 // Intended for a plain mutex.
 // This is used for synchronization. OpenComputers achieves synchronization
 // between the worker threads by sending them as requests to a central thread (indirect methods).
-// In NeoNucleus, the function pointer is invoked on the calling thead. This technically makes all methods direct,
-// however methods which are meant to be slow may become indirect, as indirect methods consume the entire call budget.
+// In NeoNucleus, it is the same stuff, but direct ones may still be used across threads.
 // Do note that locks are only used in "full" component implementations, such as the volatile storage devices.
 // The interfaces do not do any automatic synchronization via locks, all synchronization is assumed
 // to be handled in the implementer of the interface, because only you know how to best synchronize
@@ -347,7 +346,7 @@ typedef enum nn_ArchitectureAction {
 	NN_ARCH_INIT,
 	// destroy the local state
 	NN_ARCH_DEINIT,
-	// run 1 tick
+	// run 1 tick or synchronized task
 	NN_ARCH_TICK,
 	// get the free memory
 	NN_ARCH_FREEMEM,
@@ -370,6 +369,8 @@ typedef struct nn_ArchitectureRequest {
 	// the action requested
 	nn_ArchitectureAction action;
 	union {
+		// in the case of NN_ARCH_TICK, where the tick is synchronized
+		bool synchronized;
 		// in the case of NN_ARCH_FREEMEM, the free memory
 		size_t freeMemory;
 		// in the case of NN_ARCH_DESERIALIZE, NN_ARCH_SERIALIZE and NN_ARCH_DROPSERIALIZED, the buffer.
@@ -576,9 +577,17 @@ bool nn_isComputerIdle(nn_Computer *computer);
 void nn_addIdleTime(nn_Computer *computer, double time);
 void nn_resetIdleTime(nn_Computer *computer);
 // runs a tick of the computer. Make sure to check the state as well!
+// Does not do anything if we're currently waiting on a synced call
 // This automatically resets the component budgets and call budget.
 // It also sets the idle timestamp to the current uptime.
 nn_Exit nn_tick(nn_Computer *computer);
+
+// runs a synchronized tick of the computer. How this differs depends on architecture.
+// Generally, this is meant to be in the same thread for all computers, and is if the external world is fundamentally not thread-safe,
+// however components must interact with it.
+// In this case, those component methods would be marked as NN_INDIRECT, or more accurately will not be marked as NN_DIRECT, and the architecture would queue them as synchronized tasks.
+// Architectures should generally NOT ignore this if they can.
+nn_Exit nn_tickSynchronized(nn_Computer *computer);
 
 // raw component and methods
 
@@ -705,6 +714,7 @@ void nn_getComponents(nn_Computer *c, const char **components);
 // Everything on-stack is taken as an argument.
 // Will pop off trailing nulls.
 // Every remaining is what the component returned.
+// In the case of 
 nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const char *method);
 
 // send a signal to a component.
