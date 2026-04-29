@@ -2409,15 +2409,23 @@ static nn_Exit ncl_gpuHandler(nn_GPURequest *req) {
             nn_strfree(ctx, st->screenAddress);
         st->screenAddress =
             nn_strdup(ctx, req->bind.address);
+	// actually set limits
+	    ncl_ScreenState *scr =
+		nn_getComponentState(sc);
+            ncl_lockScreen(scr);
+		if(req->bind.reset) {
+		    ncl_resetScreen(scr);
+		}
+	    int maxW, maxH;
+	    char maxD;
+	ncl_getGPULimitsWithScreen(st, scr, &maxW, &maxH, &maxD);
+
+		if(scr->width > maxW) scr->width = maxW;
+		if(scr->height > maxH) scr->height = maxH;
+		if(scr->depth > maxD) scr->depth = maxD;
+            ncl_unlockScreen(scr);
         nn_unlock(ctx, st->lock);
 
-        if(req->bind.reset) {
-            ncl_ScreenState *scr =
-                nn_getComponentState(sc);
-            ncl_lockScreen(scr);
-            ncl_resetScreen(scr);
-            ncl_unlockScreen(scr);
-        }
         return NN_OK;
     }
     //  getScreen 
