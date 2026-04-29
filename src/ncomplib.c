@@ -3234,9 +3234,21 @@ void ncl_getScreenResolution(const ncl_ScreenState *state, size_t *width, size_t
 	*height = state->height;
 }
 
+void ncl_setScreenResolution(ncl_ScreenState *state, size_t width, size_t height) {
+	state->width = width;
+	state->height = height;
+	state->viewportWidth = width;
+	state->viewportHeight = height;
+}
+
 void ncl_getScreenViewport(const ncl_ScreenState *state, size_t *width, size_t *height) {
 	*width = state->viewportWidth;
 	*height = state->viewportHeight;
+}
+
+void ncl_setScreenViewport(ncl_ScreenState *state, size_t width, size_t height) {
+	state->viewportWidth = width;
+	state->viewportHeight = height;
 }
 
 ncl_Pixel ncl_getScreenPixel(const ncl_ScreenState *state, int x, int y) {
