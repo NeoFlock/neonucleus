@@ -7,7 +7,7 @@
 os.exit = nil
 os.execute = nil
 
-local sysyieldobj = {}
+local sysyieldobj = "__SYSYIELD__"
 local coroutine = coroutine
 
 local function sysyield()
@@ -88,7 +88,7 @@ function component.invoke(address, method, ...)
 	else
 		-- must sync
 		syncedMethodStats = {address, method, ...}
-		coroutine.yield()
+		sysyield()
 		local rets = syncedMethodStats
 		syncedMethodStats = nil
 		return table.unpack(rets)

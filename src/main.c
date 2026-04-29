@@ -484,7 +484,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, eepromCard, 0, false);
 	nn_mountComponent(c, managedfs, 1, false);
 	nn_mountComponent(c, gpuCard, 2, false);
-	nn_mountComponent(c, testingfs, 3, false);
+	//nn_mountComponent(c, testingfs, 3, false);
 	nn_mountComponent(c, testDrive, 4, false);
 	nn_mountComponent(c, testFlash, 5, false);
 	while(true) {
