@@ -2424,7 +2424,7 @@ int nn_countValueCost(nn_Computer *computer, size_t values) {
 		switch(val.type) {
 		case NN_VAL_NULL:
 		case NN_VAL_BOOL:
-			total += 4;
+			total += 1;
 			continue;
 		case NN_VAL_NUM:
 			total += 8;
