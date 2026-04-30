@@ -1204,13 +1204,6 @@ static nn_ComponentEntry *nn_getInternalComponent(nn_Computer *computer, const c
 	return nn_hashGet(&computer->components, &lookingFor);
 }
 
-static const nn_MethodEntry *nn_getInternalMethod(nn_Component *c, const char *method) {
-	nn_MethodEntry lookingFor = {
-		.name = method,
-	};
-	return nn_hashGet(&c->methodsMap, &lookingFor);
-}
-
 nn_Exit nn_startComputer(nn_Computer *computer) {
 	if(nn_isComputerOn(computer)) {
 		nn_stopComputer(computer);
@@ -3745,9 +3738,7 @@ typedef enum nn_CompNum {
 static nn_Exit nn_computerHandler(nn_ComponentRequest *req) {
 	if(req->action == NN_COMP_DROP) return NN_OK;
 	if(req->action == NN_COMP_SIGNAL) return NN_OK;
-	nn_Computer *target = req->state;
 	nn_Computer *src = req->computer;
-	nn_CompNum method = req->methodIdx;
 	if(src) nn_setError(src, "computer: not implemented yet");
 	return NN_EBADCALL;
 }
@@ -4445,7 +4436,6 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 	}
 	size_t ss = state->drive.sectorSize;
 	size_t sectorCount = state->drive.capacity / ss;
-	size_t perPlatter = sectorCount / state->drive.platterCount;
 	unsigned int method = request->methodIdx;
 	if(method == NN_DRVNUM_GETCAPACITY) {
 		request->returnCount = 1;

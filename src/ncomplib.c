@@ -701,7 +701,6 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 	ncl_FSState *state = req->state;
 	nn_Context *ctx = req->ctx;
 	nn_Computer *C = req->computer;
-	const nn_Filesystem *fs = req->fs;
 
 	if(req->action == NN_FS_DROP) {
 		for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
@@ -2433,11 +2432,11 @@ static nn_Exit ncl_gpuHandler(nn_GPURequest *req) {
         nn_lock(ctx, st->lock);
         if(st->screenAddress != NULL) {
             size_t len = strlen(st->screenAddress);
-            if(len >= NN_MAX_ADDRESS)
+            if(len >= NN_MAX_ADDRESS) {
                 len = NN_MAX_ADDRESS - 1;
-		memcpy(req->screenAddr,
-			st->screenAddress, len);
-            req->screenAddr[len] = '\0';
+			}
+			memcpy(req->screenAddr, st->screenAddress, len);
+			req->screenAddr[len] = '\0';
         }
         nn_unlock(ctx, st->lock);
         return NN_OK;
