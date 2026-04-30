@@ -604,6 +604,12 @@ int main(int argc, char **argv) {
 				if(keycode == KEY_ENTER) unicode = '\r';
 				if(keycode == KEY_BACKSPACE) unicode = '\b';
 				if(keycode == KEY_TAB) unicode = '\t';
+
+				bool isCtrlPressed = keybuf[KEY_LEFT_CONTROL].key != 0;
+				if(isCtrlPressed) {
+					if(keycode == KEY_C) unicode = 3;
+					if(keycode == KEY_D) unicode = 4;
+				}
 			}
 
 			nn_pushKeyDown(c, "mainKB", unicode, keycode_to_oc(keycode), player);
