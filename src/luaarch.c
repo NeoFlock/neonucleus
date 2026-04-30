@@ -707,6 +707,8 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 			return NN_OK;
 		}
 		return NN_OK;
+	default:
+		break;
 	}
 	return NN_OK;
 }

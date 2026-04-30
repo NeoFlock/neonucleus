@@ -1371,6 +1371,7 @@ const char *nn_getUser(nn_Computer *computer, size_t idx) {
 }
 
 bool nn_hasUser(nn_Computer *computer, const char *user) {
+	if(user == NULL) return true;
 	if(computer->userCount == 0) return true;
 	for(size_t i = 0; i < computer->userCount; i++) {
 		if(nn_strcmp(computer->users[i], user) == 0) return true;
@@ -2157,6 +2158,7 @@ nn_Exit nn_pushinteger(nn_Computer *computer, intptr_t num) {
 }
 
 nn_Exit nn_pushstring(nn_Computer *computer, const char *str) {
+	if(str == NULL) return nn_pushnull(computer);
 	return nn_pushlstring(computer, str, nn_strlen(str));
 }
 
@@ -3425,11 +3427,35 @@ nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, 
 // the value is not returned for all execution paths - not a windows bug probably, need tests on *nix
 nn_Exit nn_pushScroll(nn_Computer *computer, const char *screenAddress, double x, double y, double direction, const char *player) {
 	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "scroll");
+	if(err) return err;
+	err = nn_pushstring(computer, screenAddress);
+	if(err) return err;
+	err = nn_pushnumber(computer, x);
+	if(err) return err;
+	err = nn_pushnumber(computer, y);
+	if(err) return err;
+	err = nn_pushnumber(computer, direction);
+	if(err) return err;
+	err = nn_pushstring(computer, player);
+	if(err) return err;
+	return nn_pushSignal(computer, 6);
 }
 
 // the value is not returned for all execution paths - not a windows bug probably, need tests on *nix
 nn_Exit nn_pushWalk(nn_Computer *computer, const char *screenAddress, double x, double y, const char *player) {
 	if(!nn_hasUser(computer, player)) return NN_OK;
+	nn_Exit err = nn_pushstring(computer, "walk");
+	if(err) return err;
+	err = nn_pushstring(computer, screenAddress);
+	if(err) return err;
+	err = nn_pushnumber(computer, x);
+	if(err) return err;
+	err = nn_pushnumber(computer, y);
+	if(err) return err;
+	err = nn_pushstring(computer, player);
+	if(err) return err;
+	return nn_pushSignal(computer, 5);
 }
 
 nn_Exit nn_pushKeyDown(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player) {
