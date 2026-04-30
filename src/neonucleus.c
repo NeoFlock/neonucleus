@@ -5130,6 +5130,12 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
 
     nn_GPUNum m = req->methodIdx;
     nn_Exit e = NN_OK;
+	
+	g.action = NN_GPU_GETACTIVEBUF;
+	e = cls->handler(&g);
+	if(e) return e;
+	int activeBuf = g.buffer.index;
+	bool isScreen = activeBuf == 0;
 
     //  bind 
     if(m == NN_GPUNUM_BIND) {
@@ -5171,7 +5177,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
     }
     //  setBackground 
     if(m == NN_GPUNUM_SETBG) {
-		nn_costComponent(C, req->compAddress, cls->gpu.setBackgroundPerTick);
+		if(isScreen) nn_costComponent(C, req->compAddress, cls->gpu.setBackgroundPerTick);
         if(nn_checknumber(C, 0,
             "bad argument #1 (number expected)"))
             return NN_EBADCALL;
@@ -5206,7 +5212,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
     }
     //  setForeground 
     if(m == NN_GPUNUM_SETFG) {
-		nn_costComponent(C, req->compAddress, cls->gpu.setForegroundPerTick);
+		if(isScreen) nn_costComponent(C, req->compAddress, cls->gpu.setForegroundPerTick);
         if(nn_checknumber(C, 0,
             "bad argument #1 (number expected)"))
             return NN_EBADCALL;
@@ -5427,8 +5433,10 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
-		nn_costComponent(C, req->compAddress, cls->gpu.setPerTick);
-		nn_removeEnergy(C, cls->gpu.energyPerWrite * g.set.len);
+		if(isScreen) {
+			nn_costComponent(C, req->compAddress, cls->gpu.setPerTick);
+			nn_removeEnergy(C, cls->gpu.energyPerWrite * g.set.len);
+		}
         return nn_pushbool(C, true);
     }
     //  copy 
@@ -5453,8 +5461,10 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
-		nn_costComponent(C, req->compAddress, cls->gpu.copyPerTick);
-		nn_removeEnergy(C, cls->gpu.energyPerWrite * g.copy.w  * g.copy.h);
+		if(isScreen) {
+			nn_costComponent(C, req->compAddress, cls->gpu.copyPerTick);
+			nn_removeEnergy(C, cls->gpu.energyPerWrite * g.copy.w  * g.copy.h);
+		}
         return nn_pushbool(C, true);
     }
     //  fill 
@@ -5482,8 +5492,10 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         e = cls->handler(&g);
         if(e) return e;
         req->returnCount = 1;
-		nn_costComponent(C, req->compAddress, cls->gpu.fillPerTick);
-		nn_removeEnergy(C, (g.fill.codepoint == ' ' ? cls->gpu.energyPerClear : cls->gpu.energyPerWrite) * g.fill.w * g.fill.h);
+		if(isScreen) {
+			nn_costComponent(C, req->compAddress, cls->gpu.fillPerTick);
+			nn_removeEnergy(C, (g.fill.codepoint == ' ' ? cls->gpu.energyPerClear : cls->gpu.energyPerWrite) * g.fill.w * g.fill.h);
+		}
         return nn_pushbool(C, true);
     }
     //  VRAM: getActiveBuffer 
