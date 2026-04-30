@@ -72,9 +72,16 @@ local syncedMethodStats
 
 local function realInvoke(address, method, ...)
 	local t = {pcall(cinvoke, address, method, ...)}
-	if computer.energy() <= 0 then sysyield() end -- out of power
-	if computer.isOverused() then sysyield() end -- overused
-	if computer.isIdle() then sysyield() end -- machine idle
+	if not _SYNCED then
+		if computer.energy() <= 0 then sysyield() end -- out of power
+		if computer.isOverused() then sysyield() end -- overused
+		if computer.isIdle() then sysyield() end -- machine idle
+	end
+
+	if os.getenv("NN_INVDBG") and component.type(address) == os.getenv("NN_INVDBG") then
+		print("invoked", address, method, ...)
+		print("got", table.unpack(t))
+	end
 
 	if t[1] then
 		return table.unpack(t, 2)
@@ -83,7 +90,9 @@ local function realInvoke(address, method, ...)
 end
 
 function component.invoke(address, method, ...)
-	if component.getMethodFlags(address, method).direct then
+	if type(address) ~= "string" then return nil, "bad argument #1 (string expected)" end
+	if type(method) ~= "string" then return nil, "bad argument #2 (string expected)" end
+	if component.getMethodFlags(address, method).direct or os.getenv("NN_FAST") then
 		return realInvoke(address, method, ...)
 	else
 		-- must sync
@@ -258,6 +267,204 @@ end
 io = nil
 package = nil
 
+local sandbox
+sandbox = {
+	_VERSION = _VERSION,
+	assert = assert,
+	error = error,
+	getmetatable = getmetatable,
+	ipairs = ipairs,
+	load = function(chunk, name, ty, env)
+		return load(chunk, name, ty, env or sandbox)
+	end,
+	next = next,
+	pairs = pairs,
+	pcall = pcall,
+	rawequal = rawequal,
+	rawget = rawget,
+	rawlen = rawlen,
+	rawset = rawset,
+	select = select,
+	setmetatable = setmetatable,
+	tonumber = tonumber,
+	tostring = tostring,
+	type = type,
+	xpcall = xpcall,
+	collectgarbage = function() collectgarbage("collect") end,
+
+	bit32 = bit32,
+
+	coroutine = {
+		create = coroutine.create,
+		resume = coroutine.resume,
+		running = coroutine.running,
+		status = coroutine.status,
+		wrap = coroutine.wrap,
+		yield = coroutine.yield,
+		isyieldable = coroutine.isyieldable,
+	},
+
+	debug = {
+		getinfo = debug.getinfo,
+		traceback = debug.traceback,
+		getlocal = debug.getlocal,
+		getupvalue = debug.getupvalue,
+		print = debug.print,
+	},
+
+	math = {
+		abs = math.abs,
+		acos = math.acos,
+		asin = math.asin,
+		atan = math.atan,
+		atan2 = math.atan2,
+		ceil = math.ceil,
+		cos = math.cos,
+		cosh = math.cosh,
+		deg = math.deg,
+		exp = math.exp,
+		floor = math.floor,
+		fmod = math.fmod,
+		frexp = math.frexp,
+		huge = math.huge,
+		ldexp = math.ldexp,
+		log = math.log,
+		max = math.max,
+		min = math.min,
+		modf = math.modf,
+		pi = math.pi,
+		pow = math.pow,
+		rad = math.rad,
+		random = math.random,
+		randomseed = math.randomseed,
+		sin = math.sin,
+		sinh = math.sinh,
+		sqrt = math.sqrt,
+		tan = math.tan,
+		tanh = math.tanh,
+		maxinteger = math.maxinteger,
+		mininteger = math.mininteger,
+		type = math.type,
+		ult = math.ult,
+	},
+
+	os = {
+		clock = os.clock,
+		date = os.date,
+		difftime = os.difftime,
+		time = os.time,
+	},
+
+	string = {
+		byte = string.byte,
+		char = string.char,
+		dump = string.dump,
+		find = string.find,
+		format = string.format,
+		gmatch = string.gmatch,
+		gsub = string.gsub,
+		len = string.len,
+		lower = string.lower,
+		match = string.match,
+		rep = string.rep,
+		reverse = string.reverse,
+		sub = string.sub,
+		upper = string.upper,
+		pack = string.pack,
+		unpack = string.unpack,
+		packsize = string.packsize,
+	},
+
+	table = {
+		concat = table.concat,
+		insert = table.insert,
+		pack = table.pack,
+		remove = table.remove,
+		sort = table.sort,
+		unpack = table.unpack,
+		move = table.move,
+	},
+
+	checkArg = checkArg,
+
+	component = {
+		doc = component.doc,
+		fields = component.fields,
+		invoke = component.invoke,
+		list = component.list,
+		methods = component.methods,
+		proxy = component.proxy,
+		slot = component.slot,
+		type = component.type,
+	},
+
+	computer = {
+		address = computer.address,
+		addUser = computer.addUser,
+		beep = computer.beep,
+		energy = computer.energy,
+		freeMemory = computer.freeMemory,
+		getArchitectures = computer.getArchitectures,
+		getArchitecture = computer.getArchitecture,
+		getDeviceInfo = computer.getDeviceInfo,
+		getProgramLocations = computer.getProgramLocations,
+		isRobot = computer.isRobot,
+		maxEnergy = computer.maxEnergy,
+		pullSignal = computer.pullSignal,
+		pushSignal = computer.pushSignal,
+		removeUser = computer.removeUser,
+		setArchitecture = computer.setArchitecture,
+		shutdown = computer.shutdown,
+		tmpAddress = computer.tmpAddress,
+		totalMemory = computer.totalMemory,
+		uptime = computer.uptime,
+		users = computer.users,
+	},
+
+	unicode = {
+		len = utf8.len,
+		wlen = utf8.len, -- this can be very wrong.
+		sub = function (str,a,b)
+			if not b then b = utf8.len(str) end
+			if not a then a = 1 end
+			-- a = math.max(a,1)
+			
+			if a < 0 then
+				-- negative
+				
+				a = utf8.len(str) + a + 1
+			end
+			
+			if b < 0 then
+				b = utf8.len(str) + b + 1
+			end
+			
+			if a > b then return "" end
+			
+			if b >= utf8.len(str) then b = #str else b = utf8.offset(str,b+1)-1 end
+			
+			if a > utf8.len(str) then return "" end
+			a = utf8.offset(str,a)
+			
+			return str:sub(a,b)
+			-- return str:sub(a, b)
+		end,
+		char = utf8.char,
+		wtrunc = function (str,space)
+			space = space - 1
+			return str:sub(1,(space >= utf8.len(str)) and (#str) or (utf8.offset(str,space+1)-1))
+		end,
+		upper = string.upper, -- these are accurate... sometimes
+		lower = string.lower,
+		isWide = function ()
+			return false
+		end
+	},
+
+	utf8 = utf8,
+}
+sandbox._G = sandbox
+
 local eeprom = component.list("eeprom", true)()
 assert(eeprom, "missing firmware")
 
@@ -266,10 +473,11 @@ local arch = component.invoke(eeprom, "getArchitecture")
 if arch then computer.setArchitecture(arch) end
 
 local code = assert(component.invoke(eeprom, "get"))
-local f = assert(load(code, "=bios"))
+local f = assert(load(code, "=bios", nil, sandbox))
 local thread = coroutine.create(f)
 
 while true do
+	collectgarbage("collect")
 	if _SYNCED then
 		if syncedMethodStats then
 			--debug.print("calling synced method")

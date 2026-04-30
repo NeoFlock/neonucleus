@@ -439,9 +439,14 @@ int main(int argc, char **argv) {
 	if(fontPath == NULL) fontPath = "unscii-16-full.ttf";
 	ncl_GlyphCache *gc = ncl_createGlyphCache(fontPath, 20);
 	double tickDelay = 0.05;
+	bool noIdle = getenv("NN_NOIDLE") != NULL;
 
 	if(getenv("NN_TICKDELAY") != NULL) {
 		tickDelay = atof(getenv("NN_TICKDELAY"));
+	}
+	if(getenv("NN_FAST") != NULL) {
+		tickDelay = 0;
+		noIdle = true;
 	}
 	
 	struct {int key; nn_codepoint unicode;} keybuf[512];
@@ -484,7 +489,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, eepromCard, 0, false);
 	nn_mountComponent(c, managedfs, 1, false);
 	nn_mountComponent(c, gpuCard, 2, false);
-	//nn_mountComponent(c, testingfs, 3, false);
+	nn_mountComponent(c, testingfs, 3, false);
 	nn_mountComponent(c, testDrive, 4, false);
 	nn_mountComponent(c, testFlash, 5, false);
 	while(true) {
@@ -613,7 +618,7 @@ skipDrawScreen:;
 
 			nn_removeEnergy(c, ncl_getScreenEnergyUsage(nn_getComponentState(screen)));
 
-			if(getenv("NN_NOIDLE") != NULL) nn_resetIdleTime(c);
+			if(noIdle) nn_resetIdleTime(c);
 			nn_Exit e = nn_tick(c);
 			if(e != NN_OK) {
 				printf("error: %s\n", nn_getError(c));

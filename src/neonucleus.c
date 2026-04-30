@@ -910,7 +910,9 @@ typedef struct nn_Component {
 	size_t methodCount;
 } nn_Component;
 
-static size_t nn_methodHash(nn_HashAction act, nn_MethodEntry *slot, nn_MethodEntry *ent) {
+static size_t nn_methodHash(nn_HashAction act, void *_slot, void *_ent) {
+	nn_MethodEntry *slot = _slot;
+	nn_MethodEntry *ent = _ent;
 	switch(act) {
 	case NN_HASH_INIT:
 		slot->name = NULL;
@@ -953,7 +955,9 @@ typedef struct nn_ComponentEntry {
 	int slot;
 } nn_ComponentEntry;
 
-static size_t nn_componentHash(nn_HashAction act, nn_ComponentEntry *slot, nn_ComponentEntry *ent) {
+static size_t nn_componentHash(nn_HashAction act, void *_slot, void *_ent) {
+	nn_ComponentEntry *slot = _slot;
+	nn_ComponentEntry *ent = _ent;
 	switch(act) {
 	case NN_HASH_INIT:
 		slot->address = NULL;

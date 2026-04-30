@@ -9,16 +9,17 @@ const LibBuildOpts = struct {
 };
 
 fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
+    const strict = opts.optimize == .Debug;
+
     const dataMod = b.createModule(.{
         .target = opts.target,
         .optimize = opts.optimize,
         .strip = if (opts.optimize == .Debug) false else true,
         .unwind_tables = if (opts.optimize == .Debug) null else .none,
         .pic = true,
-        .sanitize_c = .full,
+        .sanitize_c = if(strict) .full else null,
     });
 
-    const strict = opts.optimize != .Debug;
 
     dataMod.addCSourceFiles(.{
         .files = &[_][]const u8{
