@@ -3406,7 +3406,7 @@ nn_Exit nn_pushDrag(nn_Computer *computer, const char *screenAddress, double x, 
 
 nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player) {
 	if(!nn_hasUser(computer, player)) return NN_OK;
-	nn_Exit err = nn_pushstring(computer, "drag");
+	nn_Exit err = nn_pushstring(computer, "drop");
 	if(err) return err;
 	err = nn_pushstring(computer, screenAddress);
 	if(err) return err;

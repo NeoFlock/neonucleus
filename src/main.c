@@ -393,7 +393,8 @@ int main(int argc, char **argv) {
 	char mainfspath[NN_MAX_PATH];
 	snprintf(mainfspath, NN_MAX_PATH, "data/%s", mainDir);
 	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &mainfsconf, true);
-	nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
+	//nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
+	nn_Component *tmpfs = ncl_createFilesystem(u, NULL, "/tmp", &mainfsconf, false);
 	nn_Component *testingfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
 	//nn_Component *testingfs = ncl_createFilesystem(u, NULL, "test", &nn_defaultFilesystems[3], false);
 
@@ -431,7 +432,7 @@ int main(int argc, char **argv) {
 	ncl_setCLabel(testFlash, "Flash Storage");
 
 	size_t ramTotal = 0;
-	ramTotal += nn_ramSizes[5];
+	ramTotal += 4 * nn_ramSizes[5];
 	
 	SetExitKey(KEY_NULL);
 
@@ -457,8 +458,8 @@ int main(int argc, char **argv) {
 	double nextSecond = 0;
 	double wattage = 0;
 
-	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
-	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
+	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[2]);
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[2]);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
@@ -479,12 +480,12 @@ int main(int argc, char **argv) {
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);
 
-	//nn_setTmpAddress(c, nn_getComponentAddress(tmpfs));
+	nn_setTmpAddress(c, nn_getComponentAddress(tmpfs));
 
 	nn_mountComponent(c, wrappedC, 255, false);
 	nn_mountComponent(c, screen, -1, false);
 	nn_mountComponent(c, ocelotCard, -1, false);
-	//nn_mountComponent(c, tmpfs, -1, false);
+	nn_mountComponent(c, tmpfs, -1, false);
 	nn_mountComponent(c, keyboard, -1, false);
 	nn_mountComponent(c, eepromCard, 0, false);
 	nn_mountComponent(c, managedfs, 1, false);
@@ -492,24 +493,22 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, testingfs, 3, false);
 	nn_mountComponent(c, testDrive, 4, false);
 	nn_mountComponent(c, testFlash, 5, false);
+	int ltx = 0, lty = 0;
 	while(true) {
 		if(WindowShouldClose()) break;
 
 		BeginDrawing();
 		ClearBackground(BLACK);
 
-		// drawing the screen
+		// drawing the screen + screen events
 		{
+			const char *scraddr = nn_getComponentAddress(screen);
 			ncl_ScreenState *scrbuf = nn_getComponentState(screen);
 			ncl_lockScreen(scrbuf);
 			size_t scrw, scrh;
 			ncl_getScreenViewport(scrbuf, &scrw, &scrh);
 
 			ncl_ScreenFlags scrflags = ncl_getScreenFlags(scrbuf);
-			if((scrflags & NCL_SCREEN_ON) == 0) {
-				ncl_unlockScreen(scrbuf);
-				goto skipDrawScreen;
-			}
 
 			int cheight = GetScreenHeight() / scrh;
 			if(cheight != ncl_cellHeight(gc)) {
@@ -521,25 +520,46 @@ int main(int argc, char **argv) {
 			int offY = (GetScreenHeight() - cheight * scrh) / 2;
 
 			double scrbright = ncl_getScreenBrightness(scrbuf);
-			for(int y = 1; y <= scrh; y++) {
-				for(int x = 1; x <= scrw; x++) {
-					ncl_Pixel p = ncl_getScreenPixel(scrbuf, x, y);
-					Vector2 pos = {
-						offX + (x - 1) * cwidth,
-						offY + (y - 1) * cheight,
-					};
-					ncl_needGlyph(gc, p.codepoint);
-					DrawRectangle(pos.x, pos.y, cwidth, cheight, ne_processColor(p.bgColor, scrbright));
-					if(p.codepoint != 0) {
-						ncl_drawGlyph(gc, p.codepoint, pos, cheight, ne_processColor(p.fgColor, scrbright));
+			if(scrflags & NCL_SCREEN_ON) {
+				for(int y = 1; y <= scrh; y++) {
+					for(int x = 1; x <= scrw; x++) {
+						ncl_Pixel p = ncl_getScreenPixel(scrbuf, x, y);
+						Vector2 pos = {
+							offX + (x - 1) * cwidth,
+							offY + (y - 1) * cheight,
+						};
+						ncl_needGlyph(gc, p.codepoint);
+						DrawRectangle(pos.x, pos.y, cwidth, cheight, ne_processColor(p.bgColor, scrbright));
+						if(p.codepoint != 0) {
+							ncl_drawGlyph(gc, p.codepoint, pos, cheight, ne_processColor(p.fgColor, scrbright));
+						}
 					}
 				}
 			}
 			DrawRectangleLines(offX, offY, cwidth * scrw, cheight * scrh, WHITE);
 			ncl_unlockScreen(scrbuf);
 			ncl_flushGlyphs(gc);
+
+			int tx = (double)(GetMouseX() - offX) / cwidth + 1;
+			int ty = (double)(GetMouseY() - offY) / cheight + 1;
+
+			if(tx >= 1 && ty >= 1 && tx <= scrw && ty <= scrh) {
+				// we only care about left click here
+				if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+					nn_pushTouch(c, scraddr, tx, ty, 0, player);
+				}
+				if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+					nn_pushDrop(c, scraddr, tx, ty, 0, player);
+				}
+				if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+					if(ltx != tx || lty != ty) {
+						ltx = tx;
+						lty = ty;
+						nn_pushDrag(c, scraddr, tx, ty, 0, player);
+					}
+				}
+			}
 		}
-skipDrawScreen:;
 
 		int statY = 10;
 		if(sand.buf != NULL) {

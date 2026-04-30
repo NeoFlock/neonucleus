@@ -187,6 +187,7 @@ end
 
 function computer.pullSignal(timeout)
 	timeout = timeout or math.huge
+	timeout = math.max(timeout, 0.05)
 	local deadline = computer.uptime() + timeout
 	while true do
 		if computer.uptime() >= deadline then return end
@@ -350,7 +351,15 @@ sandbox = {
 
 	os = {
 		clock = os.clock,
-		date = os.date,
+		date = function(a, b, ...)
+			if type(a) == "number" then
+				a = math.floor(a)
+			end
+			if type(b) == "number" then
+				b = math.floor(b)
+			end
+			return os.date(a, b, ...)
+		end,
 		difftime = os.difftime,
 		time = os.time,
 	},
