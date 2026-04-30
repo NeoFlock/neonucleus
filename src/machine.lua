@@ -7,20 +7,20 @@
 os.exit = nil
 os.execute = nil
 
-local sysyieldobj = "__SYSYIELD__"
+local sysyieldobj = {}
 local coroutine = coroutine
 
-local function sysyield()
-	coroutine.yield(sysyieldobj)
-end
+local resume, yield = coroutine.resume, coroutine.yield
 
-local resume = coroutine.resume
+local function sysyield()
+	yield(sysyieldobj)
+end
 
 function coroutine.resume(co, ...)
 	while true do
 		local t = {resume(co, ...)}
 		if t[1] and rawequal(t[2], sysyieldobj) then
-			coroutine.yield(sysyieldobj)
+			yield(sysyieldobj)
 		else
 			return table.unpack(t)
 		end
@@ -248,7 +248,7 @@ if os.getenv("NN_REPL") == "1" then
 			f, err = load(l, "=repl")
 			if f then f() else print(err) end
 		end
-		coroutine.yield()
+		yield()
 	end
 	io.write("\n")
 	print("exiting repl")
@@ -282,5 +282,5 @@ while true do
 		end
 		if coroutine.status(thread) == "dead" then break end
 	end
-	coroutine.yield()
+	yield()
 end
