@@ -2570,6 +2570,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.spaceTotal = 1 * NN_MiB,
 		.readsPerTick = 4,
 		.writesPerTick = 2,
+		.opensPerTick = 4,
 		.dataEnergyCost = 256.0 / NN_MiB,
 		.maxReadSize = 4096,
 	},
@@ -2577,6 +2578,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.spaceTotal = 2 * NN_MiB,
 		.readsPerTick = 4,
 		.writesPerTick = 2,
+		.opensPerTick = 8,
 		.dataEnergyCost = 512.0 / NN_MiB,
 		.maxReadSize = 8192,
 	},
@@ -2584,6 +2586,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.spaceTotal = 4 * NN_MiB,
 		.readsPerTick = 7,
 		.writesPerTick = 3,
+		.opensPerTick = 16,
 		.dataEnergyCost = 1024.0 / NN_MiB,
 		.maxReadSize = 16384,
 	},
@@ -2591,6 +2594,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.spaceTotal = 8 * NN_MiB,
 		.readsPerTick = 13,
 		.writesPerTick = 5,
+		.opensPerTick = 32,
 		.dataEnergyCost = 2048.0 / NN_MiB,
 		.maxReadSize = 32768,
 	},
@@ -4091,6 +4095,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		e = state->handler(&freq);
 		if(e) return e;
 		req->returnCount = 1;
+		nn_costComponent(C, req->compAddress, state->fs.opensPerTick);
 		return nn_pushinteger(C, freq.fd);
 	}
 	if(method == NN_FSNUM_READ) {
@@ -4323,7 +4328,7 @@ nn_Component *nn_createFilesystem(nn_Universe *universe, const char *address, co
 		[NN_FSNUM_GETLABEL] = {"getLabel", "function(): string? - Gets the label of the drive, if any", NN_DIRECT},
 		[NN_FSNUM_SETLABEL] = {"setLabel", "function(label?: string): string - Sets the label of the drive. Returns the new label, which may be truncated", NN_INDIRECT},
 		[NN_FSNUM_ISRO] = {"isReadOnly", "function(): boolean - Returns whether the drive is read-only", NN_DIRECT},
-		[NN_FSNUM_OPEN] = {"open", "function(path: string, mode?: 'r'|'w'|'a'): integer - Open a file", NN_INDIRECT},
+		[NN_FSNUM_OPEN] = {"open", "function(path: string, mode?: 'r'|'w'|'a'): integer - Open a file", NN_DIRECT},
 		[NN_FSNUM_READ] = {"read", "function(fd: integer, len?: integer): string? - Read from a file, returns nothing on EoF", NN_DIRECT},
 		[NN_FSNUM_WRITE] = {"write", "function(fd: integer, data: string): boolean - Writes to a file, returns whether the operation succeeded", NN_DIRECT},
 		[NN_FSNUM_SEEK] = {"seek", "function(fd: integer, whence?: 'set'|'cur'|'end', off?: integer): integer - Seeks a file, returns new position", NN_DIRECT},

@@ -1019,6 +1019,8 @@ typedef struct nn_Filesystem {
 	double readsPerTick;
 	// how many write calls can be done per tick
 	double writesPerTick;
+	// how many open calls can be done per tick
+	double opensPerTick;
 	// The energy cost of an actual read/write.
 	// It is per-byte, so if a read returns 4096 bytes, then this cost is multiplied by 4096.
 	double dataEnergyCost;
