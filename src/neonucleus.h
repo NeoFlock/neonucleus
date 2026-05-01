@@ -995,6 +995,7 @@ typedef struct nn_EEPROMRequest {
 	union {
 		char *buf;
 		const char *robuf;
+		bool readonly;
 	};
 	size_t buflen;
 } nn_EEPROMRequest;

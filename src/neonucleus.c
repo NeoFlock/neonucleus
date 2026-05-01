@@ -3927,6 +3927,61 @@ static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
 		req->returnCount = 1;
 		return nn_pushbool(C, true);
 	}
+	if(method == NN_EENUM_ISRO) {
+		ereq.action = NN_EEPROM_ISRO;
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, ereq.readonly);
+	}
+	if(method == NN_EENUM_GETCHKSUM) {
+		nn_removeEnergy(C, eeprom.readEnergyCost);
+		ereq.action = NN_EEPROM_GET;
+		NN_VLA(char, buf, eeprom.size);
+		ereq.buf = buf;
+		ereq.buflen = eeprom.size;
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		char checkbuf[8];
+		unsigned int chksumInt = nn_computeCRC32(buf, ereq.buflen);
+		nn_crc32ChecksumBytes(chksumInt, checkbuf);
+		return nn_pushlstring(C, checkbuf, 8);
+	}
+	if(method == NN_EENUM_MKRO) {
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+
+		size_t expectedLen;
+		const char *expected = nn_tolstring(C, 0, &expectedLen);
+
+		if(expectedLen != 8) {
+			nn_setError(C, "malformed checksum");
+			return NN_EBADCALL;
+		}
+
+		nn_removeEnergy(C, eeprom.readEnergyCost);
+		ereq.action = NN_EEPROM_GET;
+		NN_VLA(char, buf, eeprom.size);
+		ereq.buf = buf;
+		ereq.buflen = eeprom.size;
+		e = state->handler(&ereq);
+		if(e) return e;
+		req->returnCount = 1;
+		char checkbuf[8];
+		unsigned int chksumInt = nn_computeCRC32(buf, ereq.buflen);
+		nn_crc32ChecksumBytes(chksumInt, checkbuf);
+
+		if(nn_memcmp(expected, checkbuf, 8) != 0) {
+			nn_setError(C, "incorrect checksum, verify EEPROM is correct");
+			return NN_EBADCALL;
+		}
+
+		ereq.action = NN_EEPROM_MKRO;
+		e = state->handler(&ereq);
+		if(e) return e;
+
+		return nn_pushbool(C, true);
+	}
 	nn_setError(C, "not implemented yet");
 	return NN_EBADCALL;
 }
@@ -3945,7 +4000,7 @@ nn_Component *nn_createEEPROM(nn_Universe *universe, const char *address, const 
 		[NN_EENUM_SETDATA] = {"setData", "function(data: string) - Set the data on the EEPROM", NN_INDIRECT},
 		[NN_EENUM_SETLABEL] = {"setLabel", "function(label?: string) - Set the label", NN_INDIRECT},
 		[NN_EENUM_SETARCH] = {"setArchitecture", "function(arch?: string) - Set the desired architecture", NN_INDIRECT},
-		[NN_EENUM_ISRO] = {"isReadonly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT},
+		[NN_EENUM_ISRO] = {"isReadOnly", "function(): boolean - Returns whether the EEPROM is read-only.", NN_DIRECT},
 		[NN_EENUM_GETCHKSUM] = {"getChecksum", "function(): string - Returns a checksum of the EEPROM code.", NN_DIRECT},
 		[NN_EENUM_MKRO] = {"makeReadonly", "function(checksum: string): boolean - Make the EEPROM read-only if checksum passes.", NN_INDIRECT},
 	};

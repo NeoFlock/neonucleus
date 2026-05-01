@@ -1847,45 +1847,93 @@ static nn_Exit ncl_eepromHandler(nn_EEPROMRequest *req) {
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_GET) {
+		nn_lock(ctx, state->lock);
 		memcpy(req->buf, state->code, state->codelen);
 		req->buflen = state->codelen;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_GETDATA) {
+		nn_lock(ctx, state->lock);
 		memcpy(req->buf, state->data, state->datalen);
 		req->buflen = state->datalen;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_GETLABEL) {
+		nn_lock(ctx, state->lock);
 		memcpy(req->buf, state->label, state->labellen);
 		req->buflen = state->labellen;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_GETARCH) {
+		nn_lock(ctx, state->lock);
 		memcpy(req->buf, state->archname, state->archlen);
 		req->buflen = state->archlen;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_SET) {
+		nn_lock(ctx, state->lock);
+		if(state->isReadonly) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "eeprom is readonly");
+			return NN_EBADCALL;
+		}
 		memcpy(state->code, req->robuf, req->buflen);
 		state->codelen = req->buflen;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_SETDATA) {
+		nn_lock(ctx, state->lock);
+		if(state->isReadonly) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "eeprom is readonly");
+			return NN_EBADCALL;
+		}
 		memcpy(state->data, req->robuf, req->buflen);
 		state->datalen = req->buflen;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_SETLABEL) {
+		nn_lock(ctx, state->lock);
+		if(state->isReadonly) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "eeprom is readonly");
+			return NN_EBADCALL;
+		}
 		if(req->buflen > NN_MAX_LABEL) req->buflen = NN_MAX_LABEL;
 		memcpy(state->label, req->robuf, req->buflen);
 		state->labellen = req->buflen;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_EEPROM_SETARCH) {
+		nn_lock(ctx, state->lock);
+		if(state->isReadonly) {
+			nn_unlock(ctx, state->lock);
+			nn_setError(C, "eeprom is readonly");
+			return NN_EBADCALL;
+		}
 		if(req->buflen > NN_MAX_ARCHNAME) req->buflen = NN_MAX_ARCHNAME;
 		memcpy(state->archname, req->robuf, req->buflen);
 		state->archlen = req->buflen;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_EEPROM_ISRO) {
+		nn_lock(ctx, state->lock);
+		req->readonly = state->isReadonly;
+		nn_unlock(ctx, state->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_EEPROM_MKRO) {
+		nn_lock(ctx, state->lock);
+		state->isReadonly = true;
+		nn_unlock(ctx, state->lock);
 		return NN_OK;
 	}
 	if(C) nn_setError(C, "ncl-eeprom: not implemented yet");

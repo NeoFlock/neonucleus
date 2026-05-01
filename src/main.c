@@ -479,8 +479,8 @@ int main(int argc, char **argv) {
 	double nextSecond = 0;
 	double wattage = 0;
 
-	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[2]);
-	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[2]);
+	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
@@ -567,25 +567,34 @@ int main(int argc, char **argv) {
 			int ty = (double)(GetMouseY() - offY) / cheight + 1;
 
 			if(tx >= 1 && ty >= 1 && tx <= scrw && ty <= scrh) {
-				// we only care about left click here
-				if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-					nn_pushTouch(c, scraddr, tx, ty, 0, player);
-				}
-				if(IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-					nn_pushDrop(c, scraddr, tx, ty, 0, player);
-				}
-				if(IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-					if(ltx != tx || lty != ty) {
-						ltx = tx;
-						lty = ty;
-						//scrollBuf = 0;
-						nn_pushDrag(c, scraddr, tx, ty, 0, player);
+				struct {int btn; int ocbtn;} btns[] = {
+					{MOUSE_BUTTON_LEFT, 0},
+					{MOUSE_BUTTON_RIGHT, 1},
+					{MOUSE_BUTTON_MIDDLE, 2},
+				};
+				size_t btnc = sizeof(btns) / sizeof(btns[0]);
+				for(size_t i = 0; i < btnc; i++) {
+					// we only care about left click here
+					int mbtn = btns[i].btn;
+					int ocbtn = btns[i].ocbtn;
+					if(IsMouseButtonPressed(mbtn)) {
+						nn_pushTouch(c, scraddr, tx, ty, ocbtn, player);
+					}
+					if(IsMouseButtonReleased(mbtn)) {
+						nn_pushDrop(c, scraddr, tx, ty, ocbtn, player);
+					}
+					if(IsMouseButtonDown(mbtn)) {
+						if(ltx != tx || lty != ty) {
+							nn_pushDrag(c, scraddr, tx, ty, ocbtn, player);
+						}
 					}
 				}
 				if(fabs(scrollBuf) >= 1) {
 					nn_pushScroll(c, scraddr, tx, ty, scrollBuf, player);
 					scrollBuf = 0;
 				}
+				ltx = tx;
+				lty = ty;
 			}
 		}
 
