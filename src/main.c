@@ -6,6 +6,7 @@
 #include "neonucleus.h"
 #include "ncomplib.h"
 #include "glyphcache.h"
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -550,8 +551,17 @@ int main(int argc, char **argv) {
 							offX + (x - 1) * cwidth,
 							offY + (y - 1) * cheight,
 						};
-						ncl_needGlyph(gc, p.codepoint);
 						DrawRectangle(pos.x, pos.y, cwidth, cheight, ne_processColor(p.bgColor, scrbright));
+					}
+				}
+				for(int y = 1; y <= scrh; y++) {
+					for(int x = 1; x <= scrw; x++) {
+						ncl_Pixel p = ncl_getScreenPixel(scrbuf, x, y);
+						Vector2 pos = {
+							offX + (x - 1) * cwidth,
+							offY + (y - 1) * cheight,
+						};
+						ncl_needGlyph(gc, p.codepoint);
 						if(p.codepoint != 0) {
 							ncl_drawGlyph(gc, p.codepoint, pos, cheight, ne_processColor(p.fgColor, scrbright));
 						}
@@ -639,9 +649,8 @@ int main(int argc, char **argv) {
 				if(keycode == KEY_TAB) unicode = '\t';
 
 				bool isCtrlPressed = keybuf[KEY_LEFT_CONTROL].key != 0;
-				if(isCtrlPressed) {
-					if(keycode == KEY_C) unicode = 3;
-					if(keycode == KEY_D) unicode = 4;
+				if(isCtrlPressed && isalpha(keycode)) {
+					unicode = keycode - 'A' + 1;
 				}
 			}
 
