@@ -3,14 +3,14 @@ DYNLIB=libneonucleus.so
 LIB=libneonucleus.a
 
 CC=cc
-OPT=-O3
+OPT=-Oz
 SANITIZE=
 DEBUG=
 NNFLAGS=
 CFLAGS=-fPIC $(OPT) $(SANITIZE) $(DEBUG) $(NNFLAGS)
 
 LD=$(CC)
-LDFLAGS=$(OPT) $(DEBUG)
+LDFLAGS=$(OPT) $(DEBUG) $(SANITIZE)
 
 AR=ar
 RANLIB=ranlib
