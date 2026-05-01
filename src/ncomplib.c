@@ -1963,6 +1963,7 @@ nn_Component *ncl_createEEPROM(nn_Universe *universe, const char *address, const
 	state->ctx = ctx;
 	state->lock = lock;
 	state->usage = 0;
+	state->isReadonly = false;
 	state->code = codebuf;
 	state->codelen = codelen;
 	memcpy(state->code, code, codelen);
