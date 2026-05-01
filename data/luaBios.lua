@@ -61,12 +61,11 @@ do
 
   -- backwards compatibility, may remove later
   local eeprom = component.list("eeprom")()
-  local bootAddr = nil
   computer.getBootAddress = function()
-    return bootAddr
+    return boot_invoke(eeprom, "getData")
   end
   computer.setBootAddress = function(address)
-      bootAddr = address
+      boot_invoke(eeprom, "setData", address)
   end
 
   do

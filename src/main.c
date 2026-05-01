@@ -381,7 +381,28 @@ int main(int argc, char **argv) {
 	nn_setComponentMethods(ocelotCard, sandboxMethods);
 	nn_setComponentHandler(ocelotCard, sandbox_handler);
 
-	nn_Component *eepromCard = ncl_createEEPROM(u, NULL, &nn_defaultEEPROMs[3], minBIOS, strlen(minBIOS), false);
+	char *eepromCode = (char *)minBIOS;
+	size_t eepromSize = strlen(minBIOS);
+	const char *eepromPath = getenv("NN_EEPROM");
+	if(eepromPath != NULL) {
+		FILE *eeprom = fopen(eepromPath, "rb");
+		if(eeprom == NULL) {
+			fprintf(stderr, "no such eeprom: %s\n", eepromPath);
+			return 1;
+		}
+		
+		fseek(eeprom, 0, SEEK_END);
+		eepromSize = ftell(eeprom);
+		fseek(eeprom, 0, SEEK_SET);
+
+		eepromCode = malloc(eepromSize);
+		size_t amount = 0;
+		while(amount < eepromSize) {
+			amount += fread(eepromCode + amount, sizeof(char), eepromSize - amount, eeprom);
+		}
+	}
+
+	nn_Component *eepromCard = ncl_createEEPROM(u, NULL, &nn_defaultEEPROMs[3], eepromCode, eepromSize, false);
 
 	nn_Filesystem mainfsconf;
 	nn_Filesystem fsparts[] = {
@@ -396,8 +417,7 @@ int main(int argc, char **argv) {
 	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &mainfsconf, true);
 	//nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
 	nn_Component *tmpfs = ncl_createFilesystem(u, NULL, "/tmp", &mainfsconf, false);
-	nn_Component *testingfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
-	//nn_Component *testingfs = ncl_createFilesystem(u, NULL, "test", &nn_defaultFilesystems[3], false);
+	nn_Component *testingfs = ncl_createFilesystem(u, NULL, "aux", &nn_defaultFilesystems[3], false);
 
 	const char * const testDriveData = 
 		"local g, s = component.list('gpu')(), component.list('screen')()\n"
@@ -708,6 +728,7 @@ cleanup:;
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);
+	if(eepromPath != NULL) free(eepromCode);
 	CloseWindow();
 	free(sand.buf);
 	return 0;
