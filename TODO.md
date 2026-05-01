@@ -1,6 +1,5 @@
 # For MVP functionality
 
-- fix coloring issue in UlOS 2 beta 5 (and in OpenOS `dmesg`, it appears color-mapper is wrong)
 - make `computer` component use callbacks
 - make a lot of stuff which likely will need to be indirect actually be indirect (modem comms, computer funcs)
 - make beeps, power, etc. be callbacks on one shared local state (computer environment)

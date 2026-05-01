@@ -72,7 +72,7 @@ local syncedMethodStats
 
 local function realInvoke(address, method, ...)
 	local t = {pcall(cinvoke, address, method, ...)}
-	if not _SYNCED then
+	if not _SYNCED and not os.getenv("NN_FAST") then
 		if computer.energy() <= 0 then sysyield() end -- out of power
 		if computer.isOverused() then sysyield() end -- overused
 		if computer.isIdle() then sysyield() end -- machine idle

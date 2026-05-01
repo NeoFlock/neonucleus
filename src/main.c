@@ -496,6 +496,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, testFlash, 5, false);
 	int ltx = 0, lty = 0;
 	double scrollBuf = 0;
+	SetTargetFPS(60);
 	while(true) {
 		if(WindowShouldClose()) break;
 

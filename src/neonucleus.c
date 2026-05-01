@@ -2909,9 +2909,9 @@ void nn_initPalettes() {
 }
 
 static void nn_splitColor(int color, double *r, double *g, double *b) {
-	int _r = (color >> 16) & 0xFF;
-	int _g = (color >> 8) & 0xFF;
-	int _b = (color >> 0) & 0xFF;
+	unsigned int _r = (color >> 16) & 0xFF;
+	unsigned int _g = (color >> 8) & 0xFF;
+	unsigned int _b = (color >> 0) & 0xFF;
 
 	*r = (double)_r / 255;
 	*g = (double)_g / 255;
@@ -2925,10 +2925,20 @@ double nn_colorLuminance(int color) {
 	return r * 0.2126 + g * 0.7152 + b * 0.0722;
 }
 
+// Credit to Blendi for writing this, the old algorithm based off luminance gave bad results
 static double nn_colorDistance(int a, int b) {
-	double n = nn_colorLuminance(a) - nn_colorLuminance(b);
-	if(n < 0) n = -n;
-	return n;
+	// double n = nn_colorLuminance(a) - nn_colorLuminance(b);
+	// if(n < 0) n = -n;
+
+	double ar,ag,ab;
+	double br,bg,bb;
+
+	nn_splitColor(a, &ar, &ag, &ab);
+	nn_splitColor(b, &br, &bg, &bb);
+	
+	double dr = ar-br, dg = ag-bg, db = ab-bb;
+
+	return ((dr < 0) ? -dr : dr) + ((dg < 0) ? -dg : dg) + ((db < 0) ? -db : db);
 }
 
 int nn_mapColor(int color, int *palette, size_t len) {
@@ -2938,7 +2948,7 @@ int nn_mapColor(int color, int *palette, size_t len) {
 	for(size_t i = 0; i < len; i++) {
 		int entry = palette[i];
 		double dist = nn_colorDistance(color, entry);
-		if(dist < bestDist) {
+		if(dist <= bestDist) {
 			bestDist = dist;
 			bestColor = entry;
 		}
