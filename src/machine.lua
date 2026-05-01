@@ -187,7 +187,7 @@ end
 
 function computer.pullSignal(timeout)
 	timeout = timeout or math.huge
-	timeout = math.max(timeout, 0.05)
+	timeout = math.max(timeout, 0.001)
 	local deadline = computer.uptime() + timeout
 	while true do
 		if computer.uptime() >= deadline then return end

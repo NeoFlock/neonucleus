@@ -6,6 +6,7 @@
 #include "neonucleus.h"
 #include "ncomplib.h"
 #include "glyphcache.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -494,6 +495,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, testDrive, 4, false);
 	nn_mountComponent(c, testFlash, 5, false);
 	int ltx = 0, lty = 0;
+	double scrollBuf = 0;
 	while(true) {
 		if(WindowShouldClose()) break;
 
@@ -555,8 +557,13 @@ int main(int argc, char **argv) {
 					if(ltx != tx || lty != ty) {
 						ltx = tx;
 						lty = ty;
+						//scrollBuf = 0;
 						nn_pushDrag(c, scraddr, tx, ty, 0, player);
 					}
+				}
+				if(fabs(scrollBuf) >= 1) {
+					nn_pushScroll(c, scraddr, tx, ty, scrollBuf, player);
+					scrollBuf = 0;
 				}
 			}
 		}
@@ -577,6 +584,8 @@ int main(int argc, char **argv) {
 		}
 
 		EndDrawing();
+
+		scrollBuf += GetMouseWheelMove();
 
 		// keyboard input
 
