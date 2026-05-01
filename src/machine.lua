@@ -286,7 +286,13 @@ sandbox = {
 	rawlen = rawlen,
 	rawset = rawset,
 	select = select,
-	setmetatable = setmetatable,
+	setmetatable = function(t, meta)
+		if type(meta) == "table" then
+			-- nope
+			rawset(meta, "__gc", nil)
+		end
+		return setmetatable(t, meta)
+	end,
 	tonumber = tonumber,
 	tostring = tostring,
 	type = type,
@@ -308,8 +314,8 @@ sandbox = {
 	debug = {
 		getinfo = debug.getinfo,
 		traceback = debug.traceback,
-		getlocal = debug.getlocal,
-		getupvalue = debug.getupvalue,
+		getlocal = function(...) return (debug.getlocal(...)) end,
+		getupvalue = function(...) return (debug.getupvalue(...)) end,
 		print = debug.print,
 	},
 
