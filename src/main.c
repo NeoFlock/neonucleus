@@ -596,11 +596,6 @@ int main(int argc, char **argv) {
 			if(t != NULL) nn_pushClipboard(c, "mainKB", t, player);
 		}
 
-		if(IsKeyPressed(KEY_TAB)) {
-			printf("force crashing\n");
-			nn_forceCrashComputer(c, "get crashed lol");
-		}
-
 		while(1) {
 			int keycode = GetKeyPressed();
 			nn_codepoint unicode = GetCharPressed();
