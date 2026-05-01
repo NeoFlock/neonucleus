@@ -447,6 +447,7 @@ int main(int argc, char **argv) {
 	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_defaultDrives[3], testDriveData, strlen(testDriveData), false);
 	nn_Component *testFlash = ncl_createFlash(u, NULL, &nn_defaultSSDs[3], testDriveData, strlen(testDriveData), false);
 
+	ncl_setCLabel(eepromCard, "EEPROM");
 	ncl_setCLabel(managedfs, "Main Filesystem");
 	ncl_setCLabel(testingfs, "Secondary Filesystem");
 	ncl_setCLabel(testDrive, "Unmanaged Storage");
@@ -454,6 +455,7 @@ int main(int argc, char **argv) {
 
 	size_t ramTotal = 0;
 	ramTotal += 4 * nn_ramSizes[5];
+	//ramTotal += nn_ramSizes[0];
 	
 	SetExitKey(KEY_NULL);
 
@@ -494,9 +496,6 @@ int main(int argc, char **argv) {
 		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
 	}
 	nn_setCallBudget(c, 0);
-	
-	// default for 64-bit
-	if(sizeof(void *) > 4) nn_setMemoryScale(c, 1.8);
 	
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);

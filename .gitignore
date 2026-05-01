@@ -1,5 +1,16 @@
+# Zig stuff
 .zig-cache/
 zig-out/
+# Data dir
 !data/.gitkeep
+# Makefile build
+build/*
+!build/.gitkeep
+# VScode slop
 .vscode/
+# Random logs some tools may output
 *.log
+# Makefile output
+/neonucleus
+/libneonucleus.so
+/libneonucleus.a

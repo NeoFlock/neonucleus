@@ -451,18 +451,6 @@ const char *nn_getComputerAddress(nn_Computer *computer);
 nn_Universe *nn_getComputerUniverse(nn_Computer *computer);
 nn_Context *nn_getUniverseContext(nn_Universe *universe);
 nn_Context *nn_getComputerContext(nn_Computer *computer);
-// Sets the memory scale, which defaults to 1.
-// For context, OC will set the memory scale to 1.8 on 64-bit systems by default.
-// This scale affects how much real-world memory an amount of VM actually takes up.
-// This means if the total memory is 4 MiB, and the scale is set to 2, the computer can take up to 8MiB of actual RAM.
-// However, nn_getTotalMemory() will still return 4 MiB.
-// The architecture is meant to ensure that the reported free memory is also scaled. As in, the real-world free memory
-// is divided by this scale to ensure it is within the correct range.
-// It is undefined behavior to change the memory scale *after* the first call to nn_tick().
-// Some architectures may ignore this, if they are very low-level and thus
-// do not have any implicit changes of sizes between 32-bit and 64-bit.
-void nn_setMemoryScale(nn_Computer *computer, double scale);
-double nn_getMemoryScale(nn_Computer *computer);
 
 // Returns the memory usage limit of the computer.
 size_t nn_getTotalMemory(nn_Computer *computer);

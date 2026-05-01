@@ -1056,7 +1056,6 @@ typedef struct nn_Computer {
 	size_t signalCount;
 	size_t userCount;
 	double idleTimestamp;
-	double memoryScale;
 	nn_Beep beep;
 	nn_Value callstack[NN_MAX_STACK];
 	char errorBuffer[NN_MAX_ERROR_SIZE];
@@ -1180,7 +1179,6 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->signalCount = 0;
 	c->userCount = 0;
 	c->idleTimestamp = 0;
-	c->memoryScale = 1;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
 	nn_clearComputerBeep(c);
@@ -1445,14 +1443,6 @@ bool nn_removeEnergy(nn_Computer *computer, double energy) {
 void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHandler *handler) {
 	computer->energyState = energyState;
 	computer->energyHandler = handler;
-}
-
-void nn_setMemoryScale(nn_Computer *computer, double scale) {
-	computer->memoryScale = scale;
-}
-
-double nn_getMemoryScale(nn_Computer *computer) {
-	return computer->memoryScale;
 }
 
 size_t nn_getTotalMemory(nn_Computer *computer) {

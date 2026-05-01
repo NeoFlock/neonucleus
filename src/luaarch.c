@@ -651,15 +651,18 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 	nn_Computer *computer = req->computer;
 	luaArch *arch = req->localState;
 	nn_Context *ctx = nn_getComputerContext(computer);
+	// the memory scale, used to give Lua extra memory in 64-bit systems
+	// due to it also using more memory.
+	double memScale = sizeof(void *) > 4 ? 1.8 : 1;
 	switch(req->action) {
 	case NN_ARCH_FREEMEM:
-		req->freeMemory = arch->freeMem / nn_getMemoryScale(computer);
+		req->freeMemory = arch->freeMem / memScale;
 		return NN_OK;
 	case NN_ARCH_INIT:
 		// wrapped in a block to prevent L from leaking, because L is common in Lua code so it may be used by mistake
 		{
 			arch = nn_alloc(ctx, sizeof(*arch));
-			arch->freeMem = nn_getTotalMemory(computer) * nn_getMemoryScale(computer);
+			arch->freeMem = nn_getTotalMemory(computer) * memScale;
 			arch->computer = computer;
 #if LUA_VERSION_NUM >= 505L
 			lua_State *L = lua_newstate(luaArch_alloc, arch, rand());
