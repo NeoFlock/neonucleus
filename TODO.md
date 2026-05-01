@@ -1,7 +1,6 @@
 # For MVP functionality
 
 - make `computer` component use callbacks
-- make a lot of stuff which likely will need to be indirect actually be indirect (modem comms, computer funcs)
 - make beeps, power, etc. be callbacks on one shared local state (computer environment)
 - write a tester OS, basically a menu with tests to run
 - finish tmpfs (rework the whole thing)
