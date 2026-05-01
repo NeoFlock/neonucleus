@@ -2927,9 +2927,6 @@ double nn_colorLuminance(int color) {
 
 // Credit to Blendi for writing this, the old algorithm based off luminance gave bad results
 static double nn_colorDistance(int a, int b) {
-	// double n = nn_colorLuminance(a) - nn_colorLuminance(b);
-	// if(n < 0) n = -n;
-
 	double ar,ag,ab;
 	double br,bg,bb;
 
@@ -2938,7 +2935,7 @@ static double nn_colorDistance(int a, int b) {
 	
 	double dr = ar-br, dg = ag-bg, db = ab-bb;
 
-	return ((dr < 0) ? -dr : dr) + ((dg < 0) ? -dg : dg) + ((db < 0) ? -db : db);
+	return 0.2126 * dr*dr + 0.7152 * dg*dg + 0.0722 * db*db;
 }
 
 int nn_mapColor(int color, int *palette, size_t len) {
