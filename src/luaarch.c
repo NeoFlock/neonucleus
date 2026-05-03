@@ -133,7 +133,8 @@ static int luaArch_computer_beep(lua_State *L) {
 	if(beep.frequency > 20000) beep.frequency = 20000;
 	if(beep.duration > 5) beep.duration = 5;
 	if(beep.volume > 1) beep.volume = 1;
-	nn_setComputerBeep(luaArch_from(L)->computer, beep);
+	nn_beepComputer(luaArch_from(L)->computer, beep);
+	nn_addIdleTime(luaArch_from(L)->computer, beep.duration);
 	return 0;
 }
 

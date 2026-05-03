@@ -397,6 +397,39 @@ typedef struct nn_Architecture {
 // NN adds 2 more tiers.
 extern size_t nn_ramSizes[8];
 
+typedef struct nn_Beep {
+	double frequency;
+	double duration;
+	double volume;
+} nn_Beep;
+
+typedef enum nn_EnvironmentAction {
+	NN_ENV_DRAWENERGY,
+	NN_ENV_POWERON,
+	NN_ENV_POWEROFF,
+	NN_ENV_CRASHED,
+	NN_ENV_BEEP,
+} nn_EnvironmentAction;
+
+typedef struct nn_EnvironmentRequest {
+	nn_Computer *computer;
+	void *userdata;
+	nn_EnvironmentAction action;
+	union {
+		// for DRAWENERGY, is the amount to remove, and must be set to the amount remaining
+		double energy;
+		// for BEEP, information about the beep
+		nn_Beep beep;
+	};
+} nn_EnvironmentRequest;
+
+typedef void nn_EnvironmentHandler(nn_EnvironmentRequest *req);
+
+typedef struct nn_Environment {
+	void *userdata;
+	nn_EnvironmentHandler *handler;
+} nn_Environment;
+
 // The state of a *RUNNING* computer.
 // Powered off computers shall not have a state, and as far as NeoNucleus is aware,
 // not exist.
@@ -420,30 +453,9 @@ void nn_stopComputer(nn_Computer *computer);
 void nn_forceCrashComputer(nn_Computer *computer, const char *s);
 // returns whether an architecture state is present
 bool nn_isComputerOn(nn_Computer *computer);
+void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env);
 
-typedef enum nn_ComputerEvent {
-	// when powered on
-	NN_COMPUTER_POWERON,
-	// when powered off
-	NN_COMPUTER_POWEROFF,
-	// when force-crashed
-	NN_COMPUTER_FORCECRASH,
-	// when crashed
-	NN_COMPUTER_CRASH,
-} nn_ComputerEvent;
-
-typedef void nn_ComputerListener(nn_Computer *computer, nn_ComputerEvent event);
-void nn_setComputerListener(nn_Computer *computer, nn_ComputerListener *listener);
-
-typedef struct nn_Beep {
-	double frequency;
-	double duration;
-	double volume;
-} nn_Beep;
-
-void nn_setComputerBeep(nn_Computer *computer, nn_Beep beep);
-bool nn_getComputerBeep(nn_Computer *computer, nn_Beep *beep);
-void nn_clearComputerBeep(nn_Computer *computer);
+void nn_beepComputer(nn_Computer *computer, nn_Beep beep);
 
 // get the userdata pointer
 void *nn_getComputerUserdata(nn_Computer *computer);
@@ -528,18 +540,6 @@ double nn_getTotalEnergy(nn_Computer *computer);
 double nn_getEnergy(nn_Computer *computer);
 // Returns true if there is no more energy left, and a blackout has occured.
 bool nn_removeEnergy(nn_Computer *computer, double energy);
-
-// the handler of energy costs.
-// The default handler just returns the total energy.
-// Computers do not keep track of their current energy, they just call this function.
-// getEnergy() calls this with amountToRemove set to 0. It is recommended to handle this as a fastpath.
-// This should return the new amount of energy after the removal.
-// A negative amount can be returned, it will be clamped to 0.
-// If an error occurs, it is recommended to just return 0 and trigger a blackout.
-// TODO: evaluate if API should be reworked to handle errors in energy handler.
-typedef double nn_EnergyHandler(void *energyState, nn_Computer *computer, double amountToRemove);
-
-void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHandler *handler);
 
 // copies the string into the local error buffer. The error is NULL terminated, but also capped by NN_MAX_ERROR_SIZE
 void nn_setError(nn_Computer *computer, const char *s);

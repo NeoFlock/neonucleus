@@ -1,8 +1,6 @@
 # For MVP functionality
 
 - make `computer` component use callbacks
-- make beeps, power, etc. be callbacks on one shared local state (computer environment)
-- write a tester OS, basically a menu with tests to run
 - finish tmpfs (rework the whole thing)
 - device info
 - userdata support

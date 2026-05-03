@@ -474,6 +474,7 @@ void nn_destroyLock(nn_Context *ctx, nn_Lock *lock) {
 }
 
 void nn_lock(nn_Context *ctx, nn_Lock *lock) {
+	if(lock == NULL) return;
 	nn_LockRequest req;
 	req.lock = lock;
 	req.action = NN_LOCK_LOCK;
@@ -481,6 +482,7 @@ void nn_lock(nn_Context *ctx, nn_Lock *lock) {
 }
 
 void nn_unlock(nn_Context *ctx, nn_Lock *lock) {
+	if(lock == NULL) return;
 	nn_LockRequest req;
 	req.lock = lock;
 	req.action = NN_LOCK_UNLOCK;
@@ -1036,6 +1038,7 @@ typedef struct nn_Signal {
 typedef struct nn_Computer {
 	nn_ComputerState state;
 	nn_Universe *universe;
+	nn_Environment env;
 	nn_Lock *lock;
 	void *userdata;
 	char *address;
@@ -1047,8 +1050,6 @@ typedef struct nn_Computer {
 	size_t totalCallBudget;
 	nn_HashMap components;
 	double totalEnergy;
-	void *energyState;
-	nn_EnergyHandler *energyHandler;
 	size_t totalMemory;
 	double creationTimestamp;
 	size_t stackSize;
@@ -1056,7 +1057,6 @@ typedef struct nn_Computer {
 	size_t signalCount;
 	size_t userCount;
 	double idleTimestamp;
-	nn_Beep beep;
 	nn_Value callstack[NN_MAX_STACK];
 	char errorBuffer[NN_MAX_ERROR_SIZE];
 	nn_Architecture archs[NN_MAX_ARCHITECTURES];
@@ -1111,10 +1111,10 @@ size_t nn_limitStorage(nn_Universe *universe, size_t storage) {
 	return storage;
 }
 
-double nn_default_energyHandler(void *state, nn_Computer *computer, double amount) {
-	(void)state;
-	(void)amount;
-	return nn_getTotalEnergy(computer);
+static void nn_default_envHandler(nn_EnvironmentRequest *req) {
+	if(req->action == NN_ENV_DRAWENERGY) {
+		req->energy = req->computer->totalEnergy;
+	}
 }
 
 size_t nn_ramSizes[8] = {
@@ -1146,7 +1146,12 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 		return NULL;
 	}
 
-	c->address = nn_strdup(ctx, address);
+	if(address == NULL) {
+		c->address = nn_alloc(ctx, sizeof(nn_uuid));
+		if(c->address != NULL) nn_randomUUID(ctx, c->address);
+	} else {
+		c->address = nn_strdup(ctx, address);
+	}
 	if(c->address == NULL) {
 		nn_destroyLock(ctx, c->lock);
 		nn_free(ctx, c, sizeof(nn_Computer));
@@ -1170,8 +1175,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	}
 
 	c->totalEnergy = 500;
-	c->energyState = NULL;
-	c->energyHandler = nn_default_energyHandler;
+	c->env.handler = nn_default_envHandler;
 	c->totalMemory = totalMemory;
 	c->creationTimestamp = nn_currentTime(ctx);
 	c->stackSize = 0;
@@ -1181,7 +1185,6 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->idleTimestamp = 0;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
-	nn_clearComputerBeep(c);
 	return c;
 }
 
@@ -1251,19 +1254,18 @@ bool nn_isComputerOn(nn_Computer *computer) {
 	return computer->archState != NULL;
 }
 
-void nn_setComputerBeep(nn_Computer *computer, nn_Beep beep) {
+void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env) {
+	computer->env = env;
+}
+
+void nn_beepComputer(nn_Computer *computer, nn_Beep beep) {
 	if(beep.duration < 0) beep.duration = 0;
-	computer->beep = beep;
-	nn_addIdleTime(computer, beep.duration);
-}
-
-bool nn_getComputerBeep(nn_Computer *computer, nn_Beep *beep) {
-	*beep = computer->beep;
-	return computer->beep.volume > 0;
-}
-
-void nn_clearComputerBeep(nn_Computer *computer) {
-	computer->beep.volume = 0;
+	nn_EnvironmentRequest req;
+	req.userdata = computer->env.userdata;
+	req.computer = computer;
+	req.action = NN_ENV_BEEP;
+	req.beep = beep;
+	computer->env.handler(&req);
 }
 
 void nn_destroyComputer(nn_Computer *computer) {
@@ -1422,27 +1424,32 @@ double nn_getTotalEnergy(nn_Computer *computer) {
 }
 
 double nn_getEnergy(nn_Computer *computer) {
-	double newEnergy = computer->energyHandler(computer->energyState, computer, 0);
-	if(newEnergy <= 0) {
-		newEnergy = 0;
+	nn_EnvironmentRequest req;
+	req.userdata = computer->env.userdata;
+	req.computer = computer;
+	req.action = NN_ENV_DRAWENERGY;
+	req.energy = 0;
+	computer->env.handler(&req);
+	if(req.energy <= 0) {
+		req.energy = 0;
 		computer->state = NN_BLACKOUT;
 	}
-	return newEnergy;
+	return req.energy;
 }
 
 bool nn_removeEnergy(nn_Computer *computer, double energy) {
-	double newEnergy = computer->energyHandler(computer->energyState, computer, energy);
-	if(newEnergy <= 0) {
-		newEnergy = 0;
+	nn_EnvironmentRequest req;
+	req.userdata = computer->env.userdata;
+	req.computer = computer;
+	req.action = NN_ENV_DRAWENERGY;
+	req.energy = energy;
+	computer->env.handler(&req);
+	if(req.energy <= 0) {
+		req.energy = 0;
 		computer->state = NN_BLACKOUT;
 		return true;
 	}
 	return false;
-}
-
-void nn_setEnergyHandler(nn_Computer *computer, void *energyState, nn_EnergyHandler *handler) {
-	computer->energyState = energyState;
-	computer->energyHandler = handler;
 }
 
 size_t nn_getTotalMemory(nn_Computer *computer) {
@@ -2561,7 +2568,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.readsPerTick = 4,
 		.writesPerTick = 2,
 		.opensPerTick = 4,
-		.dataEnergyCost = 256.0 / NN_MiB,
+		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 4096,
 	},
 	NN_INIT(nn_Filesystem) {
@@ -2569,7 +2576,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.readsPerTick = 4,
 		.writesPerTick = 2,
 		.opensPerTick = 8,
-		.dataEnergyCost = 512.0 / NN_MiB,
+		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 8192,
 	},
 	NN_INIT(nn_Filesystem) {
@@ -2577,7 +2584,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.readsPerTick = 7,
 		.writesPerTick = 3,
 		.opensPerTick = 16,
-		.dataEnergyCost = 1024.0 / NN_MiB,
+		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 16384,
 	},
 	NN_INIT(nn_Filesystem) {
@@ -2585,7 +2592,7 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 		.readsPerTick = 13,
 		.writesPerTick = 5,
 		.opensPerTick = 32,
-		.dataEnergyCost = 2048.0 / NN_MiB,
+		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 32768,
 	},
 };
@@ -2595,7 +2602,7 @@ const nn_Filesystem nn_defaultFloppy = NN_INIT(nn_Filesystem) {
 	.spaceTotal = 512 * NN_KiB,
 	.readsPerTick = 1,
 	.writesPerTick = 1,
-	.dataEnergyCost = 8.0 / NN_MiB,
+	.dataEnergyCost = 0.1 / NN_KiB,
 	.maxReadSize = 2048,
 };
 
@@ -2728,7 +2735,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.paletteColors = 0,
 		.editableColors = 0,
 		.features = NN_SCRF_NONE,
-		.energyPerPixel = 0.05,
+		.energyPerPixel = 0.05 / (50*16),
 		.minBrightness = 0.5,
 		.maxBrightness = 1,
 	},
@@ -2740,7 +2747,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.paletteColors = 16,
 		.editableColors = 0,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED,
-		.energyPerPixel = 0.05,
+		.energyPerPixel = 0.05 / (50*16),
 		.minBrightness = 0.25,
 		.maxBrightness = 1.2,
 	},
@@ -2752,7 +2759,7 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.paletteColors = 256,
 		.editableColors = 16,
 		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE | NN_SCRF_EDITABLECOLORS,
-		.energyPerPixel = 0.05,
+		.energyPerPixel = 0.05 / (50*16),
 		.minBrightness = 0.1,
 		.maxBrightness = 1.5,
 	},
@@ -2763,8 +2770,8 @@ const nn_ScreenConfig nn_defaultScreens[4] = {
 		.defaultPalette = nn_ocpalette8,
 		.paletteColors = 256,
 		.editableColors = 256,
-		.features = NN_SCRF_NONE | NN_SCRF_EDITABLECOLORS,
-		.energyPerPixel = 0.05,
+		.features = NN_SCRF_MOUSE | NN_SCRF_TOUCHINVERTED | NN_SCRF_PRECISE | NN_SCRF_EDITABLECOLORS,
+		.energyPerPixel = 0.05 / (50*16),
 		.minBrightness = 0.1,
 		.maxBrightness = 2,
 	},
@@ -2781,8 +2788,8 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 64,
 		.setForegroundPerTick = 32,
 		.setBackgroundPerTick = 32,
-		.energyPerWrite = 0.0002,
-		.energyPerClear = 0.0001,
+		.energyPerWrite = 0.2 / (50*16),
+		.energyPerClear = 0.1 / (50*16),
 	},
 	NN_INIT(nn_GPU) {
 		.maxWidth = 80,
@@ -2794,8 +2801,8 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 128,
 		.setForegroundPerTick = 64,
 		.setBackgroundPerTick = 64,
-		.energyPerWrite = 0.001,
-		.energyPerClear = 0.0005,
+		.energyPerWrite = 0.2 / (50*16),
+		.energyPerClear = 0.1 / (50*16),
 	},
 	NN_INIT(nn_GPU) {
 		.maxWidth = 160,
@@ -2807,8 +2814,8 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 256,
 		.setForegroundPerTick = 128,
 		.setBackgroundPerTick = 128,
-		.energyPerWrite = 0.002,
-		.energyPerClear = 0.001,
+		.energyPerWrite = 0.2 / (50*16),
+		.energyPerClear = 0.1 / (50*16),
 	},
 	NN_INIT(nn_GPU) {
 		.maxWidth = 240,
@@ -2820,8 +2827,8 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 512,
 		.setForegroundPerTick = 256,
 		.setBackgroundPerTick = 256,
-		.energyPerWrite = 0.0025,
-		.energyPerClear = 0.0012,
+		.energyPerWrite = 0.2 / (50*16),
+		.energyPerClear = 0.1 / (50*16),
 	},
 };
 
@@ -5977,8 +5984,8 @@ nn_Modem nn_defaultWiredModem = {
 	.maxPacketSize = 8192,
 	.maxOpenPorts = 16,
 	.isWired = true,
-	.basePacketCost = 50,
-	.fullPacketCost = 100,
+	.basePacketCost = 0.5,
+	.fullPacketCost = 1,
 	.costPerStrength = 0,
 };
 nn_Modem nn_defaultWirelessModems[2] = {
@@ -5988,9 +5995,9 @@ nn_Modem nn_defaultWirelessModems[2] = {
 		.maxPacketSize = 8192,
 		.maxOpenPorts = 16,
 		.isWired = true,
-		.basePacketCost = 100,
-		.fullPacketCost = 500,
-		.costPerStrength = 30,
+		.basePacketCost = 1,
+		.fullPacketCost = 5,
+		.costPerStrength = 0.05,
 	},
 	NN_INIT(nn_Modem) {
 		.maxRange = 400,
@@ -5998,8 +6005,8 @@ nn_Modem nn_defaultWirelessModems[2] = {
 		.maxPacketSize = 8192,
 		.maxOpenPorts = 16,
 		.isWired = true,
-		.basePacketCost = 200,
-		.fullPacketCost = 1000,
-		.costPerStrength = 20,
+		.basePacketCost = 2,
+		.fullPacketCost = 10,
+		.costPerStrength = 0.05,
 	},
 };

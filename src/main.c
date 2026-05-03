@@ -329,11 +329,21 @@ void *ne_sandbox_alloc(void *state, void *memory, size_t oldSize, size_t newSize
 
 double accumulatedEnergyCost = 0;
 double totalEnergyLoss = 0;
+double allEnergy = 10000;
 
-double ne_energy_accumulator(void *state, nn_Computer *c, double n) {
-	accumulatedEnergyCost += n;
-	totalEnergyLoss += n;
-	return nn_getTotalEnergy(c);
+void ne_env(nn_EnvironmentRequest *req) {
+	if(req->action == NN_ENV_BEEP) {
+		printf("beep: %f Hz %fs %.02f%%\n", req->beep.frequency, req->beep.duration, req->beep.volume*100);
+		return;
+	}
+	if(req->action == NN_ENV_DRAWENERGY) {
+		accumulatedEnergyCost += req->energy;
+		totalEnergyLoss += req->energy;
+		allEnergy -= req->energy;
+		req->energy = nn_getTotalEnergy(req->computer);
+		req->energy = allEnergy;
+		return;
+	}
 }
 
 
@@ -490,20 +500,16 @@ int main(int argc, char **argv) {
     ncl_ScreenState *scrstate = nn_getComponentState(screen);
     ncl_mountKeyboard(scrstate, "mainKB");
 
-	nn_Computer *c = nn_createComputer(u, NULL, "computer0", ramTotal, 256, 256);
-	nn_Component *wrappedC = nn_wrapComputer(c);
-	if(showStats) {
-		// collects stats
-		nn_setEnergyHandler(c, NULL, ne_energy_accumulator);
-	}
+	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, 256, 256);
+	nn_setComputerEnvironment(c, (nn_Environment) {.userdata = NULL, .handler = ne_env});
 	nn_setCallBudget(c, 0);
+	nn_setTotalEnergy(c, allEnergy);
 	
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);
 
 	nn_setTmpAddress(c, nn_getComponentAddress(tmpfs));
 
-	nn_mountComponent(c, wrappedC, 255, false);
 	nn_mountComponent(c, screen, -1, false);
 	nn_mountComponent(c, ocelotCard, -1, false);
 	nn_mountComponent(c, tmpfs, -1, false);
@@ -721,12 +727,6 @@ int main(int argc, char **argv) {
 				continue;
 			}
 		}
-
-		nn_Beep beep;
-		if(nn_getComputerBeep(c, &beep)) {
-			nn_clearComputerBeep(c);
-			printf("beep: %f Hz, %fs, %f%% volume\n", beep.frequency, beep.duration, beep.volume * 100);
-		}
 	}
 
 cleanup:;
@@ -741,7 +741,6 @@ cleanup:;
 	nn_dropComponent(screen);
 	nn_dropComponent(gpuCard);
 	nn_dropComponent(keyboard);
-	nn_dropComponent(wrappedC);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);
