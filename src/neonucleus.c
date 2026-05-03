@@ -2632,7 +2632,7 @@ const nn_Drive nn_defaultDrives[4] = {
 		.writesPerTick = 15,
 		.rpm = 5400,
 		.onlySpinForwards = false,
-		.dataEnergyCost = 8.0 / NN_MiB,
+		.dataEnergyCost = 4.0 / NN_MiB,
 	},
 	NN_INIT(nn_Drive) {
 		.capacity = 4 * NN_MiB,
@@ -2642,7 +2642,7 @@ const nn_Drive nn_defaultDrives[4] = {
 		.writesPerTick = 20,
 		.rpm = 7200,
 		.onlySpinForwards = false,
-		.dataEnergyCost = 16.0 / NN_MiB,
+		.dataEnergyCost = 4.0 / NN_MiB,
 	},
 	NN_INIT(nn_Drive) {
 		.capacity = 8 * NN_MiB,
@@ -2652,7 +2652,7 @@ const nn_Drive nn_defaultDrives[4] = {
 		.writesPerTick = 30,
 		.rpm = 7200,
 		.onlySpinForwards = false,
-		.dataEnergyCost = 32.0 / NN_MiB,
+		.dataEnergyCost = 4.0 / NN_MiB,
 	},
 };
 
@@ -2664,7 +2664,7 @@ const nn_Drive nn_floppyDrive = {
 	.writesPerTick = 5,
 	.rpm = 1800,
 	.onlySpinForwards = true,
-	.dataEnergyCost = 1.0 / NN_MiB,
+	.dataEnergyCost = 4.0 / NN_MiB,
 };
 
 const nn_NandFlash nn_defaultSSDs[4] = {
@@ -2677,7 +2677,7 @@ const nn_NandFlash nn_defaultSSDs[4] = {
 		.maxWriteCount = 1<<10,
 		.maxWriteAmplification = 4,
 		.writeAmplificationExponent = 2,
-		.dataEnergyCost = 64.0 / NN_MiB,
+		.dataEnergyCost = 16.0 / NN_MiB,
 	},
 	NN_INIT(nn_NandFlash) {
 		.capacity = 1 * NN_MiB,
@@ -2688,7 +2688,7 @@ const nn_NandFlash nn_defaultSSDs[4] = {
 		.maxWriteCount = 1<<10,
 		.maxWriteAmplification = 8,
 		.writeAmplificationExponent = 2,
-		.dataEnergyCost = 128.0 / NN_MiB,
+		.dataEnergyCost = 16.0 / NN_MiB,
 	},
 	NN_INIT(nn_NandFlash) {
 		.capacity = 2 * NN_MiB,
@@ -2699,7 +2699,7 @@ const nn_NandFlash nn_defaultSSDs[4] = {
 		.maxWriteCount = 1<<10,
 		.maxWriteAmplification = 12,
 		.writeAmplificationExponent = 2,
-		.dataEnergyCost = 256.0 / NN_MiB,
+		.dataEnergyCost = 16.0 / NN_MiB,
 	},
 	NN_INIT(nn_NandFlash) {
 		.capacity = 4 * NN_MiB,
@@ -2710,7 +2710,7 @@ const nn_NandFlash nn_defaultSSDs[4] = {
 		.maxWriteCount = 1<<10,
 		.maxWriteAmplification = 16,
 		.writeAmplificationExponent = 2,
-		.dataEnergyCost = 512.0 / NN_MiB,
+		.dataEnergyCost = 16.0 / NN_MiB,
 	},
 };
 
