@@ -1594,6 +1594,109 @@ nn_Component *nn_createScreen(
     nn_ScreenHandler *handler
 );
 
+typedef struct nn_DataCard {
+	// The buffer size of the data card, limit in both input and output.
+	// This buffer is allocated on the heap before the call, thus setting it to be very large will lead to huge *spikes* in memory usage.
+	// In OC, this value is 1MiB regardless of tier.
+	size_t limit;
+
+	// The maximum amount of secure random bytes that can be generated.
+	// In OC, this was hardcoded to 1024. Here, its configurable.
+	// Unlike the normal limit, this does not preallocate the maximum capacity,
+	// as the amount of bytes needed is known perfectly.
+	size_t maxRandom;
+
+	// Capabilities
+	bool canHash;
+	bool canEncrypt;
+	bool canECDH;
+	bool canCompress;
+
+	// Trivial operation cost (CRC32 and base64 encoding/decoding)
+	double trivialCost;
+	double trivialCostByte;
+
+	// Simple operation cost (MD5 and encryption/decryption)
+	double simpleCost;
+	double simpleCostByte;
+
+	double complexCost;
+	double complexCostByte;
+
+	// Assymetric operation cost (ECDH, ECDSA). ECDH has no per-byte cost, and ECDSA uses complexCostByte as it relies on SHA256.
+	double assymetricCost;
+} nn_DataCard;
+
+typedef enum nn_DataCardAction {
+	// Data card destroyed
+	NN_DATA_DROP,
+
+	// If you want to match the behavior of OC, which you should if you want
+	// data compressed or encrypted in OC to work in your emulators, you should
+	// aim to match what the JVM, com.google.common.hash.Hashing and javax.crypto do.
+	// For more details, see https://github.com/MightyPirates/OpenComputers/blob/master-MC1.7.10/src/main/scala/li/cil/oc/server/component/DataCard.scala
+
+	// encoding base64
+	NN_DATA_ENCODE64,
+
+	NN_DATA_DECODE64,
+	// hashing
+	
+	// CRC32, little endian
+	NN_DATA_CRC32,
+
+	// SHA2-256 hash, optional HMAC key (javax.crypto HmacSHA256)
+	NN_DATA_SHA256,
+
+	// MD5 hash, optional HMAC key (javax.crypto HmacMD5)
+	NN_DATA_MD5,
+
+	// Deflate. To match OC, make it follow the ZLIB format, which has a 2 byte header.
+	NN_DATA_DEFLATE,
+
+	// Inflate. Should support the ZLIB format, as thats what OC uses, and GZIP support is optional.
+	NN_DATA_INFALTE,
+
+	// Encrypt data with AES-128. The full algorithm is AES/CBC/PKCS5, as is use PKCS5 for padding, CBC for block sequences, and AES-128 for encrypting blocks.
+	// It does also receive a 128-bit AES Initialization Vector, for better security.
+	NN_DATA_ENCRYPT,
+
+	// Decrypt data, also using AES/CBC/PKCS5.
+	NN_DATA_DECRYPT,
+
+	// Meant to be *secure RNG*, and can generate anywhere between 1 and the data card's maxRandom.
+	NN_DATA_RANDOM,
+
+	// Generate an ECDH public/private pair of either 256 or 384 bits each.
+	NN_DATA_GENKEYS,
+
+	// Does an ECDH pass, matching javax.crypto.KeyAgreement.
+	// This generates a shared secret as binary data.
+	// This is not an AES key as output, the AES key is often computed by either MD5 hashing
+	// the shared secret, or SHA256 hashing it and chopping the hash in half.
+	NN_DATA_ECDH,
+
+	// ECDSA algorithm, sign data using an ECDH (private) key.
+	NN_DATA_ECDSA_SIGN,
+	// ECDSA algorithm, verify data using an ECDH (public) key and signature.
+	NN_DATA_ECDSA_VERIFY,
+} nn_DataCardAction;
+
+typedef struct nn_DataCardRequest {
+    nn_Context *ctx;
+    nn_Computer *computer;
+    void *state;
+    const nn_DataCard *dataCard;
+	nn_DataCardAction action;
+	// TODO: the fields
+} nn_DataCardRequest;
+
+typedef nn_Exit (nn_DataCardHandler)(nn_DataCardRequest *req);
+
+extern nn_DataCard nn_defaultDataCards[3];
+
+nn_Component *nn_createDataCard(nn_Universe *universe, const char *address, const nn_DataCard *dataCard, void *state, nn_DataCardHandler *handler);
+
 typedef struct nn_Modem {
 	// maximum range. Set to 0 for non-wireless modems
 	size_t maxRange;

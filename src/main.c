@@ -501,7 +501,11 @@ int main(int argc, char **argv) {
     ncl_mountKeyboard(scrstate, "mainKB");
 
 	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, 256, 256);
-	nn_setComputerEnvironment(c, (nn_Environment) {.userdata = NULL, .handler = ne_env});
+	nn_Environment cEnv = {
+		.userdata = NULL,
+		.handler = ne_env,
+	};
+	nn_setComputerEnvironment(c, cEnv);
 	nn_setCallBudget(c, 0);
 	nn_setTotalEnergy(c, allEnergy);
 	
@@ -693,6 +697,8 @@ int main(int argc, char **argv) {
 			nn_removeEnergy(c, ncl_getScreenEnergyUsage(nn_getComponentState(screen)));
 
 			if(noIdle) nn_resetIdleTime(c);
+			// OC computers consume 0.5W when running, 0.05W when running but idle
+			nn_removeEnergy(c, nn_isComputerIdle(c) ? 0.05 : 0.5);
 			nn_Exit e = nn_tick(c);
 			if(e != NN_OK) {
 				printf("error: %s\n", nn_getError(c));

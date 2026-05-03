@@ -113,11 +113,6 @@ void nn_free(nn_Context *ctx, void *memory, size_t size) {
 }
 
 void *nn_realloc(nn_Context *ctx, void *memory, size_t oldSize, size_t newSize) {
-	// nn_realloc passed memory (which is NULL here) as first argument
-	// to nn_alloc instead of ctx. nn_alloc dereferences it as a context
-	// struct to call ctx->alloc(), so this is a NULL pointer dereference.
-	// Confirmed by test_realloc crashing on nn_realloc(&ctx, NULL, 0, 64).
-	// Original: if(memory == NULL) return nn_alloc(memory, newSize); if(memory == ctx->alloc) return nn_alloc(memory, newSize);
 	if(memory == NULL) return nn_alloc(ctx, newSize);
 	if(memory == ctx->alloc) return nn_alloc(ctx, newSize);
 	if(newSize == 0) {
@@ -1221,6 +1216,11 @@ nn_Exit nn_startComputer(nn_Computer *computer) {
 		return err;
 	}
 	computer->archState = req.localState;
+	nn_EnvironmentRequest envreq;
+	envreq.userdata = computer->env.userdata;
+	envreq.computer = computer;
+	envreq.action = NN_ENV_POWERON;
+	computer->env.handler(&envreq);
 	return NN_OK;
 }
 
@@ -1234,6 +1234,12 @@ void nn_stopComputer(nn_Computer *computer) {
 		req.action = NN_ARCH_DEINIT;
 		computer->arch.handler(&req);
 		computer->archState = NULL;
+
+		nn_EnvironmentRequest envreq;
+		envreq.userdata = computer->env.userdata;
+		envreq.computer = computer;
+		envreq.action = NN_ENV_POWEROFF;
+		computer->env.handler(&envreq);
 	}
 	computer->state = NN_BOOTUP;
 	for(size_t i = 0; i < computer->signalCount; i++) {
@@ -1609,6 +1615,11 @@ nn_Exit nn_tick(nn_Computer *computer) {
 	if(err) {
 		computer->state = NN_CRASHED;
 		nn_setErrorFromExit(computer, err);
+		nn_EnvironmentRequest envreq;
+		envreq.userdata = computer->env.userdata;
+		envreq.computer = computer;
+		envreq.action = NN_ENV_CRASHED;
+		computer->env.handler(&envreq);
 		return err;
 	}
 	return NN_OK;
@@ -1628,6 +1639,11 @@ nn_Exit nn_tickSynchronized(nn_Computer *computer) {
 	if(err) {
 		computer->state = NN_CRASHED;
 		nn_setErrorFromExit(computer, err);
+		nn_EnvironmentRequest envreq;
+		envreq.userdata = computer->env.userdata;
+		envreq.computer = computer;
+		envreq.action = NN_ENV_CRASHED;
+		computer->env.handler(&envreq);
 		return err;
 	}
 	return NN_OK;
@@ -5842,6 +5858,197 @@ nn_Component *nn_createGPU(
     return c;
 }
 
+typedef enum nn_DataNum {
+	NN_DATANUM_GETLIMIT,
+
+	NN_DATANUM_DECODE64,
+
+	NN_DATANUM_ENCODE64,
+	
+	NN_DATANUM_CRC32,
+
+	NN_DATANUM_MD5,
+
+	NN_DATANUM_SHA256,
+
+	NN_DATANUM_DEFLATE,
+
+	NN_DATANUM_INFLATE,
+
+	NN_DATANUM_ENCRYPT,
+
+	NN_DATANUM_DECRYPT,
+
+	NN_DATANUM_RANDOM,
+
+	NN_DATANUM_MAXRANDOM,
+
+	NN_DATANUM_GENKEYPAIR,
+
+	NN_DATANUM_ECDSA,
+
+	NN_DATANUM_ECDH,
+
+	NN_DATANUM_DESERIALIZEKEY,
+
+	NN_DATANUM_COUNT,
+} nn_DataNum;
+
+typedef struct nn_DataState {
+    nn_Context *ctx;
+    nn_DataCard dataCard;
+    nn_DataCardHandler *handler;
+} nn_DataState;
+
+nn_DataCard nn_defaultDataCards[3] = {
+	NN_INIT(nn_DataCard) {
+		.limit = NN_MiB,
+		.maxRandom = NN_KiB,
+		.canHash = true,
+		.canEncrypt = false,
+		.canECDH = false,
+		.canCompress = true,
+		.trivialCost = 0.2,
+		.trivialCostByte = 0.005,
+		.simpleCost = 1.0,
+		.simpleCostByte = 0.01,
+		.complexCost = 6.0,
+		.complexCostByte = 0.1,
+		.assymetricCost = 10.0,
+	},
+	NN_INIT(nn_DataCard) {
+		.limit = NN_MiB,
+		.maxRandom = NN_KiB,
+		.canHash = true,
+		.canEncrypt = true,
+		.canECDH = false,
+		.canCompress = true,
+		.trivialCost = 0.2,
+		.trivialCostByte = 0.005,
+		.simpleCost = 1.0,
+		.simpleCostByte = 0.01,
+		.complexCost = 6.0,
+		.complexCostByte = 0.1,
+		.assymetricCost = 10.0,
+	},
+	NN_INIT(nn_DataCard) {
+		.limit = NN_MiB,
+		.maxRandom = NN_KiB,
+		.canHash = true,
+		.canEncrypt = true,
+		.canECDH = true,
+		.canCompress = true,
+		.trivialCost = 0.2,
+		.trivialCostByte = 0.005,
+		.simpleCost = 1.0,
+		.simpleCostByte = 0.01,
+		.complexCost = 6.0,
+		.complexCostByte = 0.1,
+		.assymetricCost = 10.0,
+	},
+};
+static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
+	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	nn_Context *ctx = req->ctx;
+	nn_DataState *state = req->classState;
+	nn_Computer *C = req->computer;
+
+	nn_DataCard dataCard = state->dataCard;
+	nn_DataNum method = req->methodIdx;
+
+	if(req->action == NN_COMP_CHECKMETHOD) {
+		if(method == NN_DATANUM_SHA256 || method == NN_DATANUM_MD5) {
+			req->methodEnabled = dataCard.canHash;
+		}
+		if(method == NN_DATANUM_DEFLATE || method == NN_DATANUM_INFLATE || method == NN_DATANUM_RANDOM || method == NN_DATANUM_MAXRANDOM) {
+			req->methodEnabled = dataCard.canCompress;
+		}
+		if(method == NN_DATANUM_ENCRYPT || method == NN_DATANUM_DECRYPT) {
+			req->methodEnabled = dataCard.canEncrypt;
+		}
+		if(method == NN_DATANUM_GENKEYPAIR || method == NN_DATANUM_ECDH || method == NN_DATANUM_ECDSA || method == NN_DATANUM_DESERIALIZEKEY) {
+			req->methodEnabled = dataCard.canECDH;
+		}
+		return NN_OK;
+	}
+
+	nn_DataCardRequest dreq;
+	dreq.ctx = ctx;
+	dreq.computer = C;
+	dreq.state = req->state;
+	dreq.dataCard = &state->dataCard;
+	nn_Exit e;
+
+	if(req->action == NN_COMP_DROP) {
+		dreq.action = NN_DATA_DROP;
+		state->handler(&dreq);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+
+	if(method == NN_DATANUM_GETLIMIT) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, dataCard.limit);
+	}
+	if(method == NN_DATANUM_MAXRANDOM) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, dataCard.maxRandom);
+	}
+
+	// TODO: the cool methods
+
+	if(C) nn_setError(C, "data: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createDataCard(nn_Universe *universe, const char *address, const nn_DataCard *dataCard, void *state, nn_DataCardHandler *handler) {
+    nn_Component *c = nn_createComponent(
+        universe, address, "data");
+    if(c == NULL) return NULL;
+
+    nn_Method methods[NN_DATANUM_COUNT] = {
+		[NN_DATANUM_GETLIMIT] = {"getLimit", "function(): integer - Get the buffer capacity of the card", NN_DIRECT},
+		[NN_DATANUM_DECODE64] = {"decode64", "function(data: string): string - Decodes the string as base64 data", NN_DIRECT},
+		[NN_DATANUM_ENCODE64] = {"encode64", "function(data: string): string - Encodes the string into base64 data", NN_DIRECT},
+		[NN_DATANUM_CRC32] = {"crc32", "function(data: string): string - Computes the CRC-32 hash of the data", NN_DIRECT},
+		[NN_DATANUM_MD5] = {"md5", "function(data: string): string - Computes the MD5 hash of the data", NN_DIRECT},
+		[NN_DATANUM_SHA256] = {"sha256", "function(data: string): string - Computes the SHA256 hash of the data", NN_DIRECT},
+		[NN_DATANUM_DEFLATE] = {"deflate", "function(data: string): string - Compresses the data", NN_DIRECT},
+		[NN_DATANUM_INFLATE] = {"deflate", "function(data: string): string - Decompresses the compressed data", NN_DIRECT},
+		[NN_DATANUM_ENCRYPT] = {"encrypt", "function(data: string, key: string, iv: string): string - Encrypts the data", NN_DIRECT},
+		[NN_DATANUM_DECRYPT] = {"decrypt", "function(data: string, key: string, iv: string): string - Decrypts the data", NN_DIRECT},
+		[NN_DATANUM_RANDOM] = {"random", "function(size: integer): string - Generates an amount of secure random bytes", NN_DIRECT},
+		[NN_DATANUM_MAXRANDOM] = {"getRandomLimit", "function(): integer - Maximum amount of secure random bytes the data card will generate", NN_DIRECT},
+		[NN_DATANUM_GENKEYPAIR] = {"generateKeyPair", "function(bitLen?: integer): userdata, userdata - Generates a pair of 2 ECDH keys; ec-public and ec-private respectively. Supports 256-bit and 384-bit keys.", NN_DIRECT},
+		[NN_DATANUM_ECDSA] = {"ecdsa", "function(data: string, key: userdata, sig: string?): string or boolean - Either generates a signature using a private key, or if signature is specified, verifies it with public key", NN_DIRECT},
+		[NN_DATANUM_ECDH] = {"ecdh", "function(privateKey: userdata, publicKey: userdata): string - Computes a shared secret using a private and public key from different pairs. The rule is, ecdh(a.private, b.public) == ecdh(b.private, a.public)", NN_DIRECT},
+		[NN_DATANUM_DESERIALIZEKEY] = {"deserializeKey", "function(data: string, type: string): userdata - Deserializes key data assuming a specific type. Public keys are of type ec-public, and private ones of type ec-private.", NN_DIRECT},
+	};
+
+	if(dataCard->canEncrypt && dataCard->canHash) {
+		methods[NN_DATANUM_SHA256].doc = "function(data: string, hmacKey: string?): string - Computes the SHA256 hash / HMAC";
+		methods[NN_DATANUM_MD5].doc = "function(data: string, hmacKey: string?): string - Computes the MD5 hash / HMAC";
+	}
+
+    nn_Exit e = nn_setComponentMethodsArray(
+        c, methods, NN_DATANUM_COUNT);
+    if(e) { nn_dropComponent(c); return NULL; }
+
+    nn_Context *ctx = &universe->ctx;
+    nn_DataState *cls = nn_alloc(ctx, sizeof(*cls));
+    if(cls == NULL) {
+        nn_dropComponent(c);
+        return NULL;
+    }
+    cls->ctx = ctx;
+    cls->dataCard = *dataCard;
+    cls->handler = handler;
+    nn_setComponentState(c, state);
+    nn_setComponentClassState(c, cls);
+    nn_setComponentHandler(c, nn_dataHandler);
+    return c;
+}
+
 typedef enum nn_ModemNum {
 	NN_MODEMNUM_ISWIRED,
 	NN_MODEMNUM_ISWIRELESS,
@@ -5934,7 +6141,7 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 
 nn_Component *nn_createModem(nn_Universe *universe, const char *address, const nn_Modem *modem, void *state, nn_ModemHandler *handler) {
     nn_Component *c = nn_createComponent(
-        universe, address, "gpu");
+        universe, address, "modem");
     if(c == NULL) return NULL;
 
     const nn_Method methods[NN_MODEMNUM_COUNT] = {
