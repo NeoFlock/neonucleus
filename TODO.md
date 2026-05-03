@@ -1,6 +1,7 @@
 # For MVP functionality
 
 - make `computer` component use callbacks
+- make `NN_ENV_POWERON`, `NN_ENV_POWEROFF` and `NN_ENV_CRASHED` actually get called
 - finish tmpfs (rework the whole thing)
 - device info
 - userdata support
