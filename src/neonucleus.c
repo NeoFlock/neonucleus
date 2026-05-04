@@ -1393,7 +1393,21 @@ void nn_clearCommonDeviceInfo(nn_CommonDeviceInfo *info) {
 	info->WIDTH = NULL;
 }
 
-bool nn_removeDeviceInfo(nn_Computer *computer, const char *addr);
+bool nn_removeDeviceInfo(nn_Computer *computer, const char *addr) {
+	size_t j = 0;
+	bool removed = false;
+	for(size_t i = 0; i < computer->deviceInfo.len; i++) {
+		if(nn_strcmp(computer->deviceInfo.entries[i].address, addr) == 0) {
+			removed = true;
+			nn_ardestroy(&computer->deviceInfo.entries[i].arena);
+			continue;
+		}
+		computer->deviceInfo.entries[j] = computer->deviceInfo.entries[i];
+		j++;
+	}
+	computer->deviceInfo.len = j;
+	return removed;
+}
 
 void nn_beepComputer(nn_Computer *computer, nn_Beep beep) {
 	if(beep.duration < 0) beep.duration = 0;
