@@ -455,6 +455,69 @@ void nn_forceCrashComputer(nn_Computer *computer, const char *s);
 bool nn_isComputerOn(nn_Computer *computer);
 void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env);
 
+// Device information
+
+// Standard device attribute fields
+
+#define NN_DEVICEATTR_CLASS "class"
+#define NN_DEVICEATTR_DESC "description"
+#define NN_DEVICEATTR_VENDOR "vendor"
+#define NN_DEVICEATTR_PRODUCT "product"
+#define NN_DEVICEATTR_VERSION "version"
+#define NN_DEVICEATTR_SERIAL "serial"
+#define NN_DEVICEATTR_CAPACITY "capacity"
+#define NN_DEVICEATTR_SIZE "size"
+#define NN_DEVICEATTR_CLOCK "clock"
+#define NN_DEVICEATTR_WIDTH "width"
+
+// Standard device classes
+
+#define NN_DEVICECLASS_SYSTEM "system"
+#define NN_DEVICECLASS_BRIDGE "bridge"
+#define NN_DEVICECLASS_MEMORY "memory"
+#define NN_DEVICECLASS_PROCESSOR "processor"
+#define NN_DEVICECLASS_ADDRESS "address"
+#define NN_DEVICECLASS_STORAGE "storage"
+#define NN_DEVICECLASS_DISK "disk"
+#define NN_DEVICECLASS_TAPE "tape"
+#define NN_DEVICECLASS_BUS "bus"
+#define NN_DEVICECLASS_NETWORK "network"
+#define NN_DEVICECLASS_DISPLAY "display"
+#define NN_DEVICECLASS_INPUT "input"
+#define NN_DEVICECLASS_PRINTER "printer"
+#define NN_DEVICECLASS_MULTIMEDIA "multimedia"
+#define NN_DEVICECLASS_COMMUNICATION "communication"
+#define NN_DEVICECLASS_POWER "power"
+#define NN_DEVICECLASS_VOLUME "volume"
+#define NN_DEVICECLASS_GENERIC "generic"
+
+typedef struct nn_DeviceField {
+	const char *name;
+	const char *value;
+} nn_DeviceField;
+
+typedef struct nn_CommonDeviceInfo {
+	const char *CLASS;
+	const char *DESC;
+	const char *VENDOR;
+	const char *PRODUCT;
+	const char *VERSION;
+	const char *SERIAL;
+	const char *CAPACITY;
+	const char *SIZE;
+	const char *CLOCK;
+	const char *WIDTH;
+} nn_CommonDeviceInfo;
+
+const char *nn_deviceInfoAt(nn_Computer *computer, size_t idx);
+const nn_DeviceField *nn_getDeviceInfo(nn_Computer *computer, size_t idx, size_t *fieldCount);
+nn_Exit nn_addDeviceInfo(nn_Computer *computer, const char *addr, const nn_DeviceField *fields);
+nn_Exit nn_addDeviceInfoL(nn_Computer *computer, const char *addr, const nn_DeviceField *fields, size_t fieldCount);
+nn_Exit nn_addCommonDeviceInfo(nn_Computer *computer, const char *addr, nn_CommonDeviceInfo info);
+// Sets every field to NULL.
+void nn_clearCommonDeviceInfo(nn_CommonDeviceInfo *info);
+bool nn_removeDeviceInfo(nn_Computer *computer, const char *addr);
+
 void nn_beepComputer(nn_Computer *computer, nn_Beep beep);
 
 // get the userdata pointer

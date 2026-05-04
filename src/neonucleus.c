@@ -1030,6 +1030,40 @@ typedef struct nn_Signal {
 	nn_Value *values;
 } nn_Signal;
 
+typedef struct nn_DeviceInfoEntry {
+	const char *address;
+	nn_Arena arena;
+	size_t len;
+	nn_DeviceField *fields;
+} nn_DeviceInfoEntry;
+
+typedef struct nn_DeviceInfoArray {
+	nn_DeviceInfoEntry *entries;
+	size_t len;
+	size_t cap;
+	size_t limit;
+} nn_DeviceInfoArray;
+
+nn_Exit nn_resizeDeviceInfoArray(nn_Context *ctx, nn_DeviceInfoArray *arr, size_t capNeeded) {
+	if(capNeeded > arr->limit) return NN_ELIMIT;
+	size_t newCap = arr->cap;
+	// enlarging
+	while(capNeeded > newCap) {
+		if(newCap == 0) newCap = 1;
+		else newCap *= 2;
+	}
+	// shrinking
+	while(capNeeded <= newCap/2 && newCap > 0) {
+		newCap /= 2;
+	}
+	if(newCap == arr->cap) return NN_OK;
+	nn_DeviceInfoEntry *newEntries = nn_realloc(ctx, arr->entries, sizeof(nn_DeviceInfoEntry) * arr->cap, sizeof(nn_DeviceInfoEntry) * newCap);
+	if(newEntries == NULL) return NN_ENOMEM;
+	arr->entries = newEntries;
+	arr->cap = newCap;
+	return NN_OK;
+}
+
 typedef struct nn_Computer {
 	nn_ComputerState state;
 	nn_Universe *universe;
@@ -1044,6 +1078,7 @@ typedef struct nn_Computer {
 	size_t callBudget;
 	size_t totalCallBudget;
 	nn_HashMap components;
+	nn_DeviceInfoArray deviceInfo;
 	double totalEnergy;
 	size_t totalMemory;
 	double creationTimestamp;
@@ -1169,6 +1204,11 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 		return NULL;
 	}
 
+	c->deviceInfo.entries = NULL;
+	c->deviceInfo.len = 0;
+	c->deviceInfo.cap = 0;
+	c->deviceInfo.limit = maxDevices;
+	
 	c->totalEnergy = 500;
 	c->env.handler = nn_default_envHandler;
 	c->totalMemory = totalMemory;
@@ -1264,6 +1304,97 @@ void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env) {
 	computer->env = env;
 }
 
+const char *nn_deviceInfoAt(nn_Computer *computer, size_t idx) {
+	return idx < computer->deviceInfo.len ? computer->deviceInfo.entries[idx].address : NULL;
+}
+
+const nn_DeviceField *nn_getDeviceInfo(nn_Computer *computer, size_t idx, size_t *fieldCount) {
+	nn_DeviceInfoEntry entry = computer->deviceInfo.entries[idx];
+	*fieldCount = entry.len;
+	return entry.fields;
+}
+
+nn_Exit nn_addDeviceInfo(nn_Computer *computer, const char *addr, const nn_DeviceField *fields) {
+	size_t len = 0;
+	while(fields[len].name != NULL) len++;
+	return nn_addDeviceInfoL(computer, addr, fields, len);
+}
+
+nn_Exit nn_addDeviceInfoL(nn_Computer *computer, const char *addr, const nn_DeviceField *fields, size_t fieldCount) {
+	// We remove NULL values for simplicity in some emulators
+	size_t len = 0;
+	for(size_t i = 0; i < fieldCount; i++) {
+		if(fields[i].value != NULL) len++;
+	}
+	nn_Context *ctx = &computer->universe->ctx;
+
+	nn_Arena arena;
+	nn_arinit(&arena, ctx);
+	nn_Exit e = nn_resizeDeviceInfoArray(ctx, &computer->deviceInfo, computer->deviceInfo.len + 1);
+	if(e) goto fail;
+
+	nn_DeviceInfoEntry entry;
+	entry.len = len;
+	entry.address = nn_arstrdup(&arena, addr);
+	if(entry.address == NULL) goto fail;
+	entry.fields = nn_aralloc(&arena, sizeof(nn_DeviceField) * len);
+	if(entry.fields == NULL) goto fail;
+
+	size_t j = 0;
+	for(size_t i = 0; i < fieldCount; i++) {
+		nn_DeviceField f = fields[i];
+		if(f.value == NULL) continue;
+		f.name = nn_arstrdup(&arena, f.name);
+		if(f.name == NULL) goto fail;
+		f.value = nn_arstrdup(&arena, f.value);
+		if(f.value == NULL) goto fail;
+		entry.fields[j] = f;
+		j++;
+	}
+
+	entry.arena = arena;
+	computer->deviceInfo.entries[computer->deviceInfo.len] = entry;
+	computer->deviceInfo.len++;
+	return NN_OK;
+fail:
+	nn_ardestroy(&arena);
+	return e;
+}
+
+nn_Exit nn_addCommonDeviceInfo(nn_Computer *computer, const char *addr, nn_CommonDeviceInfo info) {
+	// NULL value is ignored by addDeviceInfoL
+	nn_DeviceField fields[] = {
+		{NN_DEVICEATTR_CLASS, info.CLASS},
+		{NN_DEVICEATTR_DESC, info.DESC},
+		{NN_DEVICEATTR_VENDOR, info.VENDOR},
+		{NN_DEVICEATTR_PRODUCT, info.PRODUCT},
+		{NN_DEVICEATTR_VERSION, info.VERSION},
+		{NN_DEVICEATTR_SERIAL, info.SERIAL},
+		{NN_DEVICEATTR_CAPACITY, info.CAPACITY},
+		{NN_DEVICEATTR_SIZE, info.SIZE},
+		{NN_DEVICEATTR_CLOCK, info.CLOCK},
+		{NN_DEVICEATTR_WIDTH, info.WIDTH},
+		{NULL, NULL},
+	};
+	return nn_addDeviceInfo(computer, addr, fields);
+}
+
+// Sets every field to NULL.
+void nn_clearCommonDeviceInfo(nn_CommonDeviceInfo *info) {
+	info->CLASS = NULL;
+	info->DESC = NULL;
+	info->VENDOR = NULL;
+	info->PRODUCT = NULL;
+	info->VERSION = NULL;
+	info->SERIAL = NULL;
+	info->CAPACITY = NULL;
+	info->SIZE = NULL;
+	info->CLOCK = NULL;
+	info->WIDTH = NULL;
+}
+
+bool nn_removeDeviceInfo(nn_Computer *computer, const char *addr);
+
 void nn_beepComputer(nn_Computer *computer, nn_Beep beep) {
 	if(beep.duration < 0) beep.duration = 0;
 	nn_EnvironmentRequest req;
@@ -1289,6 +1420,12 @@ void nn_destroyComputer(nn_Computer *computer) {
 		nn_signalComponent(c->comp, computer, NN_CSIGUNMOUNTED);
 		nn_dropComponent(c->comp);
 	}
+
+	for(size_t i = 0; i < computer->deviceInfo.len; i++) {
+		nn_ardestroy(&computer->deviceInfo.entries[i].arena);
+	}
+	nn_free(ctx, computer->deviceInfo.entries, sizeof(nn_DeviceInfoEntry) * computer->deviceInfo.cap);
+
 	nn_destroyLock(ctx, computer->lock);
 	nn_hashDeinit(&computer->components);
 	if(computer->tmpaddress != NULL) nn_strfree(ctx, computer->tmpaddress);

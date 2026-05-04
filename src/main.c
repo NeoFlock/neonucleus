@@ -514,6 +514,18 @@ int main(int argc, char **argv) {
 
 	nn_setTmpAddress(c, nn_getComponentAddress(tmpfs));
 
+	nn_CommonDeviceInfo cinfo;
+	nn_clearCommonDeviceInfo(&cinfo);
+	cinfo.CLASS = NN_DEVICECLASS_SYSTEM;
+	cinfo.DESC = "The main computer";
+	cinfo.VENDOR = "NeoNucleus Inc.";
+	cinfo.PRODUCT = "NeoComputer";
+	cinfo.VERSION = "0.-1.0";
+	cinfo.CLOCK = "1 MHz";
+	cinfo.CAPACITY = "10 kJ";
+
+	nn_addCommonDeviceInfo(c, nn_getComputerAddress(c), cinfo);
+
 	nn_mountComponent(c, screen, -1, false);
 	nn_mountComponent(c, ocelotCard, -1, false);
 	nn_mountComponent(c, tmpfs, -1, false);

@@ -299,6 +299,27 @@ fail:
 	return 0;
 }
 
+static int luaArch_computer_getDeviceInfo(lua_State *L) {
+	luaArch *arch = luaArch_from(L);
+	nn_Computer *C = arch->computer;
+	lua_createtable(L, 0, 0);
+	for(size_t i = 0;; i++) {
+		const char *devAddr = nn_deviceInfoAt(C, i);
+		if(devAddr == NULL) break;
+		size_t len;
+		const nn_DeviceField *fields = nn_getDeviceInfo(C, i, &len);
+		lua_pushstring(L, devAddr);
+		lua_createtable(L, 0, len);
+		for(size_t j = 0; j < len; j++) {
+			lua_pushstring(L, fields[j].name);
+			lua_pushstring(L, fields[j].value);
+			lua_settable(L, -3);
+		}
+		lua_settable(L, -3);
+	}
+	return 1;
+}
+
 static int luaArch_component_list(lua_State *L) {
 	luaArch *arch = luaArch_from(L);
 	lua_createtable(L, 64, 0);
@@ -613,6 +634,8 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_setfield(L, computer, "pushSignal");
 	lua_pushcfunction(L, luaArch_computer_popSignal);
 	lua_setfield(L, computer, "popSignal");
+	lua_pushcfunction(L, luaArch_computer_getDeviceInfo);
+	lua_setfield(L, computer, "getDeviceInfo");
 	lua_setglobal(L, "computer");
 	lua_createtable(L, 0, 10);
 	int component = lua_gettop(L);

@@ -2,7 +2,6 @@
 
 - make `computer` component use callbacks
 - finish tmpfs (rework the whole thing)
-- device info
 - userdata support
 
 # To re-evaluate
