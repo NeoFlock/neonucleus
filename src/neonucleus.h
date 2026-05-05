@@ -1657,10 +1657,15 @@ nn_Component *nn_createScreen(
     nn_ScreenHandler *handler
 );
 
+// Computes a CRC32 checksum
+unsigned int nn_computeCRC32(const char *data, size_t datalen);
+
 typedef struct nn_DataCard {
 	// The buffer size of the data card, limit in both input and output.
-	// This buffer is allocated on the heap before the call, thus setting it to be very large will lead to huge *spikes* in memory usage.
 	// In OC, this value is 1MiB regardless of tier.
+	// As there is no out buffer and you are expected to push strings,
+	// the buffer is not pre-allocated. This is intentional, as memory
+	// would be wasted and it could be a potential attack vector otherwise.
 	size_t limit;
 
 	// The maximum amount of secure random bytes that can be generated.
@@ -1668,6 +1673,29 @@ typedef struct nn_DataCard {
 	// Unlike the normal limit, this does not preallocate the maximum capacity,
 	// as the amount of bytes needed is known perfectly.
 	size_t maxRandom;
+
+	// for encoding/decoding. OC defaulted to 32
+	size_t base64PerTick;
+	// for deflate/inflate. OC defaulted to 4
+	size_t deflatingPerTick;
+	// OC defaulted to 32
+	size_t crc32PerTick;
+	// OC defaulted to 8
+	size_t md5PerTick;
+	// OC defaulted to 4
+	size_t sha256PerTick;
+	// for encrypt/decrypt. OC defaulted to 4
+	size_t encryptPerTick;
+	// for generateKeyPair. OC defaulted to 1
+	size_t genPerTick;
+	// for deserializeKey. OC defaulted to 8
+	size_t deserializePerTick;
+	// OC defaulted to 1
+	size_t ecdhPerTick;
+	// OC defaulted to 1
+	size_t ecdsaPerTick;
+	// OC defaults to 4
+	size_t randomPerTick;
 
 	// Capabilities
 	bool canHash;
@@ -1718,7 +1746,7 @@ typedef enum nn_DataCardAction {
 	NN_DATA_DEFLATE,
 
 	// Inflate. Should support the ZLIB format, as thats what OC uses, and GZIP support is optional.
-	NN_DATA_INFALTE,
+	NN_DATA_INFLATE,
 
 	// Encrypt data with AES-128. The full algorithm is AES/CBC/PKCS5, as is use PKCS5 for padding, CBC for block sequences, and AES-128 for encrypting blocks.
 	// It does also receive a 128-bit AES Initialization Vector, for better security.
@@ -1752,6 +1780,39 @@ typedef struct nn_DataCardRequest {
     const nn_DataCard *dataCard;
 	nn_DataCardAction action;
 	// TODO: the fields
+	union {
+		struct {
+			const char *data;
+			size_t datalen;
+			char checksum[4];
+		} crc32;
+		struct {
+			const char *data;
+			size_t datalen;
+			char checksum[16];
+		} md5;
+		struct {
+			const char *data;
+			size_t datalen;
+			char checksum[32];
+		} sha256;
+		// for encrypt/decrypt
+		struct {
+			const char *data;
+			size_t datalen;
+			const char *key;
+			const char *iv;
+		} encrypt;
+		struct {
+			char *buf;
+			size_t buflen;
+		} randbuf;
+		// for deflate, inflate, encode64 and decode64
+		struct {
+			const char *data;
+			size_t datalen;
+		};
+	};
 } nn_DataCardRequest;
 
 typedef nn_Exit (nn_DataCardHandler)(nn_DataCardRequest *req);

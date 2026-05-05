@@ -1752,7 +1752,11 @@ nn_Exit nn_tick(nn_Computer *computer) {
 		err = nn_startComputer(computer);
 		if(err) return err;
 	} else if(computer->state != NN_RUNNING) {
-		if(computer->state != NN_CRASHED) nn_setErrorFromExit(computer, NN_EBADSTATE);
+		if(computer->state == NN_BLACKOUT) {
+			nn_setError(computer, "out of energy");
+		} else if(computer->state != NN_CRASHED) {
+			nn_setErrorFromExit(computer, NN_EBADSTATE);
+		}
 		return NN_EBADSTATE;
 	}
 	computer->state = NN_RUNNING;
@@ -2186,6 +2190,11 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 		computer->callstack[i - endOfTrim] = computer->callstack[i];
 	}
 	computer->stackSize = req.returnCount;
+
+	if(nn_getEnergy(computer) <= 0) {
+		nn_setError(computer, "out of energy");
+		return NN_EBADCALL;
+	}
 
 	return NN_OK;
 }
@@ -6055,6 +6064,17 @@ nn_DataCard nn_defaultDataCards[3] = {
 	NN_INIT(nn_DataCard) {
 		.limit = NN_MiB,
 		.maxRandom = NN_KiB,
+		.base64PerTick = 32,
+		.deflatingPerTick = 4,
+		.crc32PerTick = 32,
+		.md5PerTick = 8,
+		.sha256PerTick = 4,
+		.encryptPerTick = 4,
+		.genPerTick = 1,
+		.deserializePerTick = 8,
+		.ecdhPerTick = 1,
+		.ecdsaPerTick = 1,
+		.randomPerTick = 4,
 		.canHash = true,
 		.canEncrypt = false,
 		.canECDH = false,
@@ -6070,6 +6090,17 @@ nn_DataCard nn_defaultDataCards[3] = {
 	NN_INIT(nn_DataCard) {
 		.limit = NN_MiB,
 		.maxRandom = NN_KiB,
+		.base64PerTick = 32,
+		.deflatingPerTick = 4,
+		.crc32PerTick = 32,
+		.md5PerTick = 8,
+		.sha256PerTick = 4,
+		.encryptPerTick = 4,
+		.genPerTick = 1,
+		.deserializePerTick = 8,
+		.ecdhPerTick = 1,
+		.ecdsaPerTick = 1,
+		.randomPerTick = 4,
 		.canHash = true,
 		.canEncrypt = true,
 		.canECDH = false,
@@ -6085,6 +6116,17 @@ nn_DataCard nn_defaultDataCards[3] = {
 	NN_INIT(nn_DataCard) {
 		.limit = NN_MiB,
 		.maxRandom = NN_KiB,
+		.base64PerTick = 32,
+		.deflatingPerTick = 4,
+		.crc32PerTick = 32,
+		.md5PerTick = 8,
+		.sha256PerTick = 4,
+		.encryptPerTick = 4,
+		.genPerTick = 1,
+		.deserializePerTick = 8,
+		.ecdhPerTick = 1,
+		.ecdsaPerTick = 1,
+		.randomPerTick = 4,
 		.canHash = true,
 		.canEncrypt = true,
 		.canECDH = true,
@@ -6111,10 +6153,10 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		if(method == NN_DATANUM_SHA256 || method == NN_DATANUM_MD5) {
 			req->methodEnabled = dataCard.canHash;
 		}
-		if(method == NN_DATANUM_DEFLATE || method == NN_DATANUM_INFLATE || method == NN_DATANUM_RANDOM || method == NN_DATANUM_MAXRANDOM) {
+		if(method == NN_DATANUM_DEFLATE || method == NN_DATANUM_INFLATE) {
 			req->methodEnabled = dataCard.canCompress;
 		}
-		if(method == NN_DATANUM_ENCRYPT || method == NN_DATANUM_DECRYPT) {
+		if(method == NN_DATANUM_ENCRYPT || method == NN_DATANUM_DECRYPT || method == NN_DATANUM_RANDOM || method == NN_DATANUM_MAXRANDOM) {
 			req->methodEnabled = dataCard.canEncrypt;
 		}
 		if(method == NN_DATANUM_GENKEYPAIR || method == NN_DATANUM_ECDH || method == NN_DATANUM_ECDSA || method == NN_DATANUM_DESERIALIZEKEY) {
@@ -6147,6 +6189,153 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 	}
 
 	// TODO: the cool methods
+	if(method == NN_DATANUM_ENCODE64) {
+		nn_costComponent(C, req->compAddress, dataCard.base64PerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_ENCODE64;
+		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
+		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return NN_OK;
+	}
+	if(method == NN_DATANUM_DECODE64) {
+		nn_costComponent(C, req->compAddress, dataCard.base64PerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_DECODE64;
+		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
+		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return NN_OK;
+	}
+	if(method == NN_DATANUM_DEFLATE) {
+		nn_costComponent(C, req->compAddress, dataCard.deflatingPerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_DEFLATE;
+		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
+		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return NN_OK;
+	}
+	if(method == NN_DATANUM_INFLATE) {
+		nn_costComponent(C, req->compAddress, dataCard.deflatingPerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_INFLATE;
+		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
+		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return NN_OK;
+	}
+	if(method == NN_DATANUM_CRC32) {
+		nn_costComponent(C, req->compAddress, dataCard.crc32PerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_CRC32;
+		dreq.crc32.data = nn_tolstring(C, 0, &dreq.crc32.datalen);
+		if(dreq.crc32.datalen > dataCard.limit) return NN_ELIMIT;
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushlstring(C, dreq.crc32.checksum, 4);
+	}
+	if(method == NN_DATANUM_MD5) {
+		nn_costComponent(C, req->compAddress, dataCard.md5PerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_MD5;
+		dreq.md5.data = nn_tolstring(C, 0, &dreq.md5.datalen);
+		if(dreq.md5.datalen > dataCard.limit) return NN_ELIMIT;
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushlstring(C, dreq.md5.checksum, 16);
+	}
+	if(method == NN_DATANUM_SHA256) {
+		nn_costComponent(C, req->compAddress, dataCard.sha256PerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_SHA256;
+		dreq.sha256.data = nn_tolstring(C, 0, &dreq.sha256.datalen);
+		if(dreq.sha256.datalen > dataCard.limit) return NN_ELIMIT;
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushlstring(C, dreq.sha256.checksum, 32);
+	}
+	if(method == NN_DATANUM_RANDOM) {
+		nn_costComponent(C, req->compAddress, dataCard.randomPerTick);
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		intptr_t n = nn_tointeger(C, 0);
+		if(n <= 0) {
+			n = 1;
+		}
+		if(n > dataCard.maxRandom) return NN_ELIMIT;
+		char *buf = nn_alloc(ctx, n);
+		dreq.action = NN_DATA_RANDOM;
+		dreq.randbuf.buf = buf;
+		dreq.randbuf.buflen = n;
+		e = state->handler(&dreq);
+		if(e) {
+			nn_free(ctx, buf, n);
+			return e;
+		}
+		req->returnCount = 1;
+		e = nn_pushlstring(C, buf, n);
+		nn_free(ctx, buf, n);
+		return e;
+	}
+	if(method == NN_DATANUM_ENCRYPT) {
+		nn_costComponent(C, req->compAddress, dataCard.encryptPerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 2, "bad argument #3 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_ENCRYPT;
+		dreq.encrypt.data = nn_tolstring(C, 0, &dreq.encrypt.datalen);
+		if(dreq.encrypt.datalen > dataCard.limit) return NN_ELIMIT;
+		size_t len;
+		dreq.encrypt.key = nn_tolstring(C, 1, &len);
+		if(len != 16) {
+			nn_setError(C, "invalid key");
+			return NN_EBADCALL;
+		}
+		dreq.encrypt.iv = nn_tolstring(C, 2, &len);
+		if(len != 16) {
+			nn_setError(C, "invalid IV");
+			return NN_EBADCALL;
+		}
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return NN_OK;
+	}
+	if(method == NN_DATANUM_DECRYPT) {
+		nn_costComponent(C, req->compAddress, dataCard.encryptPerTick);
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 2, "bad argument #3 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_ENCRYPT;
+		dreq.encrypt.data = nn_tolstring(C, 0, &dreq.encrypt.datalen);
+		if(dreq.encrypt.datalen > dataCard.limit) return NN_ELIMIT;
+		size_t len;
+		dreq.encrypt.key = nn_tolstring(C, 1, &len);
+		if(len != 16) {
+			nn_setError(C, "invalid key");
+			return NN_EBADCALL;
+		}
+		dreq.encrypt.iv = nn_tolstring(C, 2, &len);
+		if(len != 16) {
+			nn_setError(C, "invalid IV");
+			return NN_EBADCALL;
+		}
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return NN_OK;
+	}
 
 	if(C) nn_setError(C, "data: not implemented yet");
 	return NN_EBADCALL;
@@ -6165,7 +6354,7 @@ nn_Component *nn_createDataCard(nn_Universe *universe, const char *address, cons
 		[NN_DATANUM_MD5] = {"md5", "function(data: string): string - Computes the MD5 hash of the data", NN_DIRECT},
 		[NN_DATANUM_SHA256] = {"sha256", "function(data: string): string - Computes the SHA256 hash of the data", NN_DIRECT},
 		[NN_DATANUM_DEFLATE] = {"deflate", "function(data: string): string - Compresses the data", NN_DIRECT},
-		[NN_DATANUM_INFLATE] = {"deflate", "function(data: string): string - Decompresses the compressed data", NN_DIRECT},
+		[NN_DATANUM_INFLATE] = {"inflate", "function(data: string): string - Decompresses the compressed data", NN_DIRECT},
 		[NN_DATANUM_ENCRYPT] = {"encrypt", "function(data: string, key: string, iv: string): string - Encrypts the data", NN_DIRECT},
 		[NN_DATANUM_DECRYPT] = {"decrypt", "function(data: string, key: string, iv: string): string - Decrypts the data", NN_DIRECT},
 		[NN_DATANUM_RANDOM] = {"random", "function(size: integer): string - Generates an amount of secure random bytes", NN_DIRECT},
@@ -6264,15 +6453,19 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 	}
 
 	if(method == NN_MODEMNUM_ISWIRED) {
+		req->returnCount = 1;
 		return nn_pushbool(C, isWired);
 	}
 	if(method == NN_MODEMNUM_ISWIRELESS) {
+		req->returnCount = 1;
 		return nn_pushbool(C, isWireless);
 	}
 	if(method == NN_MODEMNUM_MAXPACKETSIZE) {
+		req->returnCount = 1;
 		return nn_pushinteger(C, state->modem.maxPacketSize);
 	}
 	if(method == NN_MODEMNUM_MAXVALUES) {
+		req->returnCount = 1;
 		return nn_pushinteger(C, state->modem.maxValues);
 	}
 	if(method == NN_MODEMNUM_GETSTRENGTH) {
@@ -6283,7 +6476,71 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 		return nn_pushinteger(C, mreq.strength);
 	}	
 	if(method == NN_MODEMNUM_MAXSTRENGTH) {
+		req->returnCount = 1;
 		return nn_pushinteger(C, state->modem.maxRange);
+	}
+
+	if(method == NN_MODEMNUM_BROADCAST) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		intptr_t port = nn_tointeger(C, 0);
+		if(port < 1 || port > NN_MAX_PORT) {
+			nn_setError(C, "invalid port");
+			return NN_EBADCALL;
+		}
+		size_t valcount = nn_getstacksize(C) - 1;
+		if(valcount > state->modem.maxValues) return NN_EBADCALL;
+		int cost = nn_countValueCost(C, valcount);
+		if(cost < 0) {
+			nn_setError(C, "invalid contents");
+			return NN_EBADCALL;
+		}
+		if(cost > state->modem.maxPacketSize) return NN_ELIMIT;
+		nn_EncodedNetworkContents data;
+		e = nn_encodeNetworkContents(C, &data, valcount);
+		if(e) return e;
+		mreq.action = NN_MODEM_SEND;
+		mreq.send.address = NULL;
+		mreq.send.port = port;
+		mreq.send.contents = &data;
+		e = state->handler(&mreq);
+		nn_dropNetworkContents(&data);
+		if(!e) {
+			req->returnCount = 1;
+			e = nn_pushbool(C, true);
+		}
+		return e;
+	}
+	if(method == NN_MODEMNUM_SEND) {
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		if(nn_checkinteger(C, 1, "bad argument #2 (integer expected)")) return NN_EBADCALL;
+		const char *addr = nn_tostring(C, 0);
+		intptr_t port = nn_tointeger(C, 1);
+		if(port < 1 || port > NN_MAX_PORT) {
+			nn_setError(C, "invalid port");
+			return NN_EBADCALL;
+		}
+		size_t valcount = nn_getstacksize(C) - 1;
+		if(valcount > state->modem.maxValues) return NN_EBADCALL;
+		int cost = nn_countValueCost(C, valcount);
+		if(cost < 0) {
+			nn_setError(C, "invalid contents");
+			return NN_EBADCALL;
+		}
+		if(cost > state->modem.maxPacketSize) return NN_ELIMIT;
+		nn_EncodedNetworkContents data;
+		e = nn_encodeNetworkContents(C, &data, valcount);
+		if(e) return e;
+		mreq.action = NN_MODEM_SEND;
+		mreq.send.address = addr;
+		mreq.send.port = port;
+		mreq.send.contents = &data;
+		e = state->handler(&mreq);
+		nn_dropNetworkContents(&data);
+		if(!e) {
+			req->returnCount = 1;
+			e = nn_pushbool(C, true);
+		}
+		return e;
 	}
 
 	if(C) nn_setError(C, "modem: not implemented yet");

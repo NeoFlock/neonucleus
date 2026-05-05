@@ -48,6 +48,100 @@ static nn_Exit sandbox_handler(nn_ComponentRequest *req) {
 	return NN_OK;
 }
 
+static nn_Exit ne_dataBullshit(nn_DataCardRequest *req) {
+	nn_Computer *C = req->computer;
+	nn_DataCardAction action = req->action;
+	nn_Exit e;
+
+	if(action == NN_DATA_DROP) {
+		return NN_OK;
+	}
+	if(action == NN_DATA_ENCODE64) {
+		int outSize = 0;
+		char *out = EncodeDataBase64((const unsigned char *)req->data, req->datalen, &outSize);
+		if(out == NULL) return NN_ENOMEM;
+		// -1 because raylib includes the NUL terminator??
+		e = nn_pushlstring(C, out, outSize-1);
+		MemFree(out);
+		return e;
+	}
+	if(action == NN_DATA_DECODE64) {
+		int outSize = 0;
+		char *out = (char *)DecodeDataBase64(req->data, &outSize);
+		if(out == NULL) return NN_ENOMEM;
+		e = nn_pushlstring(C, out, outSize);
+		MemFree(out);
+		return e;
+	}
+	if(action == NN_DATA_DEFLATE) {
+		int outSize = 0;
+		char *out = (char *)CompressData((const unsigned char *)req->data, req->datalen, &outSize);
+		if(out == NULL) return NN_ENOMEM;
+		e = nn_pushlstring(C, out, outSize);
+		MemFree(out);
+		return e;
+	}
+	if(action == NN_DATA_INFLATE) {
+		int outSize = 0;
+		char *out = (char *)DecompressData((unsigned char *)req->data, req->datalen, &outSize);
+		if(out == NULL) return NN_ENOMEM;
+		e = nn_pushlstring(C, out, outSize);
+		MemFree(out);
+		return e;
+	}
+	if(action == NN_DATA_CRC32) {
+		unsigned int check = nn_computeCRC32(req->crc32.data, req->crc32.datalen);
+		req->crc32.checksum[0] = (check >> 0) & 0xFF;
+		req->crc32.checksum[1] = (check >> 8) & 0xFF;
+		req->crc32.checksum[2] = (check >> 16) & 0xFF;
+		req->crc32.checksum[3] = (check >> 24) & 0xFF;
+		return NN_OK;
+	}
+	if(action == NN_DATA_MD5) {
+		unsigned int *out = ComputeMD5((unsigned char *)req->md5.data, req->md5.datalen);
+		if(out == NULL) return NN_ENOMEM;
+		memcpy(req->md5.checksum, out, 16);
+		return NN_OK;
+	}
+	if(action == NN_DATA_SHA256) {
+		// does not match OC, dunno why
+		unsigned int *out = ComputeSHA256((unsigned char *)req->sha256.data, req->sha256.datalen);
+		if(out == NULL) return NN_ENOMEM;
+		memcpy(req->sha256.checksum, out, 32);
+		return NN_OK;
+	}
+	if(action == NN_DATA_RANDOM) {
+		for(size_t i = 0; i < req->randbuf.buflen; i++) {
+			req->randbuf.buf[i] = rand();
+		}
+		return NN_OK;
+	}
+	if(action == NN_DATA_ENCRYPT) {
+		return nn_pushlstring(C, req->data, req->datalen);
+	}
+	if(action == NN_DATA_DECRYPT) {
+		return nn_pushlstring(C, req->data, req->datalen);
+	}
+
+	if(C) nn_setError(C, "ne: data method not implemented");
+	return NN_EBADCALL;
+}
+
+static nn_Exit ne_modemBullshit(nn_ModemRequest *req) {
+	nn_Computer *C = req->computer;
+
+	if(req->action == NN_MODEM_DROP) {
+		return NN_OK;
+	}
+	if(req->action == NN_MODEM_SEND) {
+		printf("Transmission from %s to %s (port %zu) of %zu bytes (%zu values)\n", req->localAddress, req->send.address == NULL ? "*" : req->send.address, req->send.port, req->send.contents->buflen, req->send.contents->valueCount);
+		return nn_pushModemMessage(C, req->localAddress, nn_getComputerAddress(C), req->send.port, 0, req->send.contents);
+	}
+
+	if(C) nn_setError(C, "ne: modem method not implemented");
+	return NN_EBADCALL;
+}
+
 static unsigned char ne_processColorPart(unsigned char channel, double brightness) {
 	double n = (double)channel / 255;
 	n *= brightness;
@@ -392,6 +486,9 @@ int main(int argc, char **argv) {
 	nn_setComponentMethods(ocelotCard, sandboxMethods);
 	nn_setComponentHandler(ocelotCard, sandbox_handler);
 
+	nn_Component *dataCard = nn_createDataCard(u, NULL, &nn_defaultDataCards[2], NULL, ne_dataBullshit);
+	nn_Component *modem = nn_createModem(u, NULL, &nn_defaultWiredModem, NULL, ne_modemBullshit);
+
 	char *eepromCode = (char *)minBIOS;
 	size_t eepromSize = strlen(minBIOS);
 	const char *eepromPath = getenv("NN_EEPROM");
@@ -492,8 +589,8 @@ int main(int argc, char **argv) {
 	double nextSecond = 0;
 	double wattage = 0;
 
-	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
-	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
+	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[2]);
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[2]);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
@@ -536,6 +633,8 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, testingfs, 3, false);
 	nn_mountComponent(c, testDrive, 4, false);
 	nn_mountComponent(c, testFlash, 5, false);
+	nn_mountComponent(c, dataCard, 6, false);
+	nn_mountComponent(c, modem, 7, false);
 	int ltx = 0, lty = 0;
 	double scrollBuf = 0;
 	SetTargetFPS(60);
@@ -759,6 +858,8 @@ cleanup:;
 	nn_dropComponent(screen);
 	nn_dropComponent(gpuCard);
 	nn_dropComponent(keyboard);
+	nn_dropComponent(dataCard);
+	nn_dropComponent(modem);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);
