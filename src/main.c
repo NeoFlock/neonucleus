@@ -134,6 +134,7 @@ static nn_Exit ne_modemBullshit(nn_ModemRequest *req) {
 		return NN_OK;
 	}
 	if(req->action == NN_MODEM_SEND) {
+		req->send.strengthSent = req->modem->maxRange;
 		printf("Transmission from %s to %s (port %zu) of %zu bytes (%zu values)\n", req->localAddress, req->send.address == NULL ? "*" : req->send.address, req->send.port, req->send.contents->buflen, req->send.contents->valueCount);
 		return nn_pushModemMessage(C, req->localAddress, nn_getComputerAddress(C), req->send.port, 0, req->send.contents);
 	}
@@ -488,7 +489,7 @@ int main(int argc, char **argv) {
 	nn_setComponentHandler(ocelotCard, sandbox_handler);
 
 	nn_Component *dataCard = nn_createDataCard(u, NULL, &nn_defaultDataCards[2], NULL, ne_dataBullshit);
-	nn_Component *modem = nn_createModem(u, NULL, &nn_defaultWiredModem, NULL, ne_modemBullshit);
+	nn_Component *modem = nn_createModem(u, NULL, &nn_defaultWirelessModems[1], NULL, ne_modemBullshit);
 
 	char *eepromCode = (char *)minBIOS;
 	size_t eepromSize = strlen(minBIOS);

@@ -6195,6 +6195,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_ENCODE64;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
 		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.trivialCost + dataCard.trivialCostByte * dreq.datalen);
 		e = state->handler(&dreq);
 		if(e) return e;
 		req->returnCount = 1;
@@ -6206,6 +6207,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_DECODE64;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
 		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.trivialCost + dataCard.trivialCostByte * dreq.datalen);
 		e = state->handler(&dreq);
 		if(e) return e;
 		req->returnCount = 1;
@@ -6217,6 +6219,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_DEFLATE;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
 		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.complexCost + dataCard.complexCostByte * dreq.datalen);
 		e = state->handler(&dreq);
 		if(e) return e;
 		req->returnCount = 1;
@@ -6228,6 +6231,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_INFLATE;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
 		if(dreq.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.complexCost + dataCard.complexCostByte * dreq.datalen);
 		e = state->handler(&dreq);
 		if(e) return e;
 		req->returnCount = 1;
@@ -6239,6 +6243,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_CRC32;
 		dreq.crc32.data = nn_tolstring(C, 0, &dreq.crc32.datalen);
 		if(dreq.crc32.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.trivialCost + dataCard.trivialCostByte * dreq.crc32.datalen);
 		e = state->handler(&dreq);
 		if(e) return e;
 		req->returnCount = 1;
@@ -6250,6 +6255,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_MD5;
 		dreq.md5.data = nn_tolstring(C, 0, &dreq.md5.datalen);
 		if(dreq.md5.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.simpleCost + dataCard.simpleCostByte * dreq.md5.datalen);
 		e = state->handler(&dreq);
 		if(e) return e;
 		req->returnCount = 1;
@@ -6261,6 +6267,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_SHA256;
 		dreq.sha256.data = nn_tolstring(C, 0, &dreq.sha256.datalen);
 		if(dreq.sha256.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.complexCost + dataCard.complexCostByte * dreq.sha256.datalen);
 		e = state->handler(&dreq);
 		if(e) return e;
 		req->returnCount = 1;
@@ -6274,6 +6281,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 			n = 1;
 		}
 		if(n > dataCard.maxRandom) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.complexCost + dataCard.complexCostByte * n);
 		char *buf = nn_alloc(ctx, n);
 		dreq.action = NN_DATA_RANDOM;
 		dreq.randbuf.buf = buf;
@@ -6296,6 +6304,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_ENCRYPT;
 		dreq.encrypt.data = nn_tolstring(C, 0, &dreq.encrypt.datalen);
 		if(dreq.encrypt.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.simpleCost + dataCard.simpleCostByte * dreq.encrypt.datalen);
 		size_t len;
 		dreq.encrypt.key = nn_tolstring(C, 1, &len);
 		if(len != 16) {
@@ -6320,6 +6329,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		dreq.action = NN_DATA_ENCRYPT;
 		dreq.encrypt.data = nn_tolstring(C, 0, &dreq.encrypt.datalen);
 		if(dreq.encrypt.datalen > dataCard.limit) return NN_ELIMIT;
+		nn_removeEnergy(C, dataCard.simpleCost + dataCard.simpleCostByte * dreq.encrypt.datalen);
 		size_t len;
 		dreq.encrypt.key = nn_tolstring(C, 1, &len);
 		if(len != 16) {
@@ -6502,9 +6512,11 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 		mreq.send.address = NULL;
 		mreq.send.port = port;
 		mreq.send.contents = &data;
+		mreq.send.strengthSent = 0;
 		e = state->handler(&mreq);
 		nn_dropNetworkContents(&data);
 		if(!e) {
+			nn_removeEnergy(C, state->modem.basePacketCost + state->modem.fullPacketCost * cost / state->modem.maxPacketSize + state->modem.costPerStrength * mreq.send.strengthSent);
 			req->returnCount = 1;
 			e = nn_pushbool(C, true);
 		}
@@ -6534,9 +6546,11 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 		mreq.send.address = addr;
 		mreq.send.port = port;
 		mreq.send.contents = &data;
+		mreq.send.strengthSent = 0;
 		e = state->handler(&mreq);
 		nn_dropNetworkContents(&data);
 		if(!e) {
+			nn_removeEnergy(C, state->modem.basePacketCost + state->modem.fullPacketCost * cost / state->modem.maxPacketSize + state->modem.costPerStrength * mreq.send.strengthSent);
 			req->returnCount = 1;
 			e = nn_pushbool(C, true);
 		}
@@ -6599,10 +6613,11 @@ nn_Modem nn_defaultWiredModem = {
 	.maxPacketSize = 8192,
 	.maxOpenPorts = 16,
 	.isWired = true,
-	.basePacketCost = 0.5,
-	.fullPacketCost = 1,
+	.basePacketCost = 0.05,
+	.fullPacketCost = 0.1,
 	.costPerStrength = 0,
 };
+
 nn_Modem nn_defaultWirelessModems[2] = {
 	NN_INIT(nn_Modem) {
 		.maxRange = 16,
@@ -6610,8 +6625,8 @@ nn_Modem nn_defaultWirelessModems[2] = {
 		.maxPacketSize = 8192,
 		.maxOpenPorts = 16,
 		.isWired = true,
-		.basePacketCost = 1,
-		.fullPacketCost = 5,
+		.basePacketCost = 0.1,
+		.fullPacketCost = 0.5,
 		.costPerStrength = 0.05,
 	},
 	NN_INIT(nn_Modem) {
@@ -6620,8 +6635,15 @@ nn_Modem nn_defaultWirelessModems[2] = {
 		.maxPacketSize = 8192,
 		.maxOpenPorts = 16,
 		.isWired = true,
-		.basePacketCost = 2,
-		.fullPacketCost = 10,
+		.basePacketCost = 0.2,
+		.fullPacketCost = 1,
 		.costPerStrength = 0.05,
 	},
+};
+
+nn_Tunnel nn_defaultTunnel = {
+	.maxValues = 8,
+	.maxPacketSize = 8192,
+	.basePacketCost = 100,
+	.fullPacketCost = 256,
 };

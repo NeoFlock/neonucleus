@@ -1902,6 +1902,9 @@ typedef struct nn_ModemRequest {
 			// NULL for broadcast
 			const char *address;
 			size_t port;
+			// The signal strength it was sent at
+			// This is an *OUT* field, it is assumed the handler keeps track of the correct strength
+			size_t strengthSent;
 		} send;
 		// for getStrength, setStrength.
 		size_t strength;
@@ -1927,6 +1930,10 @@ typedef struct nn_Tunnel {
 	size_t maxValues;
 	// maximum logical packet size. Note that the encoding is more efficient than the packet size algorithm estimates
 	size_t maxPacketSize;
+	// minimum energy cost of 1 transmission
+	double basePacketCost;
+	// extra energy cost of 1 full transmission
+	double fullPacketCost;
 } nn_Tunnel;
 
 extern nn_Tunnel nn_defaultTunnel;
