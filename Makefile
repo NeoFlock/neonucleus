@@ -3,17 +3,30 @@ DYNLIB=libneonucleus.so
 LIB=libneonucleus.a
 
 CC=cc
-OPT=-Oz
-SANITIZE=
-DEBUG=
-NNFLAGS=
-CFLAGS=-fPIC $(OPT) $(SANITIZE) $(DEBUG) $(NNFLAGS)
-
 LD=$(CC)
-LDFLAGS=$(OPT) $(DEBUG) $(SANITIZE)
-
 AR=ar
 RANLIB=ranlib
+
+ifeq ($(MODE), release)
+OPT=-Oz
+DEBUG=
+else
+OPT=-O0
+SANITIZE=undefined,address
+DEBUG=-ggdb
+endif
+
+NNFLAGS=
+
+SANITIZE_FLAGS=
+
+ifdef SANITIZE
+	SANITIZE_FLAGS += -fsanitize=$(SANITIZE)
+endif
+
+CFLAGS=-fPIC $(OPT) $(SANITIZE_FLAGS) $(DEBUG) $(NNFLAGS)
+
+LDFLAGS=$(OPT) $(DEBUG) $(SANITIZE_FLAGS)
 
 LINKRAYLIB=-lraylib
 INCLUA=-I /usr/include/lua5.3
@@ -23,6 +36,8 @@ LINKLIBC=
 
 BUILD_DIR=build
 SRC_DIR=src
+
+all: bin lib dynlib
 
 $(BUILD_DIR)/neonucleus.o: $(SRC_DIR)/neonucleus.c $(SRC_DIR)/neonucleus.h
 	$(CC) -o $(BUILD_DIR)/neonucleus.o -c $(SRC_DIR)/neonucleus.c $(CFLAGS)
@@ -50,8 +65,6 @@ lib: nn
 
 dynlib: nn
 	$(LD) $(LDFLAGS) -o $(DYNLIB) -shared $(BUILD_DIR)/neonucleus.o $(BUILD_DIR)/ncomplib.o $(LINKLIBM) $(LINKLIBC)
-
-all: bin lib dynlib
 
 cleancache:
 	rm -rf $(BUILD_DIR)/*.o
