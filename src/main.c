@@ -423,6 +423,7 @@ void *ne_sandbox_alloc(void *state, void *memory, size_t oldSize, size_t newSize
 
 double accumulatedEnergyCost = 0;
 double totalEnergyLoss = 0;
+// default capacity of a tablet
 double allEnergy = 10000;
 
 void ne_env(nn_EnvironmentRequest *req) {
@@ -637,6 +638,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, modem, 7, false);
 	int ltx = 0, lty = 0;
 	double scrollBuf = 0;
+	double tickTime = 0;
 	SetTargetFPS(60);
 	while(true) {
 		if(WindowShouldClose()) break;
@@ -741,6 +743,8 @@ int main(int argc, char **argv) {
 			statY += 20;
 			DrawText(TextFormat("VM mem usage: %.2f%%", memUsagePercent), 10, statY, 20, GREEN);
 			statY += 20;
+			DrawText(TextFormat("Tick time: %.5fs", tickTime), 10, statY, 20, (tickTime < tickDelay || tickDelay == 0) ? GREEN : RED);
+			statY += 20;
 		}
 
 		EndDrawing();
@@ -809,8 +813,18 @@ int main(int argc, char **argv) {
 
 			if(noIdle) nn_resetIdleTime(c);
 			// OC computers consume 0.5W when running, 0.05W when running but idle
-			nn_removeEnergy(c, nn_isComputerIdle(c) ? 0.05 : 0.5);
+			double normalPowerUsage = 0.5, idlePowerUsage = 0.05;
+			bool isIdle = false;
 			nn_Exit e = nn_tick(c);
+			tickTime = GetTime() - tickNow;
+			if(tickTime < tickDelay) {
+				double working = tickTime / tickDelay;
+				nn_removeEnergy(c, normalPowerUsage * working + idlePowerUsage * (1 - working));
+			} else if(tickDelay == 0) {
+				nn_removeEnergy(c, normalPowerUsage);
+			} else {
+				nn_removeEnergy(c, normalPowerUsage * tickTime / tickDelay);
+			}
 			if(e != NN_OK) {
 				printf("error: %s\n", nn_getError(c));
 				goto cleanup;
