@@ -73,6 +73,9 @@ static nn_Exit luaArch_luaToNN(luaArch *arch, lua_State *L, int luaIdx) {
 	if(lua_isboolean(L, luaIdx)) {
 		return nn_pushbool(C, lua_toboolean(L, luaIdx));
 	}
+	if(lua_isuserdata(L, luaIdx)) {
+		return nn_pushuserdata(C, (size_t)lua_touserdata(L, luaIdx));
+	}
 	luaL_error(L, "bad Lua value: %s", luaL_typename(L, luaIdx));
 	return NN_EBADSTATE;
 }
@@ -110,6 +113,10 @@ static void luaArch_nnToLua(luaArch *arch, lua_State *L, size_t nnIdx) {
 			lua_settable(L, -3);
 		}
 		nn_popn(C, len * 2);
+		return;
+	}
+	if(nn_isuserdata(C, nnIdx)) {
+		lua_pushlightuserdata(L, (void *)nn_touserdata(C, nnIdx));
 		return;
 	}
 
@@ -734,8 +741,11 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 			return NN_OK;
 		}
 		return NN_OK;
-	default:
-		break;
+	case NN_ARCH_SERIALIZE:
+		return nn_pushstring(computer, "lua stuff");
+	case NN_ARCH_DESERIALIZE:
+		// do nothing
+		return NN_OK;
 	}
 	return NN_OK;
 }

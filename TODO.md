@@ -5,6 +5,18 @@
 - userdata support
 - get rid of component signals (useless)
 
+## Userdata system
+
+The idea is that the computer stores userdata as structs which have a pointer (the state) and a bound-component address.
+When a component is removed, all of its associated userdata is instantly dropped.
+For serialization, the userdata pushes a string storing the encoded byte buffer.
+For deserialization, the userdata pops a string and decodes it.
+
+To get component methods, requests are sent to get method info by index, and a NULL name means method is not allowed for that
+particular userdata. Methods can obviously be invoked just like component data.
+Serialization pushes the string on the stack, deserialization gets the buffer as ptr + len and sets the state pointer.
+They are handled by components, thus if it is not mounted at deserialization time, the deserialization fails.
+
 # To re-evaluate
 
 - Exposing the internal non-resizing hashmap implementation.

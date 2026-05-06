@@ -350,12 +350,10 @@ typedef enum nn_ArchitectureAction {
 	NN_ARCH_TICK,
 	// get the free memory
 	NN_ARCH_FREEMEM,
-	// deserialize from an encoded state
+	// deserialize from an encoded state, passed into request.
 	NN_ARCH_DESERIALIZE,
-	// serialize to an encoded state
+	// serialize to an encoded state, pushed it as a string
 	NN_ARCH_SERIALIZE,
-	// drop the encoded buffer
-	NN_ARCH_DROPSERIALIZED,
 } nn_ArchitectureAction;
 
 typedef struct nn_ArchitectureRequest {
@@ -373,12 +371,9 @@ typedef struct nn_ArchitectureRequest {
 		bool synchronized;
 		// in the case of NN_ARCH_FREEMEM, the free memory
 		size_t freeMemory;
-		// in the case of NN_ARCH_DESERIALIZE, NN_ARCH_SERIALIZE and NN_ARCH_DROPSERIALIZED, the buffer.
+		// in the case of NN_ARCH_DESERIALIZE, the buffer.
 		struct {
-			union {
-				char *memOut;
-				const char *memIn;
-			};
+			const char *memIn;
 			size_t memLen;
 		};
 	};
@@ -540,14 +535,13 @@ double nn_getUptime(nn_Computer *computer);
 
 // Deserialize an encoded computer state.
 // Encoding depends on architecture.
+// Will push it as a string and then call the architecture, which will decode it and pop it.
 nn_Exit nn_deserializeComputer(nn_Computer *computer, const char *buf, size_t buflen);
 
 // Serialize the computer state.
 // Encoding depends on architecture.
-nn_Exit nn_serializeComputer(nn_Computer *computer, char **buf, size_t *buflen);
-
-// Free the serialized buffer.
-nn_Exit nn_freeSerializedComputer(nn_Computer *computer, char *buf, size_t buflen);
+// Pushes the output, if successful, as a string on the stack.
+nn_Exit nn_serializeComputer(nn_Computer *computer);
 
 // address is copied.
 // It can be NULL if you wish to have no tmp address.
@@ -771,14 +765,48 @@ void nn_getComponents(nn_Computer *c, const char **components);
 // invoke the component method.
 // Everything on-stack is taken as an argument.
 // Will pop off trailing nulls.
-// Every remaining is what the component returned.
-// In the case of 
+// Every remaining stack value is what the component returned.
+// In the case of errors, the contents of the stack is undefined
 nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const char *method);
 
 // send a signal to a component.
 // Computer actually can be NULL, but the component may crash if the signal
 // assumes one is specified.
 nn_Exit nn_signalComponent(nn_Component *component, nn_Computer *computer, const char *signal);
+
+// Userdata!!!!
+
+// Allocates a userdata index. Returns -1 on failure or if there are too many.
+int nn_allocUserdata(nn_Computer *computer, void *state, const char *compAddress);
+
+// Frees a userdata index.
+void nn_freeUserdata(nn_Computer *computer, size_t userdata);
+
+// Returns whether the userdata index is valid
+bool nn_isUserdataValid(nn_Computer *computer, size_t userdata);
+
+// If compAddress is correct and userdata is valid, returns the state pointer.
+// If not, returns NULL, to prevent UB.
+void *nn_unwrapUserdata(nn_Computer *computer, size_t userdata, const char *compAddress);
+
+// gets the component address which manages this userdata
+const char *nn_getUserdataComponent(nn_Computer *computer, size_t userdata);
+
+// Gets information about a method of this userdata, by index.
+// If idx is out of bounds, this returns true, which means to stop iteration.
+// If method->name is NULL, the method should be skipped.
+bool nn_getUserdataMethod(nn_Computer *computer, size_t userdata, size_t idx, nn_Method *method);
+
+// Invokes a method on some userdata, same semantics as nn_invokeComponent
+nn_Exit nn_invokeUserdata(nn_Computer *computer, size_t userdata, const char *method);
+
+// Serializes the userdata into a buffer and pushes it as a string.
+// Make sure to keep track of its index and component address!
+nn_Exit nn_serializeUserdata(nn_Computer *computer, size_t userdata);
+
+// Deserializes userdata at a particular index.
+// NOTE: if the component does not exist, or the userdata index is already taken, this errors.
+nn_Exit nn_deserializeUserdata(nn_Computer *computer, size_t userdata, const char *compAddress, const char *buf, size_t len);
 
 // Sets the call budget.
 // The default is 1,000.

@@ -1645,7 +1645,7 @@ nn_Exit nn_deserializeComputer(nn_Computer *computer, const char *buf, size_t bu
 	return computer->arch.handler(&req);
 }
 
-nn_Exit nn_serializeComputer(nn_Computer *computer, char **buf, size_t *buflen) {
+nn_Exit nn_serializeComputer(nn_Computer *computer) {
 	nn_ArchitectureRequest req;
 	req.computer = computer;
 	req.action = NN_ARCH_SERIALIZE;
@@ -1655,22 +1655,7 @@ nn_Exit nn_serializeComputer(nn_Computer *computer, char **buf, size_t *buflen) 
 	nn_Exit e = computer->arch.handler(&req);
 	if(e) return e;
 
-	*buf = req.memOut;
-	*buflen = req.memLen;
-
 	return NN_OK;
-}
-
-nn_Exit nn_freeSerializedComputer(nn_Computer *computer, char *buf, size_t buflen) {
-	nn_ArchitectureRequest req;
-	req.computer = computer;
-	req.action = NN_ARCH_DROPSERIALIZED;
-	req.globalState = computer->arch.state;
-	req.localState = computer->archState;
-	req.memOut = buf;
-	req.memLen = buflen;
-	
-	return computer->arch.handler(&req);
 }
 
 void nn_setError(nn_Computer *computer, const char *s) {
