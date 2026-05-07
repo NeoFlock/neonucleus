@@ -2,6 +2,8 @@
 
 - make `computer` component use callbacks
 - finish tmpfs (rework the whole thing)
+- make call budgets match how OC's work (we have the computer's call budget, say `0.5`, and the nwe subtract `1/n` for direct calls or just the whole thing
+for indirect). No longer have them be isolated per component entry, this makes no sense and leads to many oversights
 
 # To re-evaluate
 
