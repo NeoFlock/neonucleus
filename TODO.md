@@ -2,7 +2,6 @@
 
 - make `computer` component use callbacks
 - finish tmpfs (rework the whole thing)
-- get rid of component signals (useless)
 
 # To re-evaluate
 
