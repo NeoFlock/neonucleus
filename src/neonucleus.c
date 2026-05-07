@@ -2078,6 +2078,14 @@ nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot, bool sil
 nn_Exit nn_unmountComponent(nn_Computer *c, const char *address, bool silent) {
 	nn_Component *comp = nn_getComponent(c, address);
 	if(comp == NULL) return NN_OK;
+
+	for(size_t i = 0; i < NN_MAX_USERDATA; i++) {
+		const char *uAddr = nn_getUserdataComponent(c, i);
+		if(uAddr != NULL) {
+			if(nn_strcmp(address, uAddr) == 0) nn_freeUserdata(c, i);
+		}
+	}
+
 	nn_ComponentEntry lookingFor = {.address = address};
 	nn_hashRemove(&c->components, &lookingFor);
 
