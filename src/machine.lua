@@ -70,6 +70,44 @@ end
 
 local syncedMethodStats
 
+local function sandboxValue(val)
+	if type(val) == "table" then
+		local nt = {}
+		for k, v in pairs(val) do
+			local sk, sv = sandboxValue(k), sandboxValue(v)
+			if sk ~= nil then nt[sk] = sv end
+		end
+		return nt
+	end
+	if type(val) == "userdata" then
+		-- Light userdata shall never escape our shi!
+		-- This matches how OC wraps it
+		-- TODO: just make our own shi with fields and stuff
+		-- like a component proxy, because this sucks
+		local userMeta = {
+			__gc = function()
+				userdata.free(val)
+			end,
+		}
+
+		local wrapped = {type = "userdata"}
+		for name, m in pairs(userdata.methods(val)) do
+			wrapped[name] = {
+				name = name,
+				proxy = wrapped,
+			}
+			setmetatable(wrapped[name], {
+				__tostring = function() return m.doc or "function" end,
+				__call = function(_, ...)
+					return userdata.invoke(val, name, ...)
+				end,
+			})
+		end
+		return setmetatable(wrapped, userMeta)
+	end
+	return val
+end
+
 local function realInvoke(address, method, ...)
 	local t = {pcall(cinvoke, address, method, ...)}
 	if not _SYNCED and not os.getenv("NN_FAST") then
@@ -82,6 +120,8 @@ local function realInvoke(address, method, ...)
 		print("invoked", address, method, ...)
 		print("got", table.unpack(t))
 	end
+
+	for i=1,#t do t[i] = sandboxValue(t[i]) end
 
 	if t[1] then
 		return table.unpack(t, 2)
@@ -477,6 +517,9 @@ sandbox = {
 	},
 
 	utf8 = utf8,
+
+	-- unsafe, don't care
+	userdata = userdata,
 }
 sandbox._G = sandbox
 

@@ -600,6 +600,84 @@ static int luaArch_unicode_wtrunc(lua_State *L) {
 	return 1;
 }
 
+static int luaArch_userdata_free(lua_State *L) {
+	luaArch *arch = luaArch_from(L);
+	size_t user = (size_t)lua_touserdata(L, 1);
+	nn_freeUserdata(arch->computer, user);
+	return 0;
+}
+
+static int luaArch_userdata_methods(lua_State *L) {
+	luaArch *arch = luaArch_from(L);
+	size_t user = (size_t)lua_touserdata(L, 1);
+	if(!nn_isUserdataValid(arch->computer, user)) {
+		lua_pushnil(L);
+		lua_pushstring(L, "no such userdata");
+		return 2;
+	}
+	lua_createtable(L, 0, 0);
+	size_t idx = 0;
+	while(true) {
+		nn_Method m;
+		if(nn_getUserdataMethod(arch->computer, user, idx, &m)) break;
+		idx++;
+		if(m.name == NULL) continue;
+		lua_pushstring(L, m.name);
+		lua_createtable(L, 0, 4);
+
+		// the method data
+		{
+			lua_pushstring(L, "doc");
+			if(m.doc == NULL) lua_pushnil(L); else lua_pushstring(L, m.doc);
+			lua_settable(L, -3);
+
+			lua_pushstring(L, "direct");
+			lua_pushboolean(L, (m.flags & NN_DIRECT) != 0);
+			lua_settable(L, -3);
+			
+			lua_pushstring(L, "getter");
+			lua_pushboolean(L, (m.flags & NN_GETTER) != 0);
+			lua_settable(L, -3);
+			
+			lua_pushstring(L, "setter");
+			lua_pushboolean(L, (m.flags & NN_SETTER) != 0);
+			lua_settable(L, -3);
+		}
+
+		lua_settable(L, -3);
+	}
+	return 1;
+}
+
+static int luaArch_userdata_invoke(lua_State *L) {
+	luaArch *arch = luaArch_from(L);
+	size_t user = (size_t)lua_touserdata(L, 1);
+	if(!nn_isUserdataValid(arch->computer, user)) {
+		lua_pushnil(L);
+		lua_pushstring(L, "no such userdata");
+		return 2;
+	}
+	const char *method = luaL_checkstring(L, 2);
+	size_t argc = lua_gettop(L);
+	
+	nn_clearstack(arch->computer);
+	for(size_t i = 3; i <= argc; i++) {
+		luaArch_luaToNN(arch, L, i);
+	}
+	nn_Exit err = nn_invokeUserdata(arch->computer, user, method);
+	if(err != NN_OK) {
+		lua_pushnil(L);
+		lua_pushstring(L, nn_getError(arch->computer));
+		return 2;
+	}
+	size_t retc = nn_getstacksize(arch->computer);
+	for(size_t i = 0; i < retc; i++) {
+		luaArch_nnToLua(arch, L, i);
+	}
+	nn_clearstack(arch->computer);
+	return retc;
+}
+
 static void luaArch_loadEnv(lua_State *L) {
 	lua_createtable(L, 0, 10);
 	int computer = lua_gettop(L);
@@ -644,6 +722,7 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_pushcfunction(L, luaArch_computer_getDeviceInfo);
 	lua_setfield(L, computer, "getDeviceInfo");
 	lua_setglobal(L, "computer");
+
 	lua_createtable(L, 0, 10);
 	int component = lua_gettop(L);
 	lua_pushcfunction(L, luaArch_component_list);
@@ -663,6 +742,7 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_pushcfunction(L, luaArch_component_fields);
 	lua_setfield(L, component, "fields");
 	lua_setglobal(L, "component");
+
 	lua_createtable(L, 0, 10);
 	int unicode = lua_gettop(L);
 	lua_pushcfunction(L, luaArch_unicode_char);
@@ -676,6 +756,16 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_pushcfunction(L, luaArch_unicode_wtrunc);
 	lua_setfield(L, unicode, "wtrunc");
 	lua_setglobal(L, "unicode");
+
+	lua_createtable(L, 0, 10);
+	int userdata = lua_gettop(L);
+	lua_pushcfunction(L, luaArch_userdata_free);
+	lua_setfield(L, userdata, "free");
+	lua_pushcfunction(L, luaArch_userdata_methods);
+	lua_setfield(L, userdata, "methods");
+	lua_pushcfunction(L, luaArch_userdata_invoke);
+	lua_setfield(L, userdata, "invoke");
+	lua_setglobal(L, "userdata");
 }
 
 static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {

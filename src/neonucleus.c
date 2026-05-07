@@ -1064,6 +1064,11 @@ nn_Exit nn_resizeDeviceInfoArray(nn_Context *ctx, nn_DeviceInfoArray *arr, size_
 	return NN_OK;
 }
 
+typedef struct nn_Userdata {
+	void *state;
+	char *compAddress;
+} nn_Userdata;
+
 typedef struct nn_Computer {
 	nn_ComputerState state;
 	nn_Universe *universe;
@@ -1092,6 +1097,7 @@ typedef struct nn_Computer {
 	nn_Architecture archs[NN_MAX_ARCHITECTURES];
 	nn_Signal signals[NN_MAX_SIGNALS];
 	char *users[NN_MAX_USERS];
+	nn_Userdata uservals[NN_MAX_USERDATA];
 } nn_Computer;
 
 nn_Universe *nn_createUniverse(nn_Context *ctx, void *userdata) {
@@ -1220,6 +1226,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->idleTimestamp = 0;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
+	for(size_t i = 0; i < NN_MAX_USERDATA; i++) c->uservals[i].state = NULL;
 	return c;
 }
 
@@ -1430,8 +1437,9 @@ void nn_destroyComputer(nn_Computer *computer) {
 		nn_strfree(ctx, computer->users[i]);
 	}
 
+	for(size_t i = 0; i < NN_MAX_USERDATA; i++) nn_freeUserdata(computer, i);
+
 	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
-		nn_signalComponent(c->comp, computer, NN_CSIGUNMOUNTED);
 		nn_dropComponent(c->comp);
 	}
 
@@ -2061,7 +2069,6 @@ nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot, bool sil
 	};
 	if(!nn_hashPut(&c->components, &ent)) return NN_ELIMIT;
 	nn_retainComponent(comp);
-	nn_signalComponent(comp, c, NN_CSIGMOUNTED);
 	if(c->state == NN_RUNNING && !silent) {
 		return nn_pushComponentAdded(c, comp->address, comp->type);
 	}
@@ -2078,7 +2085,6 @@ nn_Exit nn_unmountComponent(nn_Computer *c, const char *address, bool silent) {
 	if(c->state == NN_RUNNING && !silent) {
 		e = nn_pushComponentRemoved(c, address, comp->type);
 	}
-	nn_signalComponent(comp, c, NN_CSIGUNMOUNTED);
 	nn_dropComponent(comp);
 	return e;
 }
@@ -2184,16 +2190,250 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 	return NN_OK;
 }
 
-nn_Exit nn_signalComponent(nn_Component *component, nn_Computer *computer, const char *signal) {
-	nn_ComponentRequest req;
-	req.ctx = &component->universe->ctx;
-	req.computer = computer;
-	req.state = component->state;
-	req.classState = component->classState;
-	req.compAddress = component->address;
-	req.action = NN_COMP_SIGNAL;
-	req.signal = signal;
-	return component->handler(&req);
+int nn_allocUserdata(nn_Computer *computer, void *state, const char *compAddress) {
+	for(size_t i = 0; i < NN_MAX_USERDATA; i++) {
+		if(nn_isUserdataValid(computer, i)) continue;
+		char *comp = nn_strdup(nn_getComputerContext(computer), compAddress);
+		if(comp == NULL) return -1;
+		computer->uservals[i].state = state;
+		computer->uservals[i].compAddress = comp;
+		return i;
+	}
+	return -1;
+}
+
+// Frees a userdata index.
+void nn_freeUserdata(nn_Computer *computer, size_t userdata) {
+	if(!nn_isUserdataValid(computer, userdata)) return;
+	nn_Context *ctx = nn_getComputerContext(computer);
+	nn_Userdata *user = computer->uservals + userdata;
+
+	nn_UserdataRequest ureq = {
+		.state = user->state,
+		.action = NN_USER_DROP,
+	};
+
+	nn_Component *c = nn_getComponent(computer, user->compAddress);
+	// really, we should *panic*, as this is a BAD state
+	if(c == NULL) return;
+
+	nn_ComponentRequest creq = {
+		.ctx = ctx,
+		.computer = computer,
+		.state = c->state,
+		.classState = c->classState,
+		.compAddress = c->address,
+		.action = NN_COMP_USERDATA,
+		.methodIdx = 0,
+		.user = &ureq,
+	};
+
+	// errors in here are catastrophic
+	c->handler(&creq);
+
+	user->state = NULL;
+	nn_strfree(ctx, user->compAddress);
+}
+
+// Returns whether the userdata index is valid
+bool nn_isUserdataValid(nn_Computer *computer, size_t userdata) {
+	if(userdata >= NN_MAX_USERDATA) return false;
+	return computer->uservals[userdata].state != NULL;
+}
+
+// If compAddress is correct and userdata is valid, returns the state pointer.
+// If not, returns NULL, to prevent UB.
+void *nn_unwrapUserdata(nn_Computer *computer, size_t userdata, const char *compAddress) {
+	if(!nn_isUserdataValid(computer, userdata)) return NULL;
+	nn_Userdata user = computer->uservals[userdata];
+	if(nn_strcmp(user.compAddress, compAddress) != 0) return NULL;
+	return user.state;
+}
+
+// gets the component address which manages this userdata
+const char *nn_getUserdataComponent(nn_Computer *computer, size_t userdata) {
+	if(!nn_isUserdataValid(computer, userdata)) return NULL;
+	return computer->uservals[userdata].compAddress;
+}
+
+// Gets information about a method of this userdata, by index.
+// If idx is out of bounds, this returns true, which means to stop iteration.
+// If method->name is NULL, the method should be skipped.
+bool nn_getUserdataMethod(nn_Computer *computer, size_t userdata, size_t idx, nn_Method *method) {
+	if(!nn_isUserdataValid(computer, userdata)) return true;
+	nn_Context *ctx = nn_getComputerContext(computer);
+	nn_Userdata *user = computer->uservals + userdata;
+
+	nn_UserdataRequest ureq = {
+		.state = user->state,
+		.action = NN_USER_GETMETHOD,
+		.getmethod.method = method,
+		.getmethod.idx = idx,
+	};
+
+	nn_Component *c = nn_getComponent(computer, user->compAddress);
+	// really, we should *panic*, as this is a BAD state
+	if(c == NULL) return true;
+
+	nn_ComponentRequest creq = {
+		.ctx = ctx,
+		.computer = computer,
+		.state = c->state,
+		.classState = c->classState,
+		.compAddress = c->address,
+		.action = NN_COMP_USERDATA,
+		.methodIdx = 0,
+		.user = &ureq,
+	};
+
+	// errors in here are catastrophic
+	if(c->handler(&creq)) return true;
+	return ureq.getmethod.method == NULL;
+}
+
+// Invokes a method on some userdata, same semantics as nn_invokeComponent
+nn_Exit nn_invokeUserdata(nn_Computer *computer, size_t userdata, const char *method) {
+	if(!nn_isUserdataValid(computer, userdata)) return true;
+	nn_Context *ctx = nn_getComputerContext(computer);
+	nn_Userdata *user = computer->uservals + userdata;
+
+	nn_UserdataRequest ureq = {
+		.state = user->state,
+		.action = NN_USER_INVOKE,
+		.invoke.method = method,
+		.invoke.returnCount = 0,
+	};
+
+	nn_Component *c = nn_getComponent(computer, user->compAddress);
+	// really, we should *panic*, as this is a BAD state
+	if(c == NULL) return true;
+
+	nn_ComponentRequest creq = {
+		.ctx = ctx,
+		.computer = computer,
+		.state = c->state,
+		.classState = c->classState,
+		.compAddress = c->address,
+		.action = NN_COMP_USERDATA,
+		.methodIdx = 0,
+		.user = &ureq,
+	};
+
+	// prepare stack for call
+	while(nn_getstacksize(computer) > 0) {
+		if(!nn_isnull(computer, nn_getstacksize(computer) - 1)) break;
+		nn_pop(computer);
+	}
+
+	// errors in here are catastrophic
+	nn_Exit e = c->handler(&creq);
+	if(e) {
+		if(e != NN_EBADCALL) nn_setErrorFromExit(computer, e);
+		nn_clearstack(computer);
+		return e;
+	}
+
+	size_t endOfTrim = computer->stackSize - ureq.invoke.returnCount;
+	for(size_t i = 0; i < endOfTrim; i++) {
+		nn_dropValue(computer->callstack[i]);
+	}
+	for(size_t i = endOfTrim; i < computer->stackSize; i++) {
+		computer->callstack[i - endOfTrim] = computer->callstack[i];
+	}
+	computer->stackSize = ureq.invoke.returnCount;
+
+	if(nn_getEnergy(computer) <= 0) {
+		nn_setError(computer, "out of energy");
+		return NN_EBADCALL;
+	}
+
+	return NN_OK;
+}
+
+// Serializes the userdata into a buffer and pushes it as a string.
+// Make sure to keep track of its index and component address!
+nn_Exit nn_serializeUserdata(nn_Computer *computer, size_t userdata) {
+	if(!nn_isUserdataValid(computer, userdata)) return true;
+	nn_Context *ctx = nn_getComputerContext(computer);
+	nn_Userdata *user = computer->uservals + userdata;
+
+	nn_UserdataRequest ureq = {
+		.state = user->state,
+		.action = NN_USER_SERIALIZE,
+	};
+
+	nn_Component *c = nn_getComponent(computer, user->compAddress);
+	// really, we should *panic*, as this is a BAD state
+	if(c == NULL) return true;
+
+	nn_ComponentRequest creq = {
+		.ctx = ctx,
+		.computer = computer,
+		.state = c->state,
+		.classState = c->classState,
+		.compAddress = c->address,
+		.action = NN_COMP_USERDATA,
+		.methodIdx = 0,
+		.user = &ureq,
+	};
+
+	// errors in here are catastrophic
+	return c->handler(&creq);
+}
+
+// Deserializes userdata at a particular index.
+// NOTE: if the component does not exist, or the userdata index is already taken, this errors.
+nn_Exit nn_deserializeUserdata(nn_Computer *computer, size_t userdata, const char *compAddress, const char *buf, size_t len) {
+	if(userdata >= NN_MAX_USERDATA) {
+		nn_setError(computer, "invalid slot");
+		return NN_EBADCALL;
+	}
+
+	if(nn_isUserdataValid(computer, userdata)) {
+		nn_setError(computer, "slot taken");
+		return NN_EBADCALL;
+	}
+
+	nn_Component *c = nn_getComponent(computer, compAddress);
+	if(c == NULL) {
+		nn_setError(computer, "no such component");
+		return NN_EBADCALL;
+	}
+	
+	nn_Context *ctx = nn_getComputerContext(computer);
+	nn_Userdata *user = computer->uservals + userdata;
+
+	nn_UserdataRequest ureq = {
+		.state = user->state,
+		.action = NN_USER_DESERIALIZE,
+		.deserialize.data = buf,
+		.deserialize.len = len,
+	};
+
+	nn_ComponentRequest creq = {
+		.ctx = ctx,
+		.computer = computer,
+		.state = c->state,
+		.classState = c->classState,
+		.compAddress = c->address,
+		.action = NN_COMP_USERDATA,
+		.methodIdx = 0,
+		.user = &ureq,
+	};
+
+	char *compAddr = nn_strdup(ctx, compAddress);
+	if(compAddr == NULL) return NN_ENOMEM;
+
+	// errors in here are catastrophic
+	nn_Exit e = c->handler(&creq);
+	if(e) {
+		nn_strfree(ctx, compAddr);
+		return e;
+	}
+
+	user->state = ureq.state;
+	user->compAddress = compAddr;
+	return NN_OK;
 }
 
 static void nn_retainValue(nn_Value val) {
@@ -3906,7 +4146,7 @@ typedef enum nn_CompNum {
 
 static nn_Exit nn_computerHandler(nn_ComponentRequest *req) {
 	if(req->action == NN_COMP_DROP) return NN_OK;
-	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	if(req->action == NN_COMP_USERDATA) return NN_OK;
 	nn_Computer *src = req->computer;
 	if(src) nn_setError(src, "computer: not implemented yet");
 	return NN_EBADCALL;
@@ -3964,7 +4204,7 @@ typedef struct nn_EEState {
 } nn_EEState;
 
 static nn_Exit nn_eepromHandler(nn_ComponentRequest *req) {
-	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	if(req->action == NN_COMP_USERDATA) return NN_OK;
 	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
 	nn_EEState *state = req->classState;
 	nn_EEPROMRequest ereq;
@@ -4230,7 +4470,7 @@ static nn_Exit nn_fsPathCheck(nn_Computer *C, char buf[NN_MAX_PATH], const char 
 }
 
 static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
-	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	if(req->action == NN_COMP_USERDATA) return NN_OK;
 	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
 	nn_Context *ctx = req->ctx;
 	nn_FSState *state = req->classState;
@@ -4650,7 +4890,7 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 	dreq.drv = &state->drive;
 	nn_Exit e;
 
-	if(request->action == NN_COMP_SIGNAL) return NN_OK;
+	if(request->action == NN_COMP_USERDATA) return NN_OK;
 	if(request->action == NN_COMP_CHECKMETHOD) return NN_OK;
 
 	if(request->action == NN_COMP_DROP) {
@@ -4850,7 +5090,7 @@ static nn_Exit nn_flashHandler(nn_ComponentRequest *request) {
 	freq.flash = &state->flash;
 	nn_Exit e;
 
-	if(request->action == NN_COMP_SIGNAL) return NN_OK;
+	if(request->action == NN_COMP_USERDATA) return NN_OK;
 	if(request->action == NN_COMP_CHECKMETHOD) return NN_OK;
 
 	if(request->action == NN_COMP_DROP) {
@@ -5069,7 +5309,7 @@ typedef struct nn_ScreenClassState {
 } nn_ScreenClassState;
 
 static nn_Exit nn_screenHandler(nn_ComponentRequest *req) {
-    if(req->action == NN_COMP_SIGNAL) return NN_OK;
+    if(req->action == NN_COMP_USERDATA) return NN_OK;
     nn_Context *ctx = req->ctx;
     nn_ScreenClassState *cls = req->classState;
     nn_Computer *C = req->computer;
@@ -5335,7 +5575,7 @@ typedef struct nn_GPUClassState {
 
 static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
     if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
-    if(req->action == NN_COMP_SIGNAL) return NN_OK;
+    if(req->action == NN_COMP_USERDATA) return NN_OK;
     nn_Context *ctx = req->ctx;
     nn_GPUClassState *cls = req->classState;
     nn_Computer *C = req->computer;
@@ -6125,15 +6365,22 @@ nn_DataCard nn_defaultDataCards[3] = {
 		.assymetricCost = 10.0,
 	},
 };
+
+typedef struct nn_DataKey {
+	bool isPublic;
+	unsigned short bitlen;
+	size_t bytelen;
+	char bytes[];
+} nn_DataKey;
+
 static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
-	if(req->action == NN_COMP_SIGNAL) return NN_OK;
 	nn_Context *ctx = req->ctx;
 	nn_DataState *state = req->classState;
 	nn_Computer *C = req->computer;
 
 	nn_DataCard dataCard = state->dataCard;
 	nn_DataNum method = req->methodIdx;
-
+	
 	if(req->action == NN_COMP_CHECKMETHOD) {
 		if(method == NN_DATANUM_SHA256 || method == NN_DATANUM_MD5) {
 			req->methodEnabled = dataCard.canHash;
@@ -6147,6 +6394,84 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		if(method == NN_DATANUM_GENKEYPAIR || method == NN_DATANUM_ECDH || method == NN_DATANUM_ECDSA || method == NN_DATANUM_DESERIALIZEKEY) {
 			req->methodEnabled = dataCard.canECDH;
 		}
+		return NN_OK;
+	}
+	
+	if(req->action == NN_COMP_USERDATA) {
+		nn_UserdataRequest *user = req->user;
+		nn_DataKey *key = user->state;
+
+		if(user->action == NN_USER_DROP) {
+			nn_free(ctx, key, sizeof(*key) + key->bytelen);
+			return NN_OK;
+		}
+
+		if(user->action == NN_USER_SERIALIZE) {
+			// its assumed bytelen is not ridiculous
+			size_t serlen = 2 + key->bytelen;
+			NN_VLA(unsigned char, ser, serlen);
+			unsigned short bitsAndPub = (key->bitlen * 2) + (key->isPublic ? 1 : 0);
+			ser[0] = (bitsAndPub >> 0) & 0xFF;
+			ser[1] = (bitsAndPub >> 8) & 0xFF;
+			nn_memcpy(ser + 2, key->bytes, key->bytelen);
+			return nn_pushlstring(C, (const char *)ser, serlen);
+		}
+
+		if(user->action == NN_USER_DESERIALIZE) {
+			size_t serlen = user->deserialize.len;
+			const unsigned char *ser = (const unsigned char *)user->deserialize.data;
+			size_t bytelen = serlen - 2;
+			unsigned short bitsAndPub = ((unsigned short)ser[0]) + (((unsigned short)ser[1]) << 8);
+			key = nn_alloc(ctx, sizeof(*key) + bytelen);
+			if(key == NULL) return NN_ENOMEM;
+			key->isPublic = (bitsAndPub&1) != 0;
+			key->bitlen = bitsAndPub/2;
+			key->bytelen = bytelen;
+			nn_memcpy(key->bytes, ser + 2, key->bytelen);
+			user->state = key;
+			return NN_OK;
+		}
+
+		if(user->action == NN_USER_GETMETHOD) {
+			size_t idx = user->getmethod.idx;
+			nn_Method *m = user->getmethod.method;
+			if(idx == 0) {
+				m->name = "serialize";
+				m->doc = "function(): string - Serializes the key to its array of bytes";
+				m->flags = NN_DIRECT;
+			} else if(idx == 1) {
+				m->name = "keyType";
+				m->doc = "function(): string - Gets the type of the key (ec-public or ec-private)";
+				m->flags = NN_DIRECT;
+			} else if(idx == 2) {
+				m->name = "isPublic";
+				m->doc = "function(): boolean - Returns whether this key is public or not";
+				m->flags = NN_DIRECT;
+			} else {
+				user->getmethod.method = NULL;
+			}
+			return NN_OK;
+		}
+
+		if(user->action == NN_USER_INVOKE) {
+			const char *method = user->invoke.method;
+			if(nn_strcmp(method, "isPublic") == 0) {
+				user->invoke.returnCount = 1;
+				return nn_pushbool(C, key->isPublic);
+			}
+			if(nn_strcmp(method, "keyType") == 0) {
+				user->invoke.returnCount = 1;
+				return nn_pushstring(C, key->isPublic ? "ec-public" : "ec-private");
+			}
+			if(nn_strcmp(method, "serialize") == 0) {
+				user->invoke.returnCount = 1;
+				return nn_pushlstring(C, key->bytes, key->bytelen);
+			}
+
+			nn_setError(C, "no such method");
+			return NN_EBADCALL;
+		}
+
 		return NN_OK;
 	}
 
@@ -6332,6 +6657,26 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return NN_OK;
 	}
 
+	if(method == NN_DATANUM_GENKEYPAIR) {
+		e = nn_defaultinteger(C, 0, 256);
+		if(e) return e;
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		size_t bitLen = nn_tointeger(C, 0);
+		if(bitLen != 256 && bitLen != 384) {
+			nn_setError(C, "invalid bit length (only 256-bit and 384-bit are supported)");
+			return NN_EBADCALL;
+		}
+		// TODO: this is test code, no OOM check. Implement the correct version and make sure it handles OOMs correctly
+		size_t keylen = bitLen / 8;
+		nn_DataKey *key = nn_alloc(ctx, sizeof(*key) + keylen);
+		key->isPublic = true;
+		key->bitlen = bitLen;
+		key->bytelen = keylen;
+		nn_memset(key->bytes, 'A', key->bytelen);
+		req->returnCount = 1;
+		return nn_pushuserdata(C, nn_allocUserdata(C, key, req->compAddress));
+	}
+
 	if(C) nn_setError(C, "data: not implemented yet");
 	return NN_EBADCALL;
 }
@@ -6415,7 +6760,7 @@ typedef struct nn_ModemState {
 } nn_ModemState;
 
 static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
-	if(req->action == NN_COMP_SIGNAL) return NN_OK;
+	if(req->action == NN_COMP_USERDATA) return NN_OK;
 	nn_Context *ctx = req->ctx;
 	nn_ModemState *state = req->classState;
 	nn_Computer *C = req->computer;

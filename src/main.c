@@ -42,7 +42,7 @@ static nn_Exit sandbox_handler(nn_ComponentRequest *req) {
 		return NN_OK;
 	case NN_COMP_DROP:
 		return NN_OK;
-	case NN_COMP_SIGNAL:
+	case NN_COMP_USERDATA:
 		return NN_OK;
 	}
 	return NN_OK;

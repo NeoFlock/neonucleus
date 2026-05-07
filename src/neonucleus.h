@@ -659,13 +659,6 @@ typedef struct nn_Method {
 	nn_MethodFlags flags;
 } nn_Method;
 
-// component signals
-
-// mounted
-#define NN_CSIGMOUNTED "mounted"
-// unmounted
-#define NN_CSIGUNMOUNTED "unmounted"
-
 typedef enum nn_ComponentAction {
 	// component dropped
 	NN_COMP_DROP,
@@ -674,9 +667,37 @@ typedef enum nn_ComponentAction {
 	// checking if component method is enabled
 	// (may be locked by tier)
 	NN_COMP_CHECKMETHOD,
-	// signal sent to the machine
-	NN_COMP_SIGNAL,
+	// userdata request
+	NN_COMP_USERDATA,
 } nn_ComponentAction;
+
+typedef enum nn_UserdataAction {
+	NN_USER_DROP,
+	NN_USER_SERIALIZE,
+	NN_USER_DESERIALIZE,
+	NN_USER_GETMETHOD,
+	NN_USER_INVOKE,
+} nn_UserdataAction;
+
+typedef struct nn_UserdataRequest {
+	void *state;
+	nn_UserdataAction action;
+	union {
+		struct {
+			const char *data;
+			size_t len;
+		} deserialize;
+		struct {
+			size_t idx;
+			// set to NULL if idx is out of bounds
+			nn_Method *method;
+		} getmethod;
+		struct {
+			const char *method;
+			size_t returnCount;
+		} invoke;
+	};
+} nn_UserdataRequest;
 
 typedef struct nn_ComponentRequest {
 	nn_Context *ctx;
@@ -692,8 +713,7 @@ typedef struct nn_ComponentRequest {
 		size_t returnCount;
 		// method enabled
 		bool methodEnabled;
-		// signal invocation
-		const char *signal;
+		nn_UserdataRequest *user;
 	};
 } nn_ComponentRequest;
 
