@@ -564,7 +564,7 @@ int main(int argc, char **argv) {
 	ncl_setCLabel(testFlash, "Flash Storage");
 
 	size_t ramTotal = 0;
-	ramTotal += 4 * nn_ramSizes[5];
+	ramTotal += 4 * nn_ramSizes[7];
 	//ramTotal += nn_ramSizes[0];
 	
 	SetExitKey(KEY_NULL);
@@ -578,10 +578,6 @@ int main(int argc, char **argv) {
 	if(getenv("NN_TICKDELAY") != NULL) {
 		tickDelay = atof(getenv("NN_TICKDELAY"));
 	}
-	if(getenv("NN_FAST") != NULL) {
-		tickDelay = 0;
-		noIdle = true;
-	}
 	
 	struct {int key; nn_codepoint unicode;} keybuf[512];
 	memset(keybuf, 0, sizeof(keybuf));
@@ -591,22 +587,28 @@ int main(int argc, char **argv) {
 	double nextSecond = 0;
 	double wattage = 0;
 
-	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[2]);
-	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[2]);
+	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
     ncl_ScreenState *scrstate = nn_getComponentState(screen);
     ncl_mountKeyboard(scrstate, "mainKB");
 
-	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, 256, 256);
+	// we assume server basically
+	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, nn_defaultComponentLimits[3] * 4, 256);
 	nn_Environment cEnv = {
 		.userdata = NULL,
 		.handler = ne_env,
 	};
 	nn_setComputerEnvironment(c, cEnv);
-	nn_setCallBudget(c, 0);
+	nn_setCallBudget(c, nn_defaultCallBudgets[3]);
 	nn_setTotalEnergy(c, allEnergy);
+	if(getenv("NN_FAST") != NULL) {
+		tickDelay = 0;
+		noIdle = true;
+		nn_setCallBudget(c, 0);
+	}
 	
 	nn_setArchitecture(c, &arch);
 	nn_addSupportedArchitecture(c, &arch);

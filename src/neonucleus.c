@@ -948,7 +948,6 @@ typedef struct nn_Universe {
 typedef struct nn_ComponentEntry {
 	const char *address;
 	nn_Component *comp;
-	double budgetUsed;
 	int slot;
 } nn_ComponentEntry;
 
@@ -1080,8 +1079,8 @@ typedef struct nn_Computer {
 	void *archState;
 	nn_Architecture arch;
 	nn_Architecture desiredArch;
-	size_t callBudget;
-	size_t totalCallBudget;
+	double callBudget;
+	double totalCallBudget;
 	nn_HashMap components;
 	nn_DeviceInfoArray deviceInfo;
 	double totalEnergy;
@@ -1200,7 +1199,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->desiredArch.name = NULL;
 	c->archState = NULL;
 
-	c->totalCallBudget = 10000;
+	c->totalCallBudget = 1;
 	c->callBudget = c->totalCallBudget;
 
 	if(nn_hashInit(&c->components, maxComponents, ctx, &nn_componentHasher)) {
@@ -2065,7 +2064,6 @@ nn_Exit nn_mountComponent(nn_Computer *c, nn_Component *comp, int slot, bool sil
 		.address = comp->address,
 		.comp = comp,
 		.slot = slot,
-		.budgetUsed = 0,
 	};
 	if(!nn_hashPut(&c->components, &ent)) return NN_ELIMIT;
 	nn_retainComponent(comp);
@@ -2164,6 +2162,9 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 		if(!nn_isnull(computer, nn_getstacksize(computer) - 1)) break;
 		nn_pop(computer);
 	}
+
+	// TODO: configurable cost
+	nn_costComponent(computer, 22000);
 
 	nn_ComponentRequest req;
 	req.ctx = &c->universe->ctx;
@@ -2486,17 +2487,20 @@ static void nn_dropValue(nn_Value val) {
 	}
 }
 
-// TODO: call
+double nn_defaultCallBudgets[4] = { 0.5, 1, 1.5, 2 };
+double nn_unlimitedCallBudget = 0;
+size_t nn_defaultComponentLimits[4] = { 8, 12, 16, 20 };
+size_t nn_creativeComponentLimit = 1024;
 
-void nn_setCallBudget(nn_Computer *computer, size_t budget) {
+void nn_setCallBudget(nn_Computer *computer, double budget) {
 	computer->totalCallBudget = budget;
 }
 
-size_t nn_getCallBudget(nn_Computer *computer) {
+double nn_getCallBudget(nn_Computer *computer) {
 	return computer->totalCallBudget;
 }
 
-size_t nn_callBudgetRemaining(nn_Computer *computer) {
+double nn_callBudgetRemaining(nn_Computer *computer) {
 	return computer->callBudget;
 }
 
@@ -2505,30 +2509,24 @@ void nn_resetCallBudget(nn_Computer *computer) {
 }
 
 bool nn_componentsOverused(nn_Computer *computer) {
-	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
-		if(c->budgetUsed >= NN_COMPONENT_CALLBUDGET) return true;
-	}
-	if(computer->totalCallBudget == 0) return false;
-	return computer->callBudget == 0;
+	if(computer->totalCallBudget <= 0) return false;
+	return computer->callBudget <= 0;
 }
 
 void nn_resetComponentBudgets(nn_Computer *computer) {
-	for(nn_ComponentEntry *c = nn_hashIterate(&computer->components, NULL); c != NULL; c = nn_hashIterate(&computer->components, c)) {
-		c->budgetUsed = 0;
-	}
 	computer->callBudget = computer->totalCallBudget;
 }
-bool nn_costComponent(nn_Computer *computer, const char *address, double perTick) {
-	return nn_costComponentN(computer, address, 1, perTick);
+
+bool nn_costComponent(nn_Computer *computer, double perTick) {
+	return nn_costComponentN(computer, 1, perTick);
 }
 
-bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick) {
+bool nn_costComponentN(nn_Computer *computer, double amount, double perTick) {
 	// this means 0 per tick means free
 	if(perTick == 0) return false;
-	nn_ComponentEntry *c = nn_getInternalComponent(computer, address);
-	if(c == NULL) return false;
-	c->budgetUsed += (NN_COMPONENT_CALLBUDGET * amount) / perTick;
-	return c->budgetUsed >= NN_COMPONENT_CALLBUDGET;
+	computer->callBudget -= amount / perTick;
+	if(computer->callBudget < 0) computer->callBudget = 0;
+	return computer->callBudget <= 0;
 }
 
 bool nn_checkstack(nn_Computer *computer, size_t amount) {
@@ -4556,7 +4554,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		e = state->handler(&freq);
 		if(e) return e;
 		req->returnCount = 1;
-		nn_costComponent(C, req->compAddress, state->fs.opensPerTick);
+		nn_costComponent(C, state->fs.opensPerTick);
 		return nn_pushinteger(C, freq.fd);
 	}
 	if(method == NN_FSNUM_READ) {
@@ -4581,7 +4579,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 			nn_free(ctx, buf, state->fs.maxReadSize);
 			return NN_OK;
 		}
-		nn_costComponent(C, req->compAddress, state->fs.readsPerTick);
+		nn_costComponent(C, state->fs.readsPerTick);
 		nn_removeEnergy(C, state->fs.dataEnergyCost * freq.read.len);
 		req->returnCount = 1;
 		e = nn_pushlstring(C, buf, freq.read.len);
@@ -4597,7 +4595,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		e = state->handler(&freq);
 		if(e) return e;
 		req->returnCount = 1;
-		nn_costComponent(C, req->compAddress, state->fs.writesPerTick);
+		nn_costComponent(C, state->fs.writesPerTick);
 		nn_removeEnergy(C, state->fs.dataEnergyCost * freq.write.len);
 		return nn_pushbool(C, true);
 	}
@@ -4627,7 +4625,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 		e = state->handler(&freq);
 		if(e) return e;
 		req->returnCount = 1;
-		nn_costComponent(C, req->compAddress, state->fs.readsPerTick);
+		nn_costComponent(C, state->fs.readsPerTick);
 		return nn_pushinteger(C, freq.seek.off);
 	}
 	if(method == NN_FSNUM_CLOSE) {
@@ -4961,7 +4959,7 @@ static nn_Exit nn_drvHandler(nn_ComponentRequest *request) {
 		curPos = dreq.curpos;
 
 		nn_drive_seekPenalty(C, curPos, sec, &state->drive);
-		nn_costComponent(C, request->compAddress, state->drive.readsPerTick);
+		nn_costComponent(C, state->drive.readsPerTick);
 		nn_removeEnergy(C, state->drive.dataEnergyCost * ss);
 
 		char *sector = nn_alloc(ctx, ss);
@@ -5170,7 +5168,7 @@ static nn_Exit nn_flashHandler(nn_ComponentRequest *request) {
 			nn_setError(C, "sector out of bounds");
 			return NN_EBADCALL;
 		}
-		nn_costComponent(C, request->compAddress, state->flash.readsPerTick);
+		nn_costComponent(C, state->flash.readsPerTick);
 		nn_removeEnergy(C, state->flash.dataEnergyCost * ss);
 
 		char *sector = nn_alloc(ctx, ss);
@@ -5205,7 +5203,7 @@ static nn_Exit nn_flashHandler(nn_ComponentRequest *request) {
 			return NN_EBADCALL;
 		}
 
-		nn_costComponent(C, request->compAddress, state->flash.writesPerTick);
+		nn_costComponent(C, state->flash.writesPerTick);
 		nn_removeEnergy(C, state->flash.dataEnergyCost * ss);
 
 		size_t len;
@@ -5650,7 +5648,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
     }
     //  setBackground 
     if(m == NN_GPUNUM_SETBG) {
-		if(isScreen) nn_costComponent(C, req->compAddress, cls->gpu.setBackgroundPerTick);
+		if(isScreen) nn_costComponent(C, cls->gpu.setBackgroundPerTick);
         if(nn_checknumber(C, 0,
             "bad argument #1 (number expected)"))
             return NN_EBADCALL;
@@ -5685,7 +5683,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
     }
     //  setForeground 
     if(m == NN_GPUNUM_SETFG) {
-		if(isScreen) nn_costComponent(C, req->compAddress, cls->gpu.setForegroundPerTick);
+		if(isScreen) nn_costComponent(C, cls->gpu.setForegroundPerTick);
         if(nn_checknumber(C, 0,
             "bad argument #1 (number expected)"))
             return NN_EBADCALL;
@@ -5907,7 +5905,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         if(e) return e;
         req->returnCount = 1;
 		if(isScreen) {
-			nn_costComponent(C, req->compAddress, cls->gpu.setPerTick);
+			nn_costComponent(C, cls->gpu.setPerTick);
 			nn_removeEnergy(C, cls->gpu.energyPerWrite * g.set.len);
 		}
         return nn_pushbool(C, true);
@@ -5935,7 +5933,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         if(e) return e;
         req->returnCount = 1;
 		if(isScreen) {
-			nn_costComponent(C, req->compAddress, cls->gpu.copyPerTick);
+			nn_costComponent(C, cls->gpu.copyPerTick);
 			nn_removeEnergy(C, cls->gpu.energyPerWrite * g.copy.w  * g.copy.h);
 		}
         return nn_pushbool(C, true);
@@ -5966,7 +5964,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         if(e) return e;
         req->returnCount = 1;
 		if(isScreen) {
-			nn_costComponent(C, req->compAddress, cls->gpu.fillPerTick);
+			nn_costComponent(C, cls->gpu.fillPerTick);
 			nn_removeEnergy(C, (g.fill.codepoint == ' ' ? cls->gpu.energyPerClear : cls->gpu.energyPerWrite) * g.fill.w * g.fill.h);
 		}
         return nn_pushbool(C, true);
@@ -6082,7 +6080,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
 		if(g.bitblt.h > g.gpu->maxHeight) g.bitblt.h = g.gpu->maxHeight;
 		if(g.bitblt.dst == 0 || g.bitblt.src == 0) {
 			// taxed as a copy
-			nn_costComponent(C, req->compAddress, g.gpu->copyPerTick);
+			nn_costComponent(C, g.gpu->copyPerTick);
 			nn_removeEnergy(C, g.gpu->energyPerWrite * g.bitblt.w * g.bitblt.h);
 		}
         e = cls->handler(&g);
@@ -6508,7 +6506,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 
 	// TODO: the cool methods
 	if(method == NN_DATANUM_ENCODE64) {
-		nn_costComponent(C, req->compAddress, dataCard.base64PerTick);
+		nn_costComponent(C, dataCard.base64PerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		dreq.action = NN_DATA_ENCODE64;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
@@ -6520,7 +6518,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return NN_OK;
 	}
 	if(method == NN_DATANUM_DECODE64) {
-		nn_costComponent(C, req->compAddress, dataCard.base64PerTick);
+		nn_costComponent(C, dataCard.base64PerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		dreq.action = NN_DATA_DECODE64;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
@@ -6532,7 +6530,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return NN_OK;
 	}
 	if(method == NN_DATANUM_DEFLATE) {
-		nn_costComponent(C, req->compAddress, dataCard.deflatingPerTick);
+		nn_costComponent(C, dataCard.deflatingPerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		dreq.action = NN_DATA_DEFLATE;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
@@ -6544,7 +6542,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return NN_OK;
 	}
 	if(method == NN_DATANUM_INFLATE) {
-		nn_costComponent(C, req->compAddress, dataCard.deflatingPerTick);
+		nn_costComponent(C, dataCard.deflatingPerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		dreq.action = NN_DATA_INFLATE;
 		dreq.data = nn_tolstring(C, 0, &dreq.datalen);
@@ -6556,7 +6554,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return NN_OK;
 	}
 	if(method == NN_DATANUM_CRC32) {
-		nn_costComponent(C, req->compAddress, dataCard.crc32PerTick);
+		nn_costComponent(C, dataCard.crc32PerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		dreq.action = NN_DATA_CRC32;
 		dreq.crc32.data = nn_tolstring(C, 0, &dreq.crc32.datalen);
@@ -6568,7 +6566,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return nn_pushlstring(C, dreq.crc32.checksum, 4);
 	}
 	if(method == NN_DATANUM_MD5) {
-		nn_costComponent(C, req->compAddress, dataCard.md5PerTick);
+		nn_costComponent(C, dataCard.md5PerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		dreq.action = NN_DATA_MD5;
 		dreq.md5.data = nn_tolstring(C, 0, &dreq.md5.datalen);
@@ -6580,7 +6578,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return nn_pushlstring(C, dreq.md5.checksum, 16);
 	}
 	if(method == NN_DATANUM_SHA256) {
-		nn_costComponent(C, req->compAddress, dataCard.sha256PerTick);
+		nn_costComponent(C, dataCard.sha256PerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		dreq.action = NN_DATA_SHA256;
 		dreq.sha256.data = nn_tolstring(C, 0, &dreq.sha256.datalen);
@@ -6592,7 +6590,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return nn_pushlstring(C, dreq.sha256.checksum, 32);
 	}
 	if(method == NN_DATANUM_RANDOM) {
-		nn_costComponent(C, req->compAddress, dataCard.randomPerTick);
+		nn_costComponent(C, dataCard.randomPerTick);
 		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
 		intptr_t n = nn_tointeger(C, 0);
 		if(n <= 0) {
@@ -6615,7 +6613,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return e;
 	}
 	if(method == NN_DATANUM_ENCRYPT) {
-		nn_costComponent(C, req->compAddress, dataCard.encryptPerTick);
+		nn_costComponent(C, dataCard.encryptPerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
 		if(nn_checkstring(C, 2, "bad argument #3 (string expected)")) return NN_EBADCALL;
@@ -6640,7 +6638,7 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 		return NN_OK;
 	}
 	if(method == NN_DATANUM_DECRYPT) {
-		nn_costComponent(C, req->compAddress, dataCard.encryptPerTick);
+		nn_costComponent(C, dataCard.encryptPerTick);
 		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
 		if(nn_checkstring(C, 1, "bad argument #2 (string expected)")) return NN_EBADCALL;
 		if(nn_checkstring(C, 2, "bad argument #3 (string expected)")) return NN_EBADCALL;

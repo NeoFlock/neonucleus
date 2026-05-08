@@ -828,15 +828,24 @@ nn_Exit nn_serializeUserdata(nn_Computer *computer, size_t userdata);
 // NOTE: if the component does not exist, or the userdata index is already taken, this errors.
 nn_Exit nn_deserializeUserdata(nn_Computer *computer, size_t userdata, const char *compAddress, const char *buf, size_t len);
 
+// default call budgets for 4 tiers of CPUs
+extern double nn_defaultCallBudgets[4];
+// the call budget of a creative CPU
+extern double nn_unlimitedCallBudget;
+// default component limits for 4 tiers of component buses / CPUs
+extern size_t nn_defaultComponentLimits[4];
+// the component limit of a creative component bus
+extern size_t nn_creativeComponentLimit;
+
 // Sets the call budget.
-// The default is 1,000.
-void nn_setCallBudget(nn_Computer *computer, size_t budget);
+// The default is 1.
+void nn_setCallBudget(nn_Computer *computer, double budget);
 
 // gets the total call budget
-size_t nn_getCallBudget(nn_Computer *computer);
+double nn_getCallBudget(nn_Computer *computer);
 
 // returns the remaining call budget
-size_t nn_callBudgetRemaining(nn_Computer *computer);
+double nn_callBudgetRemaining(nn_Computer *computer);
 
 // automatically called by nn_tick()
 void nn_resetCallBudget(nn_Computer *computer);
@@ -851,12 +860,12 @@ void nn_resetComponentBudgets(nn_Computer *computer);
 // Upon a full component budget being used for that component, it returns true.
 // nn_componentsOverused() will also return true.
 // This indicates the architecture should yield, to throttle the computer for overuse.
-bool nn_costComponent(nn_Computer *computer, const char *address, double perTick);
+bool nn_costComponent(nn_Computer *computer, double perTick);
 // Uses amount/perTick to the component budget.
 // Upon a full component budget being used for that component, it returns true.
 // nn_componentsOverused() will also return true.
 // This indicates the architecture should yield, to throttle the computer for overuse.
-bool nn_costComponentN(nn_Computer *computer, const char *address, double amount, double perTick);
+bool nn_costComponentN(nn_Computer *computer, double amount, double perTick);
 
 // call stack operations.
 // The type system and API are inspired by Lua, as Lua remains the most popular architecture for OpenComputers.
