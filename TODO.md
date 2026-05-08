@@ -20,7 +20,6 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 - `internet` component (note: NN does not handle internet requests, those are up to the emulator)
 - `relay` component (note: OCDoc still refers to it as `access_point`)
 - `geolyzer` component
-- `net_splitter` component
 - `redstone` component
 - `motion_sensor` component
 - `printer3d` component (note: maybe add signal for when printer completes?)
