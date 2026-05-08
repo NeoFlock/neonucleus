@@ -123,6 +123,32 @@ static nn_Exit ne_dataBullshit(nn_DataCardRequest *req) {
 		return nn_pushlstring(C, req->data, req->datalen);
 	}
 
+	if(action == NN_DATA_VALIDATEKEY) {
+		// its valid, trust
+		return NN_OK;
+	}
+
+	if(action == NN_DATA_GENKEYS) {
+		char a = 'A' + rand() % 26;
+		char b = 'A' + rand() % 26;
+		nn_pushlstring(C, &a, 1);
+		return nn_pushlstring(C, &b, 1);
+	}
+
+	if(action == NN_DATA_ECDH) {
+		char buf[32];
+		memset(buf, 'e', 32);
+		return nn_pushlstring(C, buf, 32);
+	}
+
+	if(action == NN_DATA_ECDSA_SIGN) {
+		return nn_pushstring(C, "epic signature bro");
+	}
+	if(action == NN_DATA_ECDSA_VERIFY) {
+		req->checksig.sigpassed = strcmp(req->checksig.signature, "epic signature bro");
+		return NN_OK;
+	}
+
 	if(C) nn_setError(C, "ne: data method not implemented");
 	return NN_EBADCALL;
 }

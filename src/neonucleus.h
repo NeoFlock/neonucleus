@@ -1809,6 +1809,9 @@ typedef enum nn_DataCardAction {
 	// Generate an ECDH public/private pair of either 256 or 384 bits each.
 	NN_DATA_GENKEYS,
 
+	// validate key, cuz we feel like it
+	NN_DATA_VALIDATEKEY,
+
 	// Does an ECDH pass, matching javax.crypto.KeyAgreement.
 	// This generates a shared secret as binary data.
 	// This is not an AES key as output, the AES key is often computed by either MD5 hashing
@@ -1820,6 +1823,13 @@ typedef enum nn_DataCardAction {
 	// ECDSA algorithm, verify data using an ECDH (public) key and signature.
 	NN_DATA_ECDSA_VERIFY,
 } nn_DataCardAction;
+
+// The representation of datacard key userdata
+typedef struct nn_DataKey {
+	bool isPublic;
+	unsigned short bytelen;
+	char bytes[];
+} nn_DataKey;
 
 typedef struct nn_DataCardRequest {
     nn_Context *ctx;
@@ -1860,6 +1870,30 @@ typedef struct nn_DataCardRequest {
 			const char *data;
 			size_t datalen;
 		};
+		struct {
+			const char *buf;
+			size_t len;
+			bool isPublic;
+		} validatekey;
+		struct {
+			const nn_DataKey *publicKey;
+			const nn_DataKey *privateKey;
+		} ecdh;
+		struct {
+			const char *data;
+			size_t len;
+			const nn_DataKey *privateKey;
+		} sign;
+		struct {
+			const char *data;
+			size_t datalen;
+			const nn_DataKey *publicKey;
+			const char *signature;
+			size_t siglen;
+			// returns whether the signature actually passed
+			bool sigpassed;
+		} checksig;
+		int genkeybitsize;
 	};
 } nn_DataCardRequest;
 

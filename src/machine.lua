@@ -80,7 +80,6 @@ local function sandboxValue(val)
 		return nt
 	end
 	if type(val) == "userdata" then
-		-- Light userdata shall never escape our shi!
 		-- This matches how OC wraps it
 		-- TODO: just make our own shi with fields and stuff
 		-- like a component proxy, because this sucks
@@ -90,7 +89,7 @@ local function sandboxValue(val)
 			end,
 		}
 
-		local wrapped = {type = "userdata"}
+		local wrapped = {type = "userdata", userdata = val}
 		for name, m in pairs(userdata.methods(val)) do
 			wrapped[name] = {
 				name = name,

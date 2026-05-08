@@ -6318,13 +6318,6 @@ nn_DataCard nn_defaultDataCards[3] = {
 	},
 };
 
-typedef struct nn_DataKey {
-	bool isPublic;
-	unsigned short bitlen;
-	size_t bytelen;
-	char bytes[];
-} nn_DataKey;
-
 static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 	nn_Context *ctx = req->ctx;
 	nn_DataState *state = req->classState;
@@ -6360,26 +6353,22 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 
 		if(user->action == NN_USER_SERIALIZE) {
 			// its assumed bytelen is not ridiculous
-			size_t serlen = 2 + key->bytelen;
+			size_t serlen = 1 + key->bytelen;
 			NN_VLA(unsigned char, ser, serlen);
-			unsigned short bitsAndPub = (key->bitlen * 2) + (key->isPublic ? 1 : 0);
-			ser[0] = (bitsAndPub >> 0) & 0xFF;
-			ser[1] = (bitsAndPub >> 8) & 0xFF;
-			nn_memcpy(ser + 2, key->bytes, key->bytelen);
+			ser[0] = key->isPublic ? 1 : 0;
+			nn_memcpy(ser + 1, key->bytes, key->bytelen);
 			return nn_pushlstring(C, (const char *)ser, serlen);
 		}
 
 		if(user->action == NN_USER_DESERIALIZE) {
 			size_t serlen = user->deserialize.len;
 			const unsigned char *ser = (const unsigned char *)user->deserialize.data;
-			size_t bytelen = serlen - 2;
-			unsigned short bitsAndPub = ((unsigned short)ser[0]) + (((unsigned short)ser[1]) << 8);
+			size_t bytelen = serlen - 1;
 			key = nn_alloc(ctx, sizeof(*key) + bytelen);
 			if(key == NULL) return NN_ENOMEM;
-			key->isPublic = (bitsAndPub&1) != 0;
-			key->bitlen = bitsAndPub/2;
+			key->isPublic = ser[0] != 0;
 			key->bytelen = bytelen;
-			nn_memcpy(key->bytes, ser + 2, key->bytelen);
+			nn_memcpy(key->bytes, ser + 1, key->bytelen);
 			user->state = key;
 			return NN_OK;
 		}
@@ -6618,15 +6607,175 @@ static nn_Exit nn_dataHandler(nn_ComponentRequest *req) {
 			nn_setError(C, "invalid bit length (only 256-bit and 384-bit are supported)");
 			return NN_EBADCALL;
 		}
-		// TODO: this is test code, no OOM check. Implement the correct version and make sure it handles OOMs correctly
-		size_t keylen = bitLen / 8;
-		nn_DataKey *key = nn_alloc(ctx, sizeof(*key) + keylen);
-		key->isPublic = true;
-		key->bitlen = bitLen;
-		key->bytelen = keylen;
-		nn_memset(key->bytes, 'A', key->bytelen);
+		dreq.action = NN_DATA_GENKEYS;
+		dreq.genkeybitsize = bitLen;
+
+		e = state->handler(&dreq);
+		if(e) return e;
+
+		// the keygen DARED succeed which means we must actually
+		// create those keys smh. Darn you crypto bros!
+
+		size_t pubIdx = nn_getstacksize(C) - 2;
+
+		size_t publen = 0, privlen = 0;
+		int pubUser = -1, privUser = -1;
+		nn_DataKey *pubKey = NULL, *privKey = NULL;
+
+		const char *pubdata = nn_tolstring(C, pubIdx, &publen);
+		const char *privdata = nn_tolstring(C, pubIdx + 1, &privlen);
+
+		pubKey = nn_alloc(ctx, sizeof(nn_DataKey) + publen);
+		if(pubKey == NULL) {
+			e = NN_ENOMEM;
+			goto considered_harmful;
+		}
+		pubKey->isPublic = true;
+		pubKey->bytelen = publen;
+		nn_memcpy(pubKey->bytes, pubdata, publen);
+		
+		privKey = nn_alloc(ctx, sizeof(nn_DataKey) + privlen);
+		if(privKey == NULL) {
+			e = NN_ENOMEM;
+			goto considered_harmful;
+		}
+		privKey->isPublic = false;
+		privKey->bytelen = privlen;
+		nn_memcpy(privKey->bytes, privdata, privlen);
+
+		pubUser = nn_allocUserdata(C, pubKey, req->compAddress);
+		if(pubUser < 0) {
+			e = NN_ELIMIT;
+			goto considered_harmful;
+		}
+		
+		privUser = nn_allocUserdata(C, privKey, req->compAddress);
+		if(privUser < 0) {
+			e = NN_ELIMIT;
+			goto considered_harmful;
+		}
+
+		e = nn_pushuserdata(C, pubUser);
+		if(e) goto considered_harmful;
+		
+		e = nn_pushuserdata(C, privUser);
+		if(e) goto considered_harmful;
+
+		req->returnCount = 2;
+		return NN_OK;
+
+	considered_harmful:
+		nn_free(ctx, pubKey, sizeof(*pubKey) + publen);
+		nn_free(ctx, privKey, sizeof(*privKey) + privlen);
+		if(pubUser >= 0) nn_freeUserdata(C, pubUser);
+		if(privUser >= 0) nn_freeUserdata(C, privUser);
+		return e;
+	}
+
+	if(method == NN_DATANUM_DESERIALIZEKEY) {
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		if(nn_checkboolean(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_VALIDATEKEY;
+		dreq.validatekey.buf = nn_tolstring(C, 0, &dreq.validatekey.len);
+		dreq.validatekey.isPublic = nn_toboolean(C, 1);
+		e = state->handler(&dreq);
+		if(e) return e;
 		req->returnCount = 1;
-		return nn_pushuserdata(C, nn_allocUserdata(C, key, req->compAddress));
+		size_t keylen = dreq.validatekey.len;
+		nn_DataKey *key = nn_alloc(ctx, sizeof(*key) + keylen);
+		if(key == NULL) return NN_ENOMEM;
+		key->isPublic = dreq.validatekey.isPublic;
+		key->bytelen = keylen;
+		nn_memcpy(key->bytes, dreq.validatekey.buf, key->bytelen);
+		int u = nn_allocUserdata(C, key, req->compAddress);
+		if(u < 0) {
+			nn_free(ctx, key, sizeof(*key) + keylen);
+			return NN_ELIMIT;
+		}
+		e = nn_pushuserdata(C, u);
+		if(e) {
+			nn_free(ctx, key, sizeof(*key) + keylen);
+			return e;
+		}
+		req->returnCount = 1;
+		return NN_OK;
+	}
+	
+	if(method == NN_DATANUM_ECDH) {
+		if(nn_checkuserdata(C, 0, "bad argument #1 (userdata expected)")) return NN_EBADCALL;
+		if(nn_checkuserdata(C, 1, "bad argument #2 (userdata expected)")) return NN_EBADCALL;
+
+		const nn_DataKey *privateKey = nn_unwrapUserdata(C, nn_touserdata(C, 0), req->compAddress);
+		if(privateKey == NULL) {
+			nn_setError(C, "invalid or foreign private key");
+			return NN_EBADCALL;
+		}
+		const nn_DataKey *publicKey = nn_unwrapUserdata(C, nn_touserdata(C, 1), req->compAddress);
+		if(publicKey == NULL) {
+			nn_setError(C, "invalid or foreign public key");
+			return NN_EBADCALL;
+		}
+
+		if(privateKey->isPublic == publicKey->isPublic) {
+			nn_setError(C, "illogical key pair");
+			return NN_EBADCALL;
+		}
+		if(privateKey->isPublic) {
+			const nn_DataKey *tmp = privateKey;
+			privateKey = publicKey;
+			publicKey = tmp;
+		}
+
+		dreq.action = NN_DATA_ECDH;
+		dreq.ecdh.privateKey = privateKey;
+		dreq.ecdh.publicKey = publicKey;
+		req->returnCount = 1;
+		return state->handler(&dreq);
+	}
+
+	if(method == NN_DATANUM_ECDSA) {
+		if(nn_getstacksize(C) == 2) {
+			// we gotta generate a signature cuz some dingus
+			// wanted everyone to know it was them who wrote
+			// this text smh
+			if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+			if(nn_checkuserdata(C, 1, "bad argument #2 (userdata expected)")) return NN_EBADCALL;
+
+			dreq.action = NN_DATA_ECDSA_SIGN;
+			dreq.sign.data = nn_tolstring(C, 0, &dreq.sign.len);
+			dreq.sign.privateKey = nn_unwrapUserdata(C, nn_touserdata(C, 1), req->compAddress);
+			if(dreq.sign.privateKey == NULL) {
+				nn_setError(C, "invalid or foreign private key");
+				return NN_EBADCALL;
+			}
+			if(dreq.sign.privateKey->isPublic) {
+				nn_setError(C, "signatures require a private key");
+				return NN_EBADCALL;
+			}
+			req->returnCount = 1;
+			return state->handler(&dreq);
+		}
+		// signature verification, cuz we do not trust the author label
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		if(nn_checkuserdata(C, 1, "bad argument #2 (userdata expected)")) return NN_EBADCALL;
+		if(nn_checkstring(C, 2, "bad argument #3 (string expected)")) return NN_EBADCALL;
+		dreq.action = NN_DATA_ECDSA_VERIFY;
+		dreq.checksig.data = nn_tolstring(C, 0, &dreq.checksig.datalen);
+		dreq.checksig.publicKey = nn_unwrapUserdata(C, nn_touserdata(C, 1), req->compAddress);
+		dreq.checksig.signature = nn_tolstring(C, 0, &dreq.checksig.siglen);
+		dreq.checksig.sigpassed = false;
+		if(dreq.checksig.publicKey == NULL) {
+			nn_setError(C, "invalid or foreign private key");
+			return NN_EBADCALL;
+		}
+		if(!dreq.checksig.publicKey->isPublic) {
+			nn_setError(C, "validaing signatures require a public key");
+			return NN_EBADCALL;
+		}
+		e = state->handler(&dreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, dreq.checksig.sigpassed);
 	}
 
 	if(C) nn_setError(C, "data: not implemented yet");
