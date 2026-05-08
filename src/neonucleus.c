@@ -6929,6 +6929,38 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 		return e;
 	}
 
+	if(method == NN_MODEMNUM_GETWAKE) {
+		char buf[NN_MAX_WAKEUPMSG];
+		mreq.action = NN_MODEM_GETWAKEMESSAGE;
+		mreq.getWake.buf = buf;
+		mreq.getWake.len = NN_MAX_WAKEUPMSG;
+		e = state->handler(&mreq);
+		if(e) return e;
+
+		req->returnCount = 2;
+		e = mreq.getWake.len == 0 ? nn_pushnull(C) : nn_pushlstring(C, buf, mreq.getWake.len);
+		if(e) return e;
+		return nn_pushbool(C, mreq.getWake.isFuzzy);
+	}
+	
+	if(method == NN_MODEMNUM_SETWAKE) {
+		e = nn_defaultstring(C, 0, "");
+		if(e) return e;
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		e = nn_defaultboolean(C, 1, false);
+		if(e) return e;
+		if(nn_checkboolean(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
+		mreq.action = NN_MODEM_SETWAKEMESSAGE;
+		mreq.setWake.buf = nn_tolstring(C, 0, &mreq.setWake.len);
+		if(mreq.setWake.len > NN_MAX_WAKEUPMSG) return NN_ELIMIT;
+		mreq.setWake.isFuzzy = nn_toboolean(C, 1);
+		e = state->handler(&mreq);
+		if(e) return e;
+
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+
 	if(C) nn_setError(C, "modem: not implemented yet");
 	return NN_EBADCALL;
 }

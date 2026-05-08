@@ -1986,6 +1986,46 @@ typedef struct nn_Tunnel {
 
 extern nn_Tunnel nn_defaultTunnel;
 
+typedef enum nn_TunnelAction {
+	// tunnel dropped
+	NN_TUNNEL_DROP,
+	// gets the channel, result should be pushed to the top of the stack
+	NN_TUNNEL_GETCHANNEL,
+	// send/broadcast a message
+	NN_TUNNEL_SEND,
+	// returns the wake message
+	NN_TUNNEL_GETWAKEMESSAGE,
+	// set the wake message
+	NN_TUNNEL_SETWAKEMESSAGE,
+} nn_TunnelAction;
+
+typedef struct nn_TunnelRequest {
+    nn_Context *ctx;
+    nn_Computer *computer;
+    void *state;
+    const nn_Tunnel *tunnel;
+	const char *localAddress;
+	nn_ModemAction action;
+	union {
+		// for send
+		const nn_EncodedNetworkContents *toSend;
+		struct {
+			char *buf;
+			size_t len;
+			bool isFuzzy;
+		} getWake;
+		struct {
+			const char *buf;
+			size_t len;
+			bool isFuzzy;
+		} setWake;
+	};
+} nn_TunnelRequest;
+
+typedef nn_Exit (nn_TunnelHandler)(nn_TunnelRequest *req);
+
+nn_Component *nn_createTunnel(nn_Universe *universe, const char *address, const nn_Tunnel *modem, void *state, nn_TunnelHandler *handler);
+
 // Colors and palettes.
 // Do note that the 
 

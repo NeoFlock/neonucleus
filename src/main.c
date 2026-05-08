@@ -169,6 +169,16 @@ static nn_Exit ne_modemBullshit(nn_ModemRequest *req) {
 		return nn_pushModemMessage(C, req->localAddress, nn_getComputerAddress(C), req->send.port, 0, req->send.contents);
 	}
 
+	if(req->action == NN_MODEM_GETWAKEMESSAGE) {
+		req->getWake.len = 0;
+		req->getWake.isFuzzy = false;
+		return NN_OK;
+	}
+	
+	if(req->action == NN_MODEM_SETWAKEMESSAGE) {
+		return NN_OK;
+	}
+
 	if(C) nn_setError(C, "ne: modem method not implemented");
 	return NN_EBADCALL;
 }
