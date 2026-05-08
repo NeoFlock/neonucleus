@@ -133,6 +133,36 @@ static nn_Exit ne_modemBullshit(nn_ModemRequest *req) {
 	if(req->action == NN_MODEM_DROP) {
 		return NN_OK;
 	}
+
+	if(req->action == NN_MODEM_ISOPEN) {
+		int port = req->isOpen.port;
+		req->isOpen.opened = port >= 1 && port <= 3;
+		return NN_OK;
+	}
+
+	if(req->action == NN_MODEM_OPEN) {
+		printf("pretend we opened port %zu\n", req->openPort);
+		return NN_OK;
+	}
+	
+	if(req->action == NN_MODEM_CLOSE) {
+		printf("pretend we closed ");
+		if(req->closePort == NN_CLOSEPORTS) {
+			printf("all ports\n");
+		} else {
+			printf("port %zu\n", req->closePort);
+		}
+		return NN_OK;
+	}
+	if(req->action == NN_MODEM_GETPORTS) {
+		// lies
+		req->getPorts.len = 3;
+		req->getPorts.activePorts[0] = 1;
+		req->getPorts.activePorts[1] = 2;
+		req->getPorts.activePorts[2] = 3;
+		return NN_OK;
+	}
+
 	if(req->action == NN_MODEM_SEND) {
 		req->send.strengthSent = req->modem->maxRange;
 		printf("Transmission from %s to %s (port %zu) of %zu bytes (%zu values)\n", req->localAddress, req->send.address == NULL ? "*" : req->send.address, req->send.port, req->send.contents->buflen, req->send.contents->valueCount);

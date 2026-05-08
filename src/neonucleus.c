@@ -153,6 +153,7 @@ void nn_ardestroy(nn_Arena *arena) {
 		nn_free(&arena->ctx, cur->memory, cur->cap);
 		nn_free(&arena->ctx, cur, sizeof(*cur));
 	}
+	arena->block = NULL;
 }
 
 nn_ArenaBlock *nn_arallocblock(nn_Context *ctx, size_t cap) {
@@ -4124,65 +4125,10 @@ nn_Exit nn_pushModemMessage(nn_Computer *C, const char *modemAddress, const char
 	return nn_pushSignal(C, signalVals);
 }
 
-nn_Computer *nn_fromWrappedComputer(nn_Component *component) {
-	if(nn_strcmp(component->internalID, "NN_WRAPPEDCOMPUTER") == 0) {
-		return component->state;
-	}
-	return NULL;
-}
-
 nn_Exit nn_transferErrorFrom(nn_Exit exit, nn_Computer *from, nn_Computer *to) {
 	const char *err = nn_getError(from);
 	if(err != NULL) nn_setError(to, err);
 	return exit;
-}
-
-typedef enum nn_CompNum {
-	NN_COMPNUM_START,
-	NN_COMPNUM_STOP,
-	NN_COMPNUM_ISRUNNING,
-	NN_COMPNUM_GETDEVICEINFO,
-	NN_COMPNUM_CRASH,
-	NN_COMPNUM_GETARCH,
-	NN_COMPNUM_ISROBOT,
-	NN_COMPNUM_BEEP,
-
-	NN_COMPNUM_COUNT,
-} nn_CompNum;
-
-static nn_Exit nn_computerHandler(nn_ComponentRequest *req) {
-	if(req->action == NN_COMP_DROP) return NN_OK;
-	if(req->action == NN_COMP_USERDATA) return NN_OK;
-	nn_Computer *src = req->computer;
-	if(src) nn_setError(src, "computer: not implemented yet");
-	return NN_EBADCALL;
-}
-
-nn_Component *nn_wrapComputer(nn_Computer *computer) {
-	const nn_Method methods[NN_COMPNUM_COUNT] = {
-		[NN_COMPNUM_START] = {"start", "function(): boolean - Attempts to turn on the computer, will return false if it is already on or it failed", NN_INDIRECT},	
-		[NN_COMPNUM_STOP] = {"stop", "function(): boolean - Attempts to turn ooff the computer, will return false if it is already off or it failed", NN_INDIRECT},	
-		[NN_COMPNUM_ISRUNNING] = {"isRunning", "function(): boolean - Returns whether it is running or not", NN_INDIRECT},	
-		[NN_COMPNUM_GETDEVICEINFO] = {"getDeviceInfo", "function(): table<string, table<string, string>> - Returns a table of device information for the computer", NN_INDIRECT},	
-		[NN_COMPNUM_CRASH] = {"crash", "function(error: string) - Will forcefully crash the computer, if it is running", NN_INDIRECT},	
-		[NN_COMPNUM_GETARCH] = {"getArchitecture", "function(): string - Get the architecture of the computer", NN_INDIRECT},	
-		[NN_COMPNUM_ISROBOT] = {"isRobot", "function(): boolean - Returns whether the computer is a robot", NN_INDIRECT},	
-		[NN_COMPNUM_BEEP] = {"beep", "function(frequency?: number, duration?: number, volume?: number) - Makes the computer make a beep sound", NN_INDIRECT},	
-	};
-
-	nn_Component *c = nn_createComponent(computer->universe, computer->address, "computer");
-	if(c == NULL) return NULL;
-	nn_setComponentState(c, computer);
-	nn_setComponentHandler(c, nn_computerHandler);
-	if(nn_setComponentTypeID(c, "NN_WRAPPEDCOMPUTER")) {
-		nn_dropComponent(c);
-		return NULL;
-	}
-	if(nn_setComponentMethodsArray(c, methods, NN_COMPNUM_COUNT)) {
-		nn_dropComponent(c);
-		return NULL;
-	}
-	return c;
 }
 
 typedef enum nn_EENum {
@@ -4827,7 +4773,7 @@ bool nn_mergeFilesystems(nn_Filesystem *merged, const nn_Filesystem *fs, size_t 
 	for(size_t i = 1; i < len; i++) {
 		merged->readsPerTick += fs[i].readsPerTick;
 		merged->writesPerTick += fs[i].writesPerTick;
-		if(merged->maxReadSize < fs[i].maxReadSize) merged->maxReadSize = fs[i].maxReadSize;
+		if(merged->maxReadSize > fs[i].maxReadSize) merged->maxReadSize = fs[i].maxReadSize;
 		merged->dataEnergyCost += fs[i].dataEnergyCost;
 		merged->spaceTotal += fs[i].spaceTotal;
 	}
@@ -6740,6 +6686,7 @@ typedef enum nn_ModemNum {
 	NN_MODEMNUM_ISWIRELESS,
 	NN_MODEMNUM_MAXPACKETSIZE,
 	NN_MODEMNUM_MAXVALUES,
+	NN_MODEMNUM_MAXPORTS,
 
 	NN_MODEMNUM_GETSTRENGTH,
 	NN_MODEMNUM_SETSTRENGTH,
@@ -6814,6 +6761,15 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 		req->returnCount = 1;
 		return nn_pushinteger(C, state->modem.maxValues);
 	}
+	if(method == NN_MODEMNUM_MAXPORTS) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, state->modem.maxOpenPorts);
+	}
+	if(method == NN_MODEMNUM_MAXSTRENGTH) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, state->modem.maxRange);
+	}
+
 	if(method == NN_MODEMNUM_GETSTRENGTH) {
 		mreq.action = NN_MODEM_GETSTRENGTH;
 		e = state->handler(&mreq);
@@ -6821,9 +6777,89 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 		req->returnCount = 1;
 		return nn_pushinteger(C, mreq.strength);
 	}	
-	if(method == NN_MODEMNUM_MAXSTRENGTH) {
+	if(method == NN_MODEMNUM_SETSTRENGTH) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		intptr_t strength = nn_tointeger(C, 0);
+		if(strength < 0) strength = 0;
+		if(strength > state->modem.maxRange) strength = state->modem.maxRange;
+		mreq.action = NN_MODEM_SETSTRENGTH;
+		mreq.strength = strength;
+		e = state->handler(&mreq);
+		if(e) return e;
 		req->returnCount = 1;
-		return nn_pushinteger(C, state->modem.maxRange);
+		// allow controller to change it
+		return nn_pushinteger(C, mreq.strength);
+	}
+
+	if(method == NN_MODEMNUM_ISOPEN) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		intptr_t port = nn_tointeger(C, 0);
+		if(port < 1 || port > NN_MAX_PORT) {
+			nn_setError(C, "invalid port index");
+			return NN_EBADCALL;
+		}
+		mreq.action = NN_MODEM_ISOPEN;
+		mreq.isOpen.port = port;
+		mreq.isOpen.opened = false;
+		e = state->handler(&mreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, mreq.isOpen.opened);
+	}
+	if(method == NN_MODEMNUM_OPEN) {
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		intptr_t port = nn_tointeger(C, 0);
+		if(port < 1 || port > NN_MAX_PORT) {
+			nn_setError(C, "invalid port index");
+			return NN_EBADCALL;
+		}
+		mreq.action = NN_MODEM_OPEN;
+		mreq.openPort = port;
+		e = state->handler(&mreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_MODEMNUM_CLOSE) {
+		e = nn_defaultinteger(C, 0, NN_CLOSEPORTS);
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		intptr_t port = nn_tointeger(C, 0);
+		if((port < 1 || port > NN_MAX_PORT) && port != NN_CLOSEPORTS) {
+			nn_setError(C, "invalid port index");
+			return NN_EBADCALL;
+		}
+		mreq.action = NN_MODEM_CLOSE;
+		mreq.closePort = port;
+		e = state->handler(&mreq);
+		if(e) return e;
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+	if(method == NN_MODEMNUM_GETPORTS) {
+		e = nn_defaultinteger(C, 0, NN_CLOSEPORTS);
+		if(nn_checkinteger(C, 0, "bad argument #1 (integer expected)")) return NN_EBADCALL;
+		intptr_t port = nn_tointeger(C, 0);
+		if((port < 1 || port > NN_MAX_PORT) && port != NN_CLOSEPORTS) {
+			nn_setError(C, "invalid port index");
+			return NN_EBADCALL;
+		}
+		mreq.action = NN_MODEM_GETPORTS;
+		size_t cap = state->modem.maxOpenPorts;
+		unsigned short *ports = nn_alloc(ctx, sizeof(unsigned short) * cap);
+		if(ports == NULL) return NN_ENOMEM;
+		mreq.getPorts.activePorts = ports;
+		mreq.getPorts.len = cap;
+		e = state->handler(&mreq);
+		if(e) goto fail;
+		req->returnCount = 1;
+		for(size_t i = 0; i < mreq.getPorts.len; i++) {
+			e = nn_pushinteger(C, mreq.getPorts.activePorts[i]);
+			if(e) goto fail;
+		}
+		return nn_pusharraytable(C, mreq.getPorts.len);
+	fail:
+		nn_free(ctx, ports, sizeof(unsigned short) * cap);
+		return e;
 	}
 
 	if(method == NN_MODEMNUM_BROADCAST) {
@@ -6907,6 +6943,7 @@ nn_Component *nn_createModem(nn_Universe *universe, const char *address, const n
 		[NN_MODEMNUM_ISWIRELESS] = {"isWireless", "function(): boolean - Returns whether the modem supports wireless connectivity", NN_DIRECT},
 		[NN_MODEMNUM_MAXPACKETSIZE] = {"maxPacketSize", "function(): integer - Returns the maximum logical packet size", NN_DIRECT},
 		[NN_MODEMNUM_MAXVALUES] = {"maxValues", "function(): integer - Returns the maximum amount of values", NN_DIRECT},
+		[NN_MODEMNUM_MAXPORTS] = {"maxOpenPorts", "function(): integer - Returns the maximum amount of ports that can be simultaneously open", NN_DIRECT},
 
 		[NN_MODEMNUM_GETSTRENGTH] = {"getStrength", "function(): integer - Returns the range of wireless message", NN_DIRECT},
 		[NN_MODEMNUM_SETSTRENGTH] = {"setStrength", "function(strength: integer): integer - Changes the wireless signal strength", NN_INDIRECT},
@@ -6959,7 +6996,7 @@ nn_Modem nn_defaultWirelessModems[2] = {
 		.maxRange = 16,
 		.maxValues = 8,
 		.maxPacketSize = 8192,
-		.maxOpenPorts = 16,
+		.maxOpenPorts = 1,
 		.isWired = true,
 		.basePacketCost = 0.1,
 		.fullPacketCost = 0.5,

@@ -1,12 +1,11 @@
-# For MVP functionality
+# To improve the API
 
-- make `computer` component use callbacks
 - finish tmpfs (rework the whole thing)
 
 # To re-evaluate
 
-- Exposing the internal non-resizing hashmap implementation.
-- More stack manipulation functions to allow libraries to have better APIs. (rotate)
+- Make the hashmap growing/shrinking to save on memory.
+- Exposing the internal hashmap implementation.
 - Having a copy of the context stored directly in requests instead of having to use getComputerContext, as it simplifies the APIs and allows them
 to be made more portable.
 - Exposing more internal functions that may be useful to the user to prevent pointless rewriting and duplicate machine code.
@@ -15,12 +14,11 @@ to be made more portable.
 
 Not everything OC has (as a few of them are really MC-centered) but most of it.
 
+- `computer` component
 - `data` component (note: deflate, sha256 and aes impl are callbacks, to keep NN small and simple)
-- `modem` component
 - `tunnel` component
 - `internet` component (note: NN does not handle internet requests, those are up to the emulator)
 - `relay` component (note: OCDoc still refers to it as `access_point`)
-- `computer` component
 - `geolyzer` component
 - `net_splitter` component
 - `redstone` component
@@ -48,11 +46,11 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 - `serial` component, for serial communications with other devices (see Serial)
 - `iron_noteblock` component
 - `colorful_lamp` component
-- OpenSolidState flash storage
 
-# To make it good
+# To make it good (after API is stable)
 
 - make more stuff const if it can be. Gotta help out the optimizer
+- put a bunch of internal-only functions as fastcall
 - write a bunch of unit tests to ensure the public API works correctly
 - ensure OOMs are recoverable
 - do a hude audit for bugs at some point
@@ -60,9 +58,11 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 # To make it fast
 
 NOTE: we're mostly bottlenecked by the architecture (typically a Lua VM) and the intentional bottlenecking from call costs.
+breaking changes are allowed but like try to avoid them.
 
 - make signals use a circular buffer instead of a simple array
 - use more arenas if possible
+- reduce pointer nesting, not only for simplicity, but so we spend less time reading from main memory
 
 # Component extensions
 
@@ -143,9 +143,9 @@ The `vt` component has:
 - `getColor(index: integer): integer`, to get a color
 - `setColor(index: integer, color: integer): integer`, sets a color and returns the old one. Characters who's colors were table indexes would be updated
 - `setForeground(color: integer, fromTable?: boolean)`, sets a foreground color, optionally as a table index
-- `getForeground(): integer, integer?`, returns what the foreground color was, and the palette index if applicable
+- `getForeground(): integer, integer?`, returns what the foreground color was, and the table index if applicable
 - `setBackground(color: integer, fromTable?: boolean)`, sets a background color, optionally as a table index
-- `getBackground(): integer, integer?`, returns what the background color was, and the palette index if applicable
+- `getBackground(): integer, integer?`, returns what the background color was, and the table index if applicable
 - `set(idx: integer, data: string): boolean`, to write to the screen's unicode buffer. While `data` is UTF-8, the buffer stores codepoints. Pretend
 the terminal does an internal conversion from UTF-8 to UTF-32
 - `getColorOf(idx: integer): integer, integer, integer?, integer?`, to get the foreground color, background color, and palette indexes of a tile
@@ -160,10 +160,11 @@ If `x` and `y` are 0-indexed, then `x + y * width` is the index in the buffer
 
 The `cd_drive` component has:
 - `hasDisk(): boolean`, to check whether a disk is in the drive
-- `isReadonly(): boolean`, to check where the drive is read-only (often is)
+- `isReadonly(): boolean`, to check whether the drive is read-only (often is)
 - `isDiskErasable(): boolean`, to check whether the disk is erasable, which requires support from both the disk and the drive
+- `getCapacity(): integer`, gets the capacity of the disk
 - `tell(): integer`, current 0-indexed byte offset into the disk
-- `seekTo(position: integer): boolean`, seek to a current 0-indexed byte offset in the disk
+- `seekTo(position: integer): boolean`, seek to a 0-indexed byte offset in the disk
 - `moveBy(delta: integer): boolean`, move the current position by some amount of bytes (+/-), can wrap around
 - `maxReadSize(): integer`, to return the maximum size of a read
 - `read(len: integer): string`, to read some data. Does wrap around
@@ -186,7 +187,9 @@ Tape has high capacity, CDs do not.
 
 ### CDs vs unmanaged floppies
 
-CDs are slower for random reads as they have no cache.
+CDs require special software support, while floppies appear as just smaller HDDs.
+Unmanaged floppies are always erasable, while CDs may not be.
+CDs are typically lower capacity.
 
 ## LED
 

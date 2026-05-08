@@ -1040,16 +1040,7 @@ nn_Exit nn_pushSignal(nn_Computer *computer, size_t valueCount);
 // If there is no signal, it returns EBADSTATE
 nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 
-// The high-level API of the built-in component classes.
-// These components still make no assumptions about the OS, and still require handlers to connect them to the outside work.
-
-// Wrapping a computer as a component.
-// It's a new instance each time.
-// The computer MUST NOT be dropped before this component is fully gone.
-
 nn_Exit nn_transferErrorFrom(nn_Exit exit, nn_Computer *from, nn_Computer *to);
-nn_Computer *nn_fromWrappedComputer(nn_Component *component);
-nn_Component *nn_wrapComputer(nn_Computer *computer);
 
 // EEPROM class
 
@@ -1949,7 +1940,7 @@ typedef struct nn_ModemRequest {
 		size_t closePort;
 		struct {
 			// store the port numbers in this buffer
-			size_t *activePorts;
+			unsigned short *activePorts;
 			// the amount of active ports.
 			// the initial value is the capacity of activePorts
 			size_t len;
