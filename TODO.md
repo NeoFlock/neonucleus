@@ -15,7 +15,6 @@ to be made more portable.
 Not everything OC has (as a few of them are really MC-centered) but most of it.
 
 - `computer` component
-- `data` component (note: deflate, sha256 and aes impl are callbacks, to keep NN small and simple)
 - `tunnel` component
 - `internet` component (note: NN does not handle internet requests, those are up to the emulator)
 - `relay` component (note: OCDoc still refers to it as `access_point`)
