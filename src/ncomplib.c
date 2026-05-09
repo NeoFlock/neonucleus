@@ -3297,6 +3297,43 @@ void ncl_setScreenResolution(ncl_ScreenState *state, size_t width, size_t height
 	state->viewportHeight = height;
 }
 
+void ncl_getScreenMaxResolution(const ncl_ScreenState *state, size_t *width, size_t *height) {
+	*width = state->conf.maxWidth;
+	*height = state->conf.maxHeight;
+}
+
+nn_Exit ncl_setScreenMaxResolution(ncl_ScreenState *state, size_t width, size_t height) {
+	ncl_ScreenPixel *pixels = nn_alloc(state->ctx, sizeof(ncl_ScreenPixel) * width * height);
+	if(pixels == NULL) return NN_ENOMEM;
+
+	for(size_t i = 0; i < width*height; i++) {
+		pixels[i].codepoint = ' ';
+		pixels[i].realFg = 0xFFFFFF;
+		pixels[i].realBg = 0xFFFFFF;
+		pixels[i].storedFg = 0xFFFFFF;
+		pixels[i].storedBg = 0x000000;
+	}
+	
+	if(state->width > width) state->width = width;
+	if(state->height > height) state->height = height;
+	if(state->viewportWidth > width) state->viewportWidth = width;
+	if(state->viewportHeight > height) state->viewportHeight = height;
+
+	for(size_t y = 0; y < state->height; y++) {
+		for(size_t x = 0; x < state->width; x++) {
+			ncl_ScreenPixel p = ncl_getRealScreenPixel(state, x, y);
+			pixels[y * width + x] = p;
+		}
+	}
+
+	nn_free(state->ctx, state->pixels, sizeof(ncl_ScreenPixel) * state->conf.maxWidth * state->conf.maxHeight);
+	state->conf.maxWidth = width;
+	state->conf.maxHeight = height;
+	state->pixels = pixels;
+	ncl_recomputeScreen(state);
+	return NN_OK;
+}
+
 void ncl_getScreenViewport(const ncl_ScreenState *state, size_t *width, size_t *height) {
 	*width = state->viewportWidth;
 	*height = state->viewportHeight;

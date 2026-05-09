@@ -333,6 +333,8 @@ void ncl_unlockScreen(ncl_ScreenState *state);
 void ncl_resetScreen(ncl_ScreenState *state);
 void ncl_getScreenResolution(const ncl_ScreenState *state, size_t *width, size_t *height);
 void ncl_setScreenResolution(ncl_ScreenState *state, size_t width, size_t height);
+void ncl_getScreenMaxResolution(const ncl_ScreenState *state, size_t *width, size_t *height);
+nn_Exit ncl_setScreenMaxResolution(ncl_ScreenState *state, size_t width, size_t height);
 void ncl_getScreenViewport(const ncl_ScreenState *state, size_t *width, size_t *height);
 void ncl_setScreenViewport(ncl_ScreenState *state, size_t width, size_t height);
 ncl_Pixel ncl_getScreenPixel(const ncl_ScreenState *state, int x, int y);

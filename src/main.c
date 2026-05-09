@@ -654,12 +654,16 @@ int main(int argc, char **argv) {
 	double wattage = 0;
 
 	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
-	nn_Component *gpuCard = ncl_createGPU(u, NULL, &nn_defaultGPUs[3]);
+	nn_GPU gpuConf = nn_defaultGPUs[3];
+	gpuConf.maxWidth = 1920;
+	gpuConf.maxHeight = 1080;
+	nn_Component *gpuCard = ncl_createGPU(u, NULL, &gpuConf);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
     ncl_ScreenState *scrstate = nn_getComponentState(screen);
     ncl_mountKeyboard(scrstate, "mainKB");
+	ncl_setScreenMaxResolution(scrstate, 320, 90);
 
 	// we assume server basically
 	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, nn_defaultComponentLimits[3] * 4, 256);
