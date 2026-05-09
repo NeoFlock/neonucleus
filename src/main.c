@@ -191,8 +191,9 @@ static nn_Exit ne_modemBullshit(nn_ModemRequest *req) {
 
 	if(req->action == NN_MODEM_SEND) {
 		req->send.strengthSent = req->modem->maxRange;
-		printf("Transmission from %s to %s (port %zu) of %zu bytes (%zu values)\n", req->localAddress, req->send.address == NULL ? "*" : req->send.address, req->send.port, req->send.contents->buflen, req->send.contents->valueCount);
-		return nn_pushModemMessage(C, req->localAddress, nn_getComputerAddress(C), req->send.port, 0, req->send.contents);
+		const char *dest = req->send.address == NULL ? "*" : req->send.address;
+		printf("Transmission from %s to %s (port %zu) of %zu bytes (%zu values)\n", req->localAddress, dest, req->send.port, req->send.contents->buflen, req->send.contents->valueCount);
+		return nn_pushModemMessage(C, req->localAddress, dest, req->send.port, 0, req->send.contents);
 	}
 
 	if(req->action == NN_MODEM_GETWAKEMESSAGE) {
@@ -202,6 +203,36 @@ static nn_Exit ne_modemBullshit(nn_ModemRequest *req) {
 	}
 	
 	if(req->action == NN_MODEM_SETWAKEMESSAGE) {
+		return NN_OK;
+	}
+
+	if(C) nn_setError(C, "ne: modem method not implemented");
+	return NN_EBADCALL;
+}
+
+static nn_Exit ne_tunnelBullshit(nn_TunnelRequest *req) {
+	nn_Computer *C = req->computer;
+
+	if(req->action == NN_TUNNEL_DROP) {
+		return NN_OK;
+	}
+	
+	if(req->action == NN_TUNNEL_GETCHANNEL) {
+		return nn_pushstring(C, "creative");
+	}
+
+	if(req->action == NN_TUNNEL_SEND) {
+		printf("Transmission from tunnel %s of %zu bytes (%zu values)\n", req->localAddress, req->toSend->buflen, req->toSend->valueCount);
+		return nn_pushModemMessage(C, req->localAddress, nn_getComputerAddress(C), NN_TUNNEL_PORT, 0, req->toSend);
+	}
+
+	if(req->action == NN_TUNNEL_GETWAKEMESSAGE) {
+		req->getWake.len = 0;
+		req->getWake.isFuzzy = false;
+		return NN_OK;
+	}
+	
+	if(req->action == NN_TUNNEL_SETWAKEMESSAGE) {
 		return NN_OK;
 	}
 
@@ -556,6 +587,7 @@ int main(int argc, char **argv) {
 
 	nn_Component *dataCard = nn_createDataCard(u, NULL, &nn_defaultDataCards[2], NULL, ne_dataBullshit);
 	nn_Component *modem = nn_createModem(u, NULL, &nn_defaultWirelessModems[1], NULL, ne_modemBullshit);
+	nn_Component *tunnel = nn_createTunnel(u, NULL, &nn_defaultTunnel, NULL, ne_tunnelBullshit);
 
 	char *eepromCode = (char *)minBIOS;
 	size_t eepromSize = strlen(minBIOS);
@@ -709,6 +741,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, testFlash, 5, false);
 	nn_mountComponent(c, dataCard, 6, false);
 	nn_mountComponent(c, modem, 7, false);
+	nn_mountComponent(c, tunnel, 8, false);
 	int ltx = 0, lty = 0;
 	double scrollBuf = 0;
 	double tickTime = 0;
@@ -887,7 +920,6 @@ int main(int argc, char **argv) {
 			if(noIdle) nn_resetIdleTime(c);
 			// OC computers consume 0.5W when running, 0.05W when running but idle
 			double normalPowerUsage = 0.5, idlePowerUsage = 0.05;
-			bool isIdle = false;
 			nn_Exit e = nn_tick(c);
 			tickTime = GetTime() - tickNow;
 			if(tickTime < tickDelay) {
@@ -947,6 +979,7 @@ cleanup:;
 	nn_dropComponent(keyboard);
 	nn_dropComponent(dataCard);
 	nn_dropComponent(modem);
+	nn_dropComponent(tunnel);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);

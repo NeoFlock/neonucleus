@@ -108,9 +108,9 @@ void *_alloca(size_t);
 // maximum size of an address.
 // This only matters in places where an address is returned through a component, as it is the amount of space to allocate for the response.
 // Past this there would be a truncation which would invalidate the address.
-// However, 256 is unrealistically long, as UUIDv4 only needs 36.
+// However, 64 is unrealistically long, as UUIDv4 only needs 36.
 // Please, do not go above this.
-#define NN_MAX_ADDRESS 256
+#define NN_MAX_ADDRESS 64
 // the port used by tunnel cards. This port is invalid for modems.
 #define NN_TUNNEL_PORT 0
 // maximum amount of users a computer can have
@@ -1042,6 +1042,258 @@ nn_Exit nn_popSignal(nn_Computer *computer, size_t *valueCount);
 
 nn_Exit nn_transferErrorFrom(nn_Exit exit, nn_Computer *from, nn_Computer *to);
 
+// Signal helpers
+
+// common mouse buttons, not an exhaustive list
+#define NN_BUTTON_LEFT 0
+#define NN_BUTTON_RIGHT 1
+#define NN_BUTTON_MIDDLE 2
+
+// OC keycodes
+// taken from https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/resources/assets/opencomputers/loot/openos/lib/core/full_keyboard.lua
+#define NN_KEY_UNKNOWN 0
+#define NN_KEY_1 0x02
+#define NN_KEY_2 0x03
+#define NN_KEY_3 0x04
+#define NN_KEY_4 0x05
+#define NN_KEY_5 0x06
+#define NN_KEY_6 0x07
+#define NN_KEY_7 0x08
+#define NN_KEY_8 0x09
+#define NN_KEY_9 0x0A
+#define NN_KEY_0 0x0B
+#define NN_KEY_A 0x1E
+#define NN_KEY_B 0x30
+#define NN_KEY_C 0x2E
+#define NN_KEY_D 0x20
+#define NN_KEY_E 0x12
+#define NN_KEY_F 0x21
+#define NN_KEY_G 0x22
+#define NN_KEY_H 0x23
+#define NN_KEY_I 0x17
+#define NN_KEY_J 0x24
+#define NN_KEY_K 0x25
+#define NN_KEY_L 0x26
+#define NN_KEY_M 0x32
+#define NN_KEY_N 0x31
+#define NN_KEY_O 0x18
+#define NN_KEY_P 0x19
+#define NN_KEY_Q 0x10
+#define NN_KEY_R 0x13
+#define NN_KEY_S 0x1F
+#define NN_KEY_T 0x14
+#define NN_KEY_U 0x16
+#define NN_KEY_V 0x2F
+#define NN_KEY_W 0x11
+#define NN_KEY_X 0x2D
+#define NN_KEY_Y 0x15
+#define NN_KEY_Z 0x2C
+
+#define NN_KEY_APOSTROPHE 0x28
+#define NN_KEY_AT 0x91
+#define NN_KEY_BACK 0x0E
+#define NN_KEY_BACKSLASH 0x2B
+// caps-lock
+#define NN_KEY_CAPITAL 0x3A
+#define NN_KEY_COLON 0x92
+#define NN_KEY_COMMA 0x33
+#define NN_KEY_ENTER 0x1C
+#define NN_KEY_EQUALS 0x0D
+// accent grave
+#define NN_KEY_GRAVE 0x29
+#define NN_KEY_LBRACKET 0x1A
+#define NN_KEY_LCONTROL 0x1D
+// left alt
+#define NN_KEY_LMENU 0x38
+#define NN_KEY_LSHIFT 0x2A
+#define NN_KEY_MINUS 0x0C
+#define NN_KEY_NUMLOCK 0x45
+#define NN_KEY_PAUSE 0xC5
+#define NN_KEY_PERIOD 0x34
+#define NN_KEY_RBRACKET 0x1B
+#define NN_KEY_RCONTROL 0x9D
+// right alt
+#define NN_KEY_RMENU 0xB8
+#define NN_KEY_RSHIFT 0x36
+// scroll lock
+#define NN_KEY_SCROLL 0x46
+#define NN_KEY_SEMICOLON 0x27
+#define NN_KEY_SLASH 0x35
+#define NN_KEY_SPACE 0x39
+#define NN_KEY_STOP 0x95
+#define NN_KEY_TAB 0x0F
+#define NN_KEY_UNDERLINE 0x93
+
+#define NN_KEY_UP 0xC8
+#define NN_KEY_DOWN 0xD0
+#define NN_KEY_LEFT 0xCB
+#define NN_KEY_RIGHT 0xCD
+#define NN_KEY_HOME 0xC7
+#define NN_KEY_END 0xCF
+#define NN_KEY_PAGEUP 0xC9
+#define NN_KEY_PAGEDOWN 0xD1
+#define NN_KEY_INSERT 0xD2
+#define NN_KEY_DELETE 0xD3
+
+#define NN_KEY_F1 0x3B
+#define NN_KEY_F2 0x3C
+#define NN_KEY_F3 0x3D
+#define NN_KEY_F4 0x3E
+#define NN_KEY_F5 0x3F
+#define NN_KEY_F6 0x40
+#define NN_KEY_F7 0x41
+#define NN_KEY_F8 0x42
+#define NN_KEY_F9 0x43
+#define NN_KEY_F10 0x44
+#define NN_KEY_F11 0x57
+#define NN_KEY_F12 0x58
+#define NN_KEY_F13 0x64
+#define NN_KEY_F14 0x65
+#define NN_KEY_F15 0x66
+#define NN_KEY_F16 0x67
+#define NN_KEY_F17 0x68
+#define NN_KEY_F18 0x69
+#define NN_KEY_F19 0x71
+
+#define NN_KEY_KANA 0x70
+#define NN_KEY_KANJI 0x94
+#define NN_KEY_CONVERT 0x79
+#define NN_KEY_NOCONVERT 0x7B
+#define NN_KEY_YEN 0x7D
+#define NN_KEY_CIRCUMFLEX 0x90
+#define NN_KEY_AX 0x96
+
+#define NN_KEY_NUMPAD0 0x52
+#define NN_KEY_NUMPAD1 0x4F
+#define NN_KEY_NUMPAD2 0x50
+#define NN_KEY_NUMPAD3 0x51
+#define NN_KEY_NUMPAD4 0x4B
+#define NN_KEY_NUMPAD5 0x4C
+#define NN_KEY_NUMPAD6 0x4D
+#define NN_KEY_NUMPAD7 0x47
+#define NN_KEY_NUMPAD8 0x48
+#define NN_KEY_NUMPAD9 0x49
+#define NN_KEY_NUMPADMUL 0x37
+#define NN_KEY_NUMPADDIV 0xB5
+#define NN_KEY_NUMPADSUB 0x4A
+#define NN_KEY_NUMPADADD 0x4E
+#define NN_KEY_NUMPADDECIMAL 0x53
+#define NN_KEY_NUMPADCOMMA 0xB3
+#define NN_KEY_NUMPADENTER 0x9C
+#define NN_KEY_NUMPADEQUALS 0x8D
+
+// the bottom side, can also be downwards / negative y
+#define NN_SIDE_BOTTOM 0
+// the top side, can also be upwards / positive y
+#define NN_SIDE_TOP 1
+// backwards, can also be north / negative z
+#define NN_SIDE_BACK 2
+// forwards, can also be south / positive z
+#define NN_SIDE_FRONT 3
+// to the right, can also be west / negative x
+#define NN_SIDE_RIGHT 4
+// to the left, can also be east / positive x
+#define NN_SIDE_LEFT 5
+// absolutely no clue
+#define NN_SIDE_UNKNOWN 6
+
+// pushes a screen_resized signal
+nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight);
+// pushes a touch signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushTouch(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a drag signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushDrag(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a drop signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
+// pushes a scroll signal
+// A positive direction usually means up, a negative one usually means down.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushScroll(nn_Computer *computer, const char *screenAddress, double x, double y, double direction, const char *player);
+// pushes a walk signal
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushWalk(nn_Computer *computer, const char *screenAddress, double x, double y, const char *player);
+
+// pushes a key_down event
+// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
+// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
+// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushKeyDown(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
+// pushes a key_up event
+// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
+// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
+// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushKeyUp(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
+// pushes a clipboard event
+// clipboard should be a NULL-terminated string.
+// NN does no truncation of the contents, but it is best to limit it.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, const char *player);
+// pushes a clipboard event
+// len is the length of the clipboard.
+// NN does no truncation of the contents, but it is best to limit it.
+// The signal is checked, as in, the player must be a user of the computer if users are defined.
+nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, size_t len, const char *player);
+
+// pushes a redstone_changed signal.
+// side is the side of the device the redstone changed on
+// oldValue is the old value
+// newValue is the new value, must not be equal to oldValue
+// color is the color of the redstone signal
+// if color < 0, it is set to null
+nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddress, int side, int oldValue, int newValue, int color);
+
+// pushes a motion signal.
+// Do note that it is meant to only be sent if the entity has a direct line of sight and if |(relX, relY, relZ)| >= sensitivity.
+// This signal does *not* check if the motion sensor actually is sensitive enough to detect it, so make sure to check it yourself.
+// relX, relY and relZ are the relative postion in 3D Cartesian space.
+// entityName can be NULL if the entity has no name.
+nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName);
+
+// A buffer with encoded values
+typedef struct nn_EncodedNetworkContents {
+	nn_Context *ctx;
+	char *buf;
+	size_t buflen;
+	size_t valueCount;
+} nn_EncodedNetworkContents;
+
+// applies basic encoding to a network message. This encoding has a header, and thus should remain backwards-compatible.
+// The encoding serves 2 purposes:
+// 1. Prevent shared memory between computers. Values do not use atomic reference counting, and thus this could lead to UAF or memory leaks.
+// 2. Simplify implementing packet queues, which should be used in relays. The lack of access to raw values would force implementers to use
+// an encoding anyways.
+// This only encodes the contents, not the sender, hops, or other metadata which may be needed in the queue.
+// This does not pop the values, in case you need them afterwards. If you don't just call nn_popn().
+// The encoding is architecture-dependent, so be careful with storing it on-disk.
+// Do note that the architecture-dependent parts are sizeof(double), sizeof(size_t) and endianness.
+// The encoding is simple:
+// - 0x00 for null
+// - 0x01 for true
+// - 0x02 for false
+// - 0x03 + <bytes of double> for a number
+// - 0x04 + <bytes of size_t length> + <bytes> for a string
+// - 0x05 + <bytes of size_t id> for resource
+// - 0x06 + <bytes of size_t length> + <values> for a table
+nn_Exit nn_encodeNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents, size_t valueCount);
+// Allocates a copy of [buf] and stores it in contents.
+// This is useful for copying network contents, either from storage or from another buffer.
+nn_Exit nn_copyNetworkContents(nn_Context *ctx, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount);
+void nn_dropNetworkContents(nn_EncodedNetworkContents *contents);
+// Pushes the encoded contents onto the stack.
+// This does not drop the network contents.
+nn_Exit nn_pushNetworkContents(nn_Computer *computer, const nn_EncodedNetworkContents *contents);
+
+// push a modem_message, can be queued by both modems and tunnels.
+// This does not check if the modem has that port open, so make sure to check it yourself.
+// It does not check if the distance is within the modem's range, if it is wireless, and thus does not send it.
+// Note that relays should change the sender.
+nn_Exit nn_pushModemMessage(nn_Computer *computer, const char *modemAddress, const char *sender, int port, double distance, const nn_EncodedNetworkContents *contents);
+
 // EEPROM class
 
 // reads and writes are always 1/1
@@ -1923,14 +2175,6 @@ typedef struct nn_Modem {
 	double costPerStrength;
 } nn_Modem;
 
-// A buffer with encoded values
-typedef struct nn_EncodedNetworkContents {
-	nn_Context *ctx;
-	char *buf;
-	size_t buflen;
-	size_t valueCount;
-} nn_EncodedNetworkContents;
-
 extern nn_Modem nn_defaultWiredModem;
 extern nn_Modem nn_defaultWirelessModems[2];
 
@@ -2039,7 +2283,7 @@ typedef struct nn_TunnelRequest {
     void *state;
     const nn_Tunnel *tunnel;
 	const char *localAddress;
-	nn_ModemAction action;
+	nn_TunnelAction action;
 	union {
 		// for send
 		const nn_EncodedNetworkContents *toSend;
@@ -2096,250 +2340,6 @@ int nn_mapDepth(int color, int depth);
 // if a depth is valid as well.
 // Valid depths are 1, 2, 3, 4, 8, 16 and 24.
 const char *nn_depthName(int depth);
-
-// Signal helpers
-
-// common mouse buttons, not an exhaustive list
-#define NN_BUTTON_LEFT 0
-#define NN_BUTTON_RIGHT 1
-#define NN_BUTTON_MIDDLE 2
-
-// OC keycodes
-// taken from https://github.com/MightyPirates/OpenComputers/blob/52da41b5e171b43fea80342dc75d808f97a0f797/src/main/resources/assets/opencomputers/loot/openos/lib/core/full_keyboard.lua
-#define NN_KEY_UNKNOWN 0
-#define NN_KEY_1 0x02
-#define NN_KEY_2 0x03
-#define NN_KEY_3 0x04
-#define NN_KEY_4 0x05
-#define NN_KEY_5 0x06
-#define NN_KEY_6 0x07
-#define NN_KEY_7 0x08
-#define NN_KEY_8 0x09
-#define NN_KEY_9 0x0A
-#define NN_KEY_0 0x0B
-#define NN_KEY_A 0x1E
-#define NN_KEY_B 0x30
-#define NN_KEY_C 0x2E
-#define NN_KEY_D 0x20
-#define NN_KEY_E 0x12
-#define NN_KEY_F 0x21
-#define NN_KEY_G 0x22
-#define NN_KEY_H 0x23
-#define NN_KEY_I 0x17
-#define NN_KEY_J 0x24
-#define NN_KEY_K 0x25
-#define NN_KEY_L 0x26
-#define NN_KEY_M 0x32
-#define NN_KEY_N 0x31
-#define NN_KEY_O 0x18
-#define NN_KEY_P 0x19
-#define NN_KEY_Q 0x10
-#define NN_KEY_R 0x13
-#define NN_KEY_S 0x1F
-#define NN_KEY_T 0x14
-#define NN_KEY_U 0x16
-#define NN_KEY_V 0x2F
-#define NN_KEY_W 0x11
-#define NN_KEY_X 0x2D
-#define NN_KEY_Y 0x15
-#define NN_KEY_Z 0x2C
-
-#define NN_KEY_APOSTROPHE 0x28
-#define NN_KEY_AT 0x91
-#define NN_KEY_BACK 0x0E
-#define NN_KEY_BACKSLASH 0x2B
-// caps-lock
-#define NN_KEY_CAPITAL 0x3A
-#define NN_KEY_COLON 0x92
-#define NN_KEY_COMMA 0x33
-#define NN_KEY_ENTER 0x1C
-#define NN_KEY_EQUALS 0x0D
-// accent grave
-#define NN_KEY_GRAVE 0x29
-#define NN_KEY_LBRACKET 0x1A
-#define NN_KEY_LCONTROL 0x1D
-// left alt
-#define NN_KEY_LMENU 0x38
-#define NN_KEY_LSHIFT 0x2A
-#define NN_KEY_MINUS 0x0C
-#define NN_KEY_NUMLOCK 0x45
-#define NN_KEY_PAUSE 0xC5
-#define NN_KEY_PERIOD 0x34
-#define NN_KEY_RBRACKET 0x1B
-#define NN_KEY_RCONTROL 0x9D
-// right alt
-#define NN_KEY_RMENU 0xB8
-#define NN_KEY_RSHIFT 0x36
-// scroll lock
-#define NN_KEY_SCROLL 0x46
-#define NN_KEY_SEMICOLON 0x27
-#define NN_KEY_SLASH 0x35
-#define NN_KEY_SPACE 0x39
-#define NN_KEY_STOP 0x95
-#define NN_KEY_TAB 0x0F
-#define NN_KEY_UNDERLINE 0x93
-
-#define NN_KEY_UP 0xC8
-#define NN_KEY_DOWN 0xD0
-#define NN_KEY_LEFT 0xCB
-#define NN_KEY_RIGHT 0xCD
-#define NN_KEY_HOME 0xC7
-#define NN_KEY_END 0xCF
-#define NN_KEY_PAGEUP 0xC9
-#define NN_KEY_PAGEDOWN 0xD1
-#define NN_KEY_INSERT 0xD2
-#define NN_KEY_DELETE 0xD3
-
-#define NN_KEY_F1 0x3B
-#define NN_KEY_F2 0x3C
-#define NN_KEY_F3 0x3D
-#define NN_KEY_F4 0x3E
-#define NN_KEY_F5 0x3F
-#define NN_KEY_F6 0x40
-#define NN_KEY_F7 0x41
-#define NN_KEY_F8 0x42
-#define NN_KEY_F9 0x43
-#define NN_KEY_F10 0x44
-#define NN_KEY_F11 0x57
-#define NN_KEY_F12 0x58
-#define NN_KEY_F13 0x64
-#define NN_KEY_F14 0x65
-#define NN_KEY_F15 0x66
-#define NN_KEY_F16 0x67
-#define NN_KEY_F17 0x68
-#define NN_KEY_F18 0x69
-#define NN_KEY_F19 0x71
-
-#define NN_KEY_KANA 0x70
-#define NN_KEY_KANJI 0x94
-#define NN_KEY_CONVERT 0x79
-#define NN_KEY_NOCONVERT 0x7B
-#define NN_KEY_YEN 0x7D
-#define NN_KEY_CIRCUMFLEX 0x90
-#define NN_KEY_AX 0x96
-
-#define NN_KEY_NUMPAD0 0x52
-#define NN_KEY_NUMPAD1 0x4F
-#define NN_KEY_NUMPAD2 0x50
-#define NN_KEY_NUMPAD3 0x51
-#define NN_KEY_NUMPAD4 0x4B
-#define NN_KEY_NUMPAD5 0x4C
-#define NN_KEY_NUMPAD6 0x4D
-#define NN_KEY_NUMPAD7 0x47
-#define NN_KEY_NUMPAD8 0x48
-#define NN_KEY_NUMPAD9 0x49
-#define NN_KEY_NUMPADMUL 0x37
-#define NN_KEY_NUMPADDIV 0xB5
-#define NN_KEY_NUMPADSUB 0x4A
-#define NN_KEY_NUMPADADD 0x4E
-#define NN_KEY_NUMPADDECIMAL 0x53
-#define NN_KEY_NUMPADCOMMA 0xB3
-#define NN_KEY_NUMPADENTER 0x9C
-#define NN_KEY_NUMPADEQUALS 0x8D
-
-// the bottom side, can also be downwards / negative y
-#define NN_SIDE_BOTTOM 0
-// the top side, can also be upwards / positive y
-#define NN_SIDE_TOP 1
-// backwards, can also be north / negative z
-#define NN_SIDE_BACK 2
-// forwards, can also be south / positive z
-#define NN_SIDE_FRONT 3
-// to the right, can also be west / negative x
-#define NN_SIDE_RIGHT 4
-// to the left, can also be east / positive x
-#define NN_SIDE_LEFT 5
-// absolutely no clue
-#define NN_SIDE_UNKNOWN 6
-
-// pushes a screen_resized signal
-nn_Exit nn_pushScreenResized(nn_Computer *computer, const char *screenAddress, int newWidth, int newHeight);
-// pushes a touch signal
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushTouch(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
-// pushes a drag signal
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushDrag(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
-// pushes a drop signal
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushDrop(nn_Computer *computer, const char *screenAddress, double x, double y, int button, const char *player);
-// pushes a scroll signal
-// A positive direction usually means up, a negative one usually means down.
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushScroll(nn_Computer *computer, const char *screenAddress, double x, double y, double direction, const char *player);
-// pushes a walk signal
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushWalk(nn_Computer *computer, const char *screenAddress, double x, double y, const char *player);
-
-// pushes a key_down event
-// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
-// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
-// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushKeyDown(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
-// pushes a key_up event
-// charcode is the unicode code-point of the typed character. It should be uppercase/lowercase depending on shift or capslock.
-// keycode is an OC-specific keycode, and should be from the NN_KEY_* constants.
-// player is the name of the player which used the keyboard. Some programs use it for splitscreen games.
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushKeyUp(nn_Computer *computer, const char *keyboardAddress, nn_codepoint charcode, int keycode, const char *player);
-// pushes a clipboard event
-// clipboard should be a NULL-terminated string.
-// NN does no truncation of the contents, but it is best to limit it.
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, const char *player);
-// pushes a clipboard event
-// len is the length of the clipboard.
-// NN does no truncation of the contents, but it is best to limit it.
-// The signal is checked, as in, the player must be a user of the computer if users are defined.
-nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, const char *clipboard, size_t len, const char *player);
-
-// pushes a redstone_changed signal.
-// side is the side of the device the redstone changed on
-// oldValue is the old value
-// newValue is the new value, must not be equal to oldValue
-// color is the color of the redstone signal
-// if color < 0, it is set to null
-nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddress, int side, int oldValue, int newValue, int color);
-
-// pushes a motion signal.
-// Do note that it is meant to only be sent if the entity has a direct line of sight and if |(relX, relY, relZ)| >= sensitivity.
-// This signal does *not* check if the motion sensor actually is sensitive enough to detect it, so make sure to check it yourself.
-// relX, relY and relZ are the relative postion in 3D Cartesian space.
-// entityName can be NULL if the entity has no name.
-nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName);
-
-// applies basic encoding to a network message. This encoding has a header, and thus should remain backwards-compatible.
-// The encoding serves 2 purposes:
-// 1. Prevent shared memory between computers. Values do not use atomic reference counting, and thus this could lead to UAF or memory leaks.
-// 2. Simplify implementing packet queues, which should be used in relays. The lack of access to raw values would force implementers to use
-// an encoding anyways.
-// This only encodes the contents, not the sender, hops, or other metadata which may be needed in the queue.
-// This does not pop the values, in case you need them afterwards. If you don't just call nn_popn().
-// The encoding is architecture-dependent, so be careful with storing it on-disk.
-// Do note that the architecture-dependent parts are sizeof(double), sizeof(size_t) and endianness.
-// The encoding is simple:
-// - 0x00 for null
-// - 0x01 for true
-// - 0x02 for false
-// - 0x03 + <bytes of double> for a number
-// - 0x04 + <bytes of size_t length> + <bytes> for a string
-// - 0x05 + <bytes of size_t id> for resource
-// - 0x06 + <bytes of size_t length> + <values> for a table
-nn_Exit nn_encodeNetworkContents(nn_Computer *computer, nn_EncodedNetworkContents *contents, size_t valueCount);
-// Allocates a copy of [buf] and stores it in contents.
-// This is useful for copying network contents, either from storage or from another buffer.
-nn_Exit nn_copyNetworkContents(nn_Context *ctx, nn_EncodedNetworkContents *contents, const char *buf, size_t buflen, size_t valueCount);
-void nn_dropNetworkContents(nn_EncodedNetworkContents *contents);
-// Pushes the encoded contents onto the stack.
-// This does not drop the network contents.
-nn_Exit nn_pushNetworkContents(nn_Computer *computer, const nn_EncodedNetworkContents *contents);
-
-// push a modem_message, can be queued by both modems and tunnels.
-// This does not check if the modem has that port open, so make sure to check it yourself.
-// It does not check if the distance is within the modem's range, if it is wireless, and thus does not send it.
-// Note that relays should change the sender.
-nn_Exit nn_pushModemMessage(nn_Computer *computer, const char *modemAddress, const char *sender, int port, double distance, const nn_EncodedNetworkContents *contents);
 
 #ifdef __cplusplus
 }

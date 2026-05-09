@@ -6,6 +6,7 @@ CC=cc
 LD=$(CC)
 AR=ar
 RANLIB=ranlib
+WARN=-Wall -Werror -Wno-format-truncation
 
 ifeq ($(MODE), release)
 OPT=-Oz
@@ -20,6 +21,9 @@ SANITIZE=undefined,address
 DEBUG=-ggdb
 endif
 
+NN_STD=gnu99
+EMU_STD=c23
+
 NNFLAGS=
 
 SANITIZE_FLAGS=
@@ -28,7 +32,7 @@ ifdef SANITIZE
 	SANITIZE_FLAGS += -fsanitize=$(SANITIZE)
 endif
 
-CFLAGS=-fPIC $(OPT) $(SANITIZE_FLAGS) $(DEBUG) $(NNFLAGS)
+CFLAGS=-fPIC $(OPT) $(SANITIZE_FLAGS) $(DEBUG) $(NNFLAGS) $(WARN)
 
 LDFLAGS=$(OPT) $(DEBUG) $(SANITIZE_FLAGS)
 
@@ -44,21 +48,21 @@ SRC_DIR=src
 all: bin lib dynlib
 
 $(BUILD_DIR)/neonucleus.o: $(SRC_DIR)/neonucleus.c $(SRC_DIR)/neonucleus.h
-	$(CC) -o $(BUILD_DIR)/neonucleus.o -c $(SRC_DIR)/neonucleus.c $(CFLAGS)
+	$(CC) -o $(BUILD_DIR)/neonucleus.o -c $(SRC_DIR)/neonucleus.c $(CFLAGS) -std=$(NN_STD)
 
 $(BUILD_DIR)/ncomplib.o: $(SRC_DIR)/ncomplib.c $(SRC_DIR)/ncomplib.h
-	$(CC) -o $(BUILD_DIR)/ncomplib.o -c $(SRC_DIR)/ncomplib.c $(CFLAGS)
+	$(CC) -o $(BUILD_DIR)/ncomplib.o -c $(SRC_DIR)/ncomplib.c $(CFLAGS) -std=$(NN_STD)
 
 nn: $(BUILD_DIR)/neonucleus.o $(BUILD_DIR)/ncomplib.o
 
 $(BUILD_DIR)/luaarch.o: $(SRC_DIR)/luaarch.c $(SRC_DIR)/machine.lua
-	$(CC) -o $(BUILD_DIR)/luaarch.o -c $(SRC_DIR)/luaarch.c $(CFLAGS) $(INCLUA)
+	$(CC) -o $(BUILD_DIR)/luaarch.o -c $(SRC_DIR)/luaarch.c $(CFLAGS) $(INCLUA) -std=$(EMU_STD)
 
 $(BUILD_DIR)/glyphcache.o: $(SRC_DIR)/glyphcache.c $(SRC_DIR)/glyphcache.h
-	$(CC) -o $(BUILD_DIR)/glyphcache.o -c $(SRC_DIR)/glyphcache.c $(CFLAGS)
+	$(CC) -o $(BUILD_DIR)/glyphcache.o -c $(SRC_DIR)/glyphcache.c $(CFLAGS) -std=$(EMU_STD)
 
 $(BUILD_DIR)/main.o: $(SRC_DIR)/main.c $(SRC_DIR)/minBIOS.lua
-	$(CC) -o $(BUILD_DIR)/main.o -c $(SRC_DIR)/main.c $(CFLAGS) $(INCLUA)
+	$(CC) -o $(BUILD_DIR)/main.o -c $(SRC_DIR)/main.c $(CFLAGS) $(INCLUA) -std=$(EMU_STD)
 
 bin: nn $(BUILD_DIR)/main.o $(BUILD_DIR)/luaarch.o $(BUILD_DIR)/glyphcache.o
 	$(LD) $(LDFLAGS) -o $(BIN) $(BUILD_DIR)/neonucleus.o $(BUILD_DIR)/ncomplib.o $(BUILD_DIR)/main.o $(BUILD_DIR)/glyphcache.o $(BUILD_DIR)/luaarch.o $(LINKLIBC) $(LINKLIBM) $(LINKRAYLIB) $(LINKLUA)

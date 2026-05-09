@@ -70,6 +70,24 @@ end
 
 local syncedMethodStats
 
+local function unsandboxValue(val)
+	if type(val) == "table" then
+		local meta = getmetatable(val)
+		if meta then
+			if type(meta.__userdata) == "userdata" then
+				return meta.__userdata
+			end
+		end
+		local nt = {}
+		for sk, sv in pairs(val) do
+			local k, v = unsandboxValue(sk), unsandboxValue(sv)
+			if k ~= nil then nt[k] = v end
+		end
+		return nt
+	end
+	return val
+end
+
 local function sandboxValue(val)
 	if type(val) == "table" then
 		local nt = {}
@@ -87,6 +105,7 @@ local function sandboxValue(val)
 			__gc = function()
 				userdata.free(val)
 			end,
+			__userdata = val,
 		}
 
 		local wrapped = {type = "userdata", userdata = val}
@@ -108,7 +127,9 @@ local function sandboxValue(val)
 end
 
 local function realInvoke(address, method, ...)
-	local t = {pcall(cinvoke, address, method, ...)}
+	local args = {...}
+	for i=1,#args do args[i] = unsandboxValue(args[i]) end
+	local t = {pcall(cinvoke, address, method, table.unpack(args))}
 	if not _SYNCED and not os.getenv("NN_FAST") then
 		if computer.energy() <= 0 then sysyield() end -- out of power
 		if computer.isOverused() then sysyield() end -- overused
@@ -231,6 +252,7 @@ function computer.pullSignal(timeout)
 	while true do
 		if computer.uptime() >= deadline then return end
 		local t = {computer.popSignal()}
+		for i=1,#t do t[i] = unsandboxValue(t[i]) end
 		if #t == 0 then
 			sysyield()
 		else
@@ -465,7 +487,18 @@ sandbox = {
 		isRobot = computer.isRobot,
 		maxEnergy = computer.maxEnergy,
 		pullSignal = computer.pullSignal,
-		pushSignal = computer.pushSignal,
+		pushSignal = function(name, ...)
+			checkArg(1, name, "string")
+			local t = {...}
+			for i=1,#t do
+				local v = unsandboxValue(t[i])
+				if type(v) == "userdata" then
+					return nil, "userdata is forbidden"
+				end
+				t[i] = v
+			end
+			return computer.pushSignal(name, table.unpack(t))
+		end,
 		removeUser = computer.removeUser,
 		setArchitecture = computer.setArchitecture,
 		shutdown = computer.shutdown,
@@ -516,9 +549,6 @@ sandbox = {
 	},
 
 	utf8 = utf8,
-
-	-- unsafe, don't care
-	userdata = userdata,
 }
 sandbox._G = sandbox
 

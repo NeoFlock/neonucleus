@@ -518,7 +518,7 @@ typedef struct ncl_ScreenPixel {
 	int realBg;
 } ncl_ScreenPixel;
 
-typedef struct ncl_ScreenState {
+struct ncl_ScreenState {
 	nn_Context *ctx;
 	nn_Lock *lock;
 	nn_ScreenConfig conf;
@@ -534,7 +534,7 @@ typedef struct ncl_ScreenState {
 	size_t keyboardCount;
 	double brightness;
 	char *keyboards[NCL_MAX_KEYBOARD];
-} ncl_ScreenState;
+};
 
 typedef struct nn_VRAMBuf {
 	int width;

@@ -751,7 +751,7 @@ static void luaArch_loadEnv(lua_State *L) {
 	lua_setfield(L, unicode, "len");
 	lua_pushcfunction(L, luaArch_unicode_sub);
 	lua_setfield(L, unicode, "sub");
-	lua_pushcfunction(L, luaArch_unicode_len);
+	lua_pushcfunction(L, luaArch_unicode_wlen);
 	lua_setfield(L, unicode, "wlen");
 	lua_pushcfunction(L, luaArch_unicode_wtrunc);
 	lua_setfield(L, unicode, "wtrunc");

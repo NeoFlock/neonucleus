@@ -70,10 +70,9 @@ bool nn_decRef(nn_refc_t *refc, size_t n) {
 }
 #endif
 
-typedef struct nn_Lock nn_Lock;
-
 // the special includes
 #ifndef NN_BAREMETAL
+
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
@@ -91,6 +90,7 @@ typedef struct nn_Lock nn_Lock;
 #endif
 
 #ifdef NN_POSIX
+#include <unistd.h>
 #include <sys/time.h>
 #include <pthread.h>
 #endif
@@ -894,7 +894,7 @@ typedef struct nn_MethodEntry {
 	unsigned int idx;
 } nn_MethodEntry;
 
-typedef struct nn_Component {
+struct nn_Component {
 	nn_refc_t refc;
 	nn_Universe *universe;
 	char *address;
@@ -906,7 +906,7 @@ typedef struct nn_Component {
 	nn_Arena methodArena;
 	nn_HashMap methodsMap;
 	size_t methodCount;
-} nn_Component;
+};
 
 static size_t nn_methodHash(nn_HashAction act, void *_slot, void *_ent) {
 	nn_MethodEntry *slot = _slot;
@@ -937,14 +937,14 @@ static const nn_HashContext nn_methodHasher = {
 	.handler = (nn_HashHandler *)nn_methodHash,
 };
 
-typedef struct nn_Universe {
+struct nn_Universe {
 	nn_Context ctx;
 	void *userdata;
 	// 0 for unbounded
 	size_t memoryLimit;
 	// 0 for unbounded
 	size_t storageLimit;
-} nn_Universe;
+};
 
 typedef struct nn_ComponentEntry {
 	const char *address;
@@ -1069,7 +1069,7 @@ typedef struct nn_Userdata {
 	char *compAddress;
 } nn_Userdata;
 
-typedef struct nn_Computer {
+struct nn_Computer {
 	nn_ComputerState state;
 	nn_Universe *universe;
 	nn_Environment env;
@@ -1098,7 +1098,7 @@ typedef struct nn_Computer {
 	nn_Signal signals[NN_MAX_SIGNALS];
 	char *users[NN_MAX_USERS];
 	nn_Userdata uservals[NN_MAX_USERDATA];
-} nn_Computer;
+};
 
 nn_Universe *nn_createUniverse(nn_Context *ctx, void *userdata) {
 	nn_Universe *u = nn_alloc(ctx, sizeof(nn_Universe));
@@ -1239,13 +1239,6 @@ void nn_unlockComputer(nn_Computer *computer) {
 }
 
 static void nn_dropValue(nn_Value val);
-
-static nn_ComponentEntry *nn_getInternalComponent(nn_Computer *computer, const char *address) {
-	nn_ComponentEntry lookingFor = {
-		.address = address,
-	};
-	return nn_hashGet(&computer->components, &lookingFor);
-}
 
 nn_Exit nn_startComputer(nn_Computer *computer) {
 	if(nn_isComputerOn(computer)) {
@@ -7052,7 +7045,7 @@ static nn_Exit nn_modemHandler(nn_ComponentRequest *req) {
 			nn_setError(C, "invalid port");
 			return NN_EBADCALL;
 		}
-		size_t valcount = nn_getstacksize(C) - 1;
+		size_t valcount = nn_getstacksize(C) - 2;
 		if(valcount > state->modem.maxValues) return NN_EBADCALL;
 		int cost = nn_countValueCost(C, valcount);
 		if(cost < 0) {
@@ -7201,3 +7194,156 @@ nn_Tunnel nn_defaultTunnel = {
 	.basePacketCost = 100,
 	.fullPacketCost = 256,
 };
+
+typedef enum nn_TunnelNum {
+	NN_TUNNELNUM_MAXPACKETSIZE,
+	NN_TUNNELNUM_MAXVALUES,
+
+	NN_TUNNELNUM_GETCHANNEL,
+	NN_TUNNELNUM_SEND,
+
+	NN_TUNNELNUM_GETWAKE,
+	NN_TUNNELNUM_SETWAKE,
+
+	NN_TUNNELNUM_COUNT,
+} nn_TunnelNum;
+
+typedef struct nn_TunnelState {
+    nn_Context *ctx;
+    nn_Tunnel tunnel;
+    nn_TunnelHandler *handler;
+} nn_TunnelState;
+
+static nn_Exit nn_tunnelHandler(nn_ComponentRequest *req) {
+	if(req->action == NN_COMP_USERDATA) return NN_OK;
+	nn_Context *ctx = req->ctx;
+	nn_TunnelState *state = req->classState;
+	nn_Computer *C = req->computer;
+	
+	nn_TunnelNum method = req->methodIdx;
+
+	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+
+	nn_TunnelRequest treq;
+	treq.ctx = ctx;
+	treq.computer = C;
+	treq.state = req->state;
+	treq.tunnel = &state->tunnel;
+	treq.localAddress = req->compAddress;
+	nn_Exit e;
+
+	if(req->action == NN_COMP_DROP) {
+		treq.action = NN_TUNNEL_DROP;
+		state->handler(&treq);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+
+	if(method == NN_TUNNELNUM_MAXPACKETSIZE) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, state->tunnel.maxPacketSize);
+	}
+	if(method == NN_TUNNELNUM_MAXVALUES) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, state->tunnel.maxValues);
+	}
+
+	if(method == NN_TUNNELNUM_GETCHANNEL) {
+		treq.action = NN_TUNNEL_GETCHANNEL;
+		req->returnCount = 1;
+		return state->handler(&treq);
+	}
+	if(method == NN_TUNNELNUM_SEND) {
+		size_t valcount = nn_getstacksize(C);
+		if(valcount > state->tunnel.maxValues) return NN_EBADCALL;
+		int cost = nn_countValueCost(C, valcount);
+		if(cost < 0) {
+			nn_setError(C, "invalid contents");
+			return NN_EBADCALL;
+		}
+		if(cost > state->tunnel.maxPacketSize) return NN_ELIMIT;
+		nn_EncodedNetworkContents data;
+		e = nn_encodeNetworkContents(C, &data, valcount);
+		if(e) return e;
+		treq.action = NN_TUNNEL_SEND;
+		treq.toSend = &data;
+		e = state->handler(&treq);
+		nn_dropNetworkContents(&data);
+		if(!e) {
+			nn_removeEnergy(C, state->tunnel.basePacketCost + state->tunnel.fullPacketCost * cost / state->tunnel.maxPacketSize);
+			req->returnCount = 1;
+			e = nn_pushbool(C, true);
+		}
+		return e;
+	}
+
+	if(method == NN_TUNNELNUM_GETWAKE) {
+		char buf[NN_MAX_WAKEUPMSG];
+		treq.action = NN_TUNNEL_GETWAKEMESSAGE;
+		treq.getWake.buf = buf;
+		treq.getWake.len = NN_MAX_WAKEUPMSG;
+		e = state->handler(&treq);
+		if(e) return e;
+
+		req->returnCount = 2;
+		e = treq.getWake.len == 0 ? nn_pushnull(C) : nn_pushlstring(C, buf, treq.getWake.len);
+		if(e) return e;
+		return nn_pushbool(C, treq.getWake.isFuzzy);
+	}
+	
+	if(method == NN_TUNNELNUM_SETWAKE) {
+		e = nn_defaultstring(C, 0, "");
+		if(e) return e;
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected)")) return NN_EBADCALL;
+		e = nn_defaultboolean(C, 1, false);
+		if(e) return e;
+		if(nn_checkboolean(C, 1, "bad argument #2 (boolean expected)")) return NN_EBADCALL;
+		treq.action = NN_TUNNEL_SETWAKEMESSAGE;
+		treq.setWake.buf = nn_tolstring(C, 0, &treq.setWake.len);
+		if(treq.setWake.len > NN_MAX_WAKEUPMSG) return NN_ELIMIT;
+		treq.setWake.isFuzzy = nn_toboolean(C, 1);
+		e = state->handler(&treq);
+		if(e) return e;
+
+		req->returnCount = 1;
+		return nn_pushbool(C, true);
+	}
+
+	if(C) nn_setError(C, "tunnel: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createTunnel(nn_Universe *universe, const char *address, const nn_Tunnel *tunnel, void *state, nn_TunnelHandler *handler) {
+    nn_Component *c = nn_createComponent(
+        universe, address, "tunnel");
+    if(c == NULL) return NULL;
+
+    const nn_Method methods[NN_TUNNELNUM_COUNT] = {
+		[NN_TUNNELNUM_MAXPACKETSIZE] = {"maxPacketSize", "function(): integer - Returns the maximum logical packet size", NN_DIRECT},
+		[NN_TUNNELNUM_MAXVALUES] = {"maxValues", "function(): integer - Returns the maximum amount of values", NN_DIRECT},
+		
+		[NN_TUNNELNUM_GETCHANNEL] = {"getChannel", "function(): string - Get the ID of the channel", NN_DIRECT},
+		[NN_TUNNELNUM_SEND] = {"send", "function(...): boolean - Send a packet", NN_INDIRECT},
+
+		[NN_TUNNELNUM_GETWAKE] = {"getWakeMessage", "function(): string?, boolean - Returns the wake message, if any, and whether it is fuzzy", NN_DIRECT},
+		[NN_TUNNELNUM_SETWAKE] = {"setWakeMessage", "function(message: string?, fuzzy: boolean) - Changes the wake-up message of the modem", NN_INDIRECT},
+    };
+
+    nn_Exit e = nn_setComponentMethodsArray(
+        c, methods, NN_TUNNELNUM_COUNT);
+    if(e) { nn_dropComponent(c); return NULL; }
+
+    nn_Context *ctx = &universe->ctx;
+    nn_TunnelState *cls = nn_alloc(ctx, sizeof(*cls));
+    if(cls == NULL) {
+        nn_dropComponent(c);
+        return NULL;
+    }
+    cls->ctx = ctx;
+    cls->tunnel = *tunnel;
+    cls->handler = handler;
+    nn_setComponentState(c, state);
+    nn_setComponentClassState(c, cls);
+    nn_setComponentHandler(c, nn_tunnelHandler);
+    return c;
+}
