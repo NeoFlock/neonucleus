@@ -104,10 +104,17 @@ static nn_Exit ne_dataBullshit(nn_DataCardRequest *req) {
 		return NN_OK;
 	}
 	if(action == NN_DATA_SHA256) {
-		// does not match OC, dunno why
 		unsigned int *out = ComputeSHA256((unsigned char *)req->sha256.data, req->sha256.datalen);
 		if(out == NULL) return NN_ENOMEM;
-		memcpy(req->sha256.checksum, out, 32);
+		unsigned char buf[32];
+		for(size_t i = 0; i < 8; i++) {
+			// OC does BE
+			buf[i*4+3] = (out[i] >> 0) & 0xFF;
+			buf[i*4+2] = (out[i] >> 8) & 0xFF;
+			buf[i*4+1] = (out[i] >> 16) & 0xFF;
+			buf[i*4+0] = (out[i] >> 24) & 0xFF;
+		}
+		memcpy(req->sha256.checksum, buf, 32);
 		return NN_OK;
 	}
 	if(action == NN_DATA_RANDOM) {
@@ -687,15 +694,12 @@ int main(int argc, char **argv) {
 
 	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
 	nn_GPU gpuConf = nn_defaultGPUs[3];
-	gpuConf.maxWidth = 1920;
-	gpuConf.maxHeight = 1080;
 	nn_Component *gpuCard = ncl_createGPU(u, NULL, &gpuConf);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
 
     ncl_ScreenState *scrstate = nn_getComponentState(screen);
     ncl_mountKeyboard(scrstate, "mainKB");
-	ncl_setScreenMaxResolution(scrstate, 320, 90);
 
 	// we assume server basically
 	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, nn_defaultComponentLimits[3] * 4, 256);

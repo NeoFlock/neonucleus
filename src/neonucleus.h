@@ -450,6 +450,9 @@ void nn_forceCrashComputer(nn_Computer *computer, const char *s);
 bool nn_isComputerOn(nn_Computer *computer);
 void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env);
 
+void nn_setDirectCost(nn_Computer *computer, double directCost);
+double nn_getDirectCost(nn_Computer *computer);
+
 // Device information
 
 // Standard device attribute fields

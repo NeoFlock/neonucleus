@@ -10,10 +10,9 @@ WARN=-Wall -Werror -Wno-format-truncation
 
 ifeq ($(MODE), release)
 OPT=-Oz
-ifneq ($(CC), clang)
-# clang emits LLVM bitcode in lto mode, which only clang and lld understand
-OPT += -flto
-endif
+DEBUG=
+else ifeq ($(MODE), release-lto)
+OPT=-Oz -flto
 DEBUG=
 else
 OPT=-O0

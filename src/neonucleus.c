@@ -1082,6 +1082,7 @@ struct nn_Computer {
 	nn_Architecture desiredArch;
 	double callBudget;
 	double totalCallBudget;
+	double directCost;
 	nn_HashMap components;
 	nn_DeviceInfoArray deviceInfo;
 	double totalEnergy;
@@ -1202,6 +1203,8 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 
 	c->totalCallBudget = 1;
 	c->callBudget = c->totalCallBudget;
+	// OC defaults to Integer.MAX_VALUE, idk where the old number came from
+	c->directCost = 0;
 
 	if(nn_hashInit(&c->components, maxComponents, ctx, &nn_componentHasher)) {
 		nn_destroyLock(ctx, c->lock);
@@ -1302,6 +1305,14 @@ bool nn_isComputerOn(nn_Computer *computer) {
 
 void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env) {
 	computer->env = env;
+}
+
+void nn_setDirectCost(nn_Computer *computer, double directCost) {
+	computer->directCost = directCost;
+}
+
+double nn_getDirectCost(nn_Computer *computer) {
+	return computer->directCost;
 }
 
 const char *nn_deviceInfoAt(nn_Computer *computer, size_t idx) {
@@ -2157,8 +2168,7 @@ nn_Exit nn_invokeComponent(nn_Computer *computer, const char *compAddress, const
 		nn_pop(computer);
 	}
 
-	// TODO: configurable cost
-	nn_costComponent(computer, 22000);
+	nn_costComponent(computer, computer->directCost);
 
 	nn_ComponentRequest req;
 	req.ctx = &c->universe->ctx;

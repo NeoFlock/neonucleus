@@ -3517,8 +3517,11 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		stat->labellen = drv->labellen;
 		memcpy(stat->label, drv->label, stat->labellen);
 		stat->flash.currentWriteCount = drv->writeCount;
-		// TODO: compute wear level
-		stat->flash.wearlevel = 0;
+		double wearlevel = 100;
+		size_t maxWrite = drv->conf.maxWriteCount;
+		size_t sectorCount = drv->conf.capacity / drv->conf.sectorSize;
+		if(maxWrite > 0 && sectorCount > 0) wearlevel = drv->writeCount * 100.0 / sectorCount / maxWrite;
+		stat->flash.wearlevel = wearlevel;
 		stat->flash.conf = &drv->conf;
 		nn_unlock(drv->ctx, drv->lock);
 		return;
