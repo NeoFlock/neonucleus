@@ -3370,7 +3370,7 @@ int nn_mapDepth(int color, int depth) {
 	// TODO: map the other depths
 	if(depth == 4) return nn_mapColor(color, nn_ocpalette4, 16);
 	if(depth == 8) return nn_mapColor(color, nn_ocpalette8, 256);
-	if(depth == 16) return color & 0xF0FFF0;
+	if(depth == 16) return (color & 0xF0FFF0) | ((color & 0xF000F0) >> 4);
 	return color;
 }
 

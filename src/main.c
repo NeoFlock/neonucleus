@@ -579,6 +579,10 @@ int main(int argc, char **argv) {
 	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(800, 600, "NeoNucleus Test Emulator");
 
+	const char *tierStr = getenv("NN_TIER");
+	if(tierStr == NULL) tierStr = "4";
+	int tier = atoi(tierStr);
+
 	// create the universe
 	nn_Universe *u = nn_createUniverse(&ctx, NULL);
 
@@ -619,19 +623,11 @@ int main(int argc, char **argv) {
 
 	nn_Component *eepromCard = ncl_createEEPROM(u, NULL, &nn_defaultEEPROMs[3], eepromCode, eepromSize, false);
 
-	nn_Filesystem mainfsconf;
-	nn_Filesystem fsparts[] = {
-		nn_defaultFilesystems[3],
-		nn_defaultFilesystems[3],
-		nn_defaultFilesystems[3],
-	};
-	nn_mergeFilesystems(&mainfsconf, fsparts, sizeof(fsparts) / sizeof(fsparts[0]));
-
 	char mainfspath[NN_MAX_PATH];
 	snprintf(mainfspath, NN_MAX_PATH, "data/%s", mainDir);
-	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &mainfsconf, true);
+	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &nn_defaultFilesystems[tier-1], true);
 	//nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
-	nn_Component *tmpfs = ncl_createFilesystem(u, NULL, "/tmp", &mainfsconf, false);
+	nn_Component *tmpfs = ncl_createFilesystem(u, NULL, "/tmp", &nn_defaultFilesystems[3], false);
 	nn_Component *testingfs = ncl_createFilesystem(u, NULL, "aux", &nn_defaultFilesystems[3], false);
 
 	const char * const testDriveData = 
@@ -659,8 +655,8 @@ int main(int argc, char **argv) {
 		"while computer.uptime() < now + 3 do computer.pullSignal(0.05) end\n"
 		"computer.shutdown(true)\n"
 	;
-	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_defaultDrives[3], testDriveData, strlen(testDriveData), false);
-	nn_Component *testFlash = ncl_createFlash(u, NULL, &nn_defaultSSDs[3], testDriveData, strlen(testDriveData), false);
+	nn_Component *testDrive = ncl_createDrive(u, NULL, &nn_defaultDrives[tier-1], testDriveData, strlen(testDriveData), false);
+	nn_Component *testFlash = ncl_createFlash(u, NULL, &nn_defaultSSDs[tier-1], testDriveData, strlen(testDriveData), false);
 
 	ncl_setCLabel(eepromCard, "EEPROM");
 	ncl_setCLabel(managedfs, "Main Filesystem");
@@ -669,8 +665,7 @@ int main(int argc, char **argv) {
 	ncl_setCLabel(testFlash, "Flash Storage");
 
 	size_t ramTotal = 0;
-	ramTotal += 4 * nn_ramSizes[7];
-	//ramTotal += nn_ramSizes[0];
+	ramTotal += 4 * nn_ramSizes[tier*2-1];
 	
 	SetExitKey(KEY_NULL);
 
@@ -692,8 +687,8 @@ int main(int argc, char **argv) {
 	double nextSecond = 0;
 	double wattage = 0;
 
-	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[3]);
-	nn_GPU gpuConf = nn_defaultGPUs[3];
+	nn_Component *screen = ncl_createScreen(u, NULL, &nn_defaultScreens[tier-1]);
+	nn_GPU gpuConf = nn_defaultGPUs[tier-1];
 	nn_Component *gpuCard = ncl_createGPU(u, NULL, &gpuConf);
     nn_Component *keyboard = nn_createComponent(
     u, "mainKB", "keyboard");
@@ -702,13 +697,14 @@ int main(int argc, char **argv) {
     ncl_mountKeyboard(scrstate, "mainKB");
 
 	// we assume server basically
-	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, nn_defaultComponentLimits[3] * 4, 256);
+	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, nn_defaultComponentLimits[tier-1] * 4, 256);
 	nn_Environment cEnv = {
 		.userdata = NULL,
 		.handler = ne_env,
 	};
 	nn_setComputerEnvironment(c, cEnv);
-	nn_setCallBudget(c, nn_defaultCallBudgets[3]);
+	// 5 cuz CPU + each RAM stick all have same tier call budgets
+	nn_setCallBudget(c, nn_defaultCallBudgets[tier-1] * 5);
 	nn_setTotalEnergy(c, allEnergy);
 	if(getenv("NN_FAST") != NULL) {
 		tickDelay = 0;
