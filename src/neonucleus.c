@@ -3199,7 +3199,9 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 64,
 		.setForegroundPerTick = 32,
 		.setBackgroundPerTick = 32,
-		.energyPerWrite = 0.2 / (50*16),
+		.energyPerWrite = 2.0 / (50*16),
+		.energyPerFill = 1.0 / (50*16),
+		.energyPerCopy = 0.5 / (50*16),
 		.energyPerClear = 0.1 / (50*16),
 	},
 	NN_INIT(nn_GPU) {
@@ -3212,7 +3214,9 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 128,
 		.setForegroundPerTick = 64,
 		.setBackgroundPerTick = 64,
-		.energyPerWrite = 0.2 / (50*16),
+		.energyPerWrite = 2.0 / (50*16),
+		.energyPerFill = 1.0 / (50*16),
+		.energyPerCopy = 0.5 / (50*16),
 		.energyPerClear = 0.1 / (50*16),
 	},
 	NN_INIT(nn_GPU) {
@@ -3225,7 +3229,9 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 256,
 		.setForegroundPerTick = 128,
 		.setBackgroundPerTick = 128,
-		.energyPerWrite = 0.2 / (50*16),
+		.energyPerWrite = 2.0 / (50*16),
+		.energyPerFill = 1.0 / (50*16),
+		.energyPerCopy = 0.5 / (50*16),
 		.energyPerClear = 0.1 / (50*16),
 	},
 	NN_INIT(nn_GPU) {
@@ -3238,7 +3244,9 @@ const nn_GPU nn_defaultGPUs[4] = {
 		.setPerTick = 512,
 		.setForegroundPerTick = 256,
 		.setBackgroundPerTick = 256,
-		.energyPerWrite = 0.2 / (50*16),
+		.energyPerWrite = 2.0 / (50*16),
+		.energyPerFill = 1.0 / (50*16),
+		.energyPerCopy = 0.5 / (50*16),
 		.energyPerClear = 0.1 / (50*16),
 	},
 };
@@ -5883,7 +5891,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         req->returnCount = 1;
 		if(isScreen) {
 			nn_costComponent(C, cls->gpu.copyPerTick);
-			nn_removeEnergy(C, cls->gpu.energyPerWrite * g.copy.w  * g.copy.h);
+			nn_removeEnergy(C, cls->gpu.energyPerCopy * g.copy.w  * g.copy.h);
 		}
         return nn_pushbool(C, true);
     }
@@ -5914,7 +5922,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
         req->returnCount = 1;
 		if(isScreen) {
 			nn_costComponent(C, cls->gpu.fillPerTick);
-			nn_removeEnergy(C, (g.fill.codepoint == ' ' ? cls->gpu.energyPerClear : cls->gpu.energyPerWrite) * g.fill.w * g.fill.h);
+			nn_removeEnergy(C, (g.fill.codepoint == ' ' ? cls->gpu.energyPerClear : cls->gpu.energyPerFill) * g.fill.w * g.fill.h);
 		}
         return nn_pushbool(C, true);
     }
@@ -6030,7 +6038,7 @@ static nn_Exit nn_gpuHandler(nn_ComponentRequest *req) {
 		if(g.bitblt.dst == 0 || g.bitblt.src == 0) {
 			// taxed as a copy
 			nn_costComponent(C, g.gpu->copyPerTick);
-			nn_removeEnergy(C, g.gpu->energyPerWrite * g.bitblt.w * g.bitblt.h);
+			nn_removeEnergy(C, g.gpu->energyPerCopy * g.bitblt.w * g.bitblt.h);
 		}
         e = cls->handler(&g);
         if(e) return e;
