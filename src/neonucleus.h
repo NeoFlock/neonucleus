@@ -1775,8 +1775,12 @@ typedef struct nn_GPU {
 	int setForegroundPerTick;
 	// amount of times setBackground can be called before running out of budget.
 	int setBackgroundPerTick;
-	// energy per non-space set.
+	// energy per pixel set.
 	double energyPerWrite;
+	// energy per pixel filled
+	double energyPerFill;
+	// energy per pixel copied
+	double energyPerCopy;
 	// energy per space set.
 	double energyPerClear;
 } nn_GPU;
