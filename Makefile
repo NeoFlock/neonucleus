@@ -21,7 +21,7 @@ DEBUG=-ggdb
 endif
 
 NN_STD=gnu99
-EMU_STD=c23
+EMU_STD=gnu23
 
 NNFLAGS=
 
