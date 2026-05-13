@@ -629,6 +629,8 @@ int main(int argc, char **argv) {
 	//nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
 	nn_Component *tmpfs = ncl_createFilesystem(u, NULL, "/tmp", &nn_defaultFilesystems[3], false);
 	nn_Component *testingfs = ncl_createFilesystem(u, NULL, "aux", &nn_defaultFilesystems[3], false);
+	// until TmpFS works
+	nn_Component *debugfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
 
 	const char * const testDriveData = 
 		"local g, s = component.list('gpu')(), component.list('screen')()\n"
@@ -663,6 +665,7 @@ int main(int argc, char **argv) {
 	ncl_setCLabel(testingfs, "Secondary Filesystem");
 	ncl_setCLabel(testDrive, "Unmanaged Storage");
 	ncl_setCLabel(testFlash, "Flash Storage");
+	ncl_setCLabel(debugfs, "Debug Filesystem");
 
 	size_t ramTotal = 0;
 	ramTotal += 4 * nn_ramSizes[tier*2-1];
@@ -742,6 +745,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, dataCard, 6, false);
 	nn_mountComponent(c, modem, 7, false);
 	nn_mountComponent(c, tunnel, 8, false);
+	nn_mountComponent(c, debugfs, 9, false);
 	int ltx = 0, lty = 0;
 	double scrollBuf = 0;
 	double tickTime = 0;
@@ -980,6 +984,7 @@ cleanup:;
 	nn_dropComponent(dataCard);
 	nn_dropComponent(modem);
 	nn_dropComponent(tunnel);
+	nn_dropComponent(debugfs);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);
