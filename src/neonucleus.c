@@ -2976,32 +2976,32 @@ const nn_EEPROM nn_defaultEEPROMs[4] = {
 const nn_Filesystem nn_defaultFilesystems[4] = {
 	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 1 * NN_MiB,
-		.readsPerTick = 4,
-		.writesPerTick = 2,
+		.readsPerTick = 7,
+		.writesPerTick = 3,
 		.opensPerTick = 4,
 		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 4096,
 	},
 	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 2 * NN_MiB,
-		.readsPerTick = 4,
-		.writesPerTick = 2,
+		.readsPerTick = 10,
+		.writesPerTick = 4,
 		.opensPerTick = 8,
 		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 8192,
 	},
 	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 4 * NN_MiB,
-		.readsPerTick = 7,
-		.writesPerTick = 3,
+		.readsPerTick = 13,
+		.writesPerTick = 5,
 		.opensPerTick = 16,
 		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 16384,
 	},
 	NN_INIT(nn_Filesystem) {
 		.spaceTotal = 8 * NN_MiB,
-		.readsPerTick = 13,
-		.writesPerTick = 5,
+		.readsPerTick = 15,
+		.writesPerTick = 6,
 		.opensPerTick = 32,
 		.dataEnergyCost = 0.1 / NN_KiB,
 		.maxReadSize = 32768,
@@ -3011,16 +3011,16 @@ const nn_Filesystem nn_defaultFilesystems[4] = {
 
 const nn_Filesystem nn_defaultFloppy = NN_INIT(nn_Filesystem) {
 	.spaceTotal = 512 * NN_KiB,
-	.readsPerTick = 1,
-	.writesPerTick = 1,
+	.readsPerTick = 4,
+	.writesPerTick = 2,
 	.dataEnergyCost = 0.1 / NN_KiB,
 	.maxReadSize = 2048,
 };
 
 const nn_Filesystem nn_defaultTmpFS = NN_INIT(nn_Filesystem) {
 	.spaceTotal = 64 * NN_KiB,
-	.readsPerTick = 1024,
-	.writesPerTick = 512,
+	.readsPerTick = 15,
+	.writesPerTick = 6,
 	.dataEnergyCost = 0.1 / NN_MiB,
 };
 
