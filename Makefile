@@ -17,7 +17,7 @@ DEBUG=
 else
 OPT=-O0
 SANITIZE=undefined,address
-DEBUG=-ggdb
+DEBUG=-g
 endif
 
 NN_STD=gnu99
@@ -31,7 +31,8 @@ ifdef SANITIZE
 	SANITIZE_FLAGS += -fsanitize=$(SANITIZE)
 endif
 
-CFLAGS=-fPIC $(OPT) $(SANITIZE_FLAGS) $(DEBUG) $(NNFLAGS) $(WARN)
+# no-omit-frame-pointer so if a crash does happen we can trace it
+CFLAGS=-fPIC -fno-omit-frame-pointer $(OPT) $(SANITIZE_FLAGS) $(DEBUG) $(NNFLAGS) $(WARN)
 
 LDFLAGS=$(OPT) $(DEBUG) $(SANITIZE_FLAGS)
 

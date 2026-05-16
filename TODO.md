@@ -15,7 +15,6 @@ to be made more portable.
 Not everything OC has (as a few of them are really MC-centered) but most of it.
 
 - `computer` component
-- `tunnel` component
 - `internet` component (note: NN does not handle internet requests, those are up to the emulator)
 - `relay` component (note: OCDoc still refers to it as `access_point`)
 - `geolyzer` component

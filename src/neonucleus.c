@@ -3924,9 +3924,44 @@ nn_Exit nn_pushLClipboard(nn_Computer *computer, const char *keyboardAddress, co
 	return nn_pushSignal(computer, 3);
 }
 
-nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddress, int side, int oldValue, int newValue, int color);
+nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddress, int side, int oldValue, int newValue, int color) {
+	nn_Exit err = nn_pushstring(computer, "redstone_changed");
+	if(err) return err;
+	err = nn_pushstring(computer, redstoneAddress);
+	if(err) return err;
+	err = nn_pushinteger(computer, side);
+	if(err) return err;
+	err = nn_pushinteger(computer, oldValue);
+	if(err) return err;
+	err = nn_pushinteger(computer, newValue);
+	if(err) return err;
+	err = color < 0 ? nn_pushnull(computer) : nn_pushinteger(computer, newValue);
+	if(err) return err;
+	return nn_pushSignal(computer, 6);
+}
 
-nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName);
+nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName) {
+	nn_Exit err = nn_pushstring(computer, "motion");
+	if(err) return err;
+	err = nn_pushnumber(computer, relX);
+	if(err) return err;
+	err = nn_pushnumber(computer, relY);
+	if(err) return err;
+	err = nn_pushnumber(computer, relZ);
+	if(err) return err;
+	// remember: safe to push NULL to pushstring in which cases it pushes null.
+	err = nn_pushstring(computer, entityName);
+	if(err) return err;
+	return nn_pushSignal(computer, 5);
+}
+
+nn_Exit nn_pushInternetReady(nn_Computer *computer, const char *id, size_t idlen) {
+	nn_Exit err = nn_pushstring(computer, "internet_ready");
+	if(err) return err;
+	err = nn_pushlstring(computer, id, idlen);
+	if(err) return err;
+	return nn_pushSignal(computer, 2);
+}
 
 typedef enum nn_NetworkValueTag {
 	NN_NETVAL_NULL = 0x00,
@@ -7365,3 +7400,8 @@ nn_Component *nn_createTunnel(nn_Universe *universe, const char *address, const 
     nn_setComponentHandler(c, nn_tunnelHandler);
     return c;
 }
+
+nn_InternetCard nn_defaultInternetCard = {
+	.protocolsSupported = NN_INET_ALL,
+	.transmissionEnergyCost = 0,
+};

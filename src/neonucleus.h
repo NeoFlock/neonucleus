@@ -1257,6 +1257,10 @@ nn_Exit nn_pushRedstoneChanged(nn_Computer *computer, const char *redstoneAddres
 // entityName can be NULL if the entity has no name.
 nn_Exit nn_pushMotion(nn_Computer *computer, double relX, double relY, double relZ, const char *entityName);
 
+// Pushes an internet_ready signal.
+// This signal is queued when an internet socket is ready for commmunication.
+nn_Exit nn_pushInternetReady(nn_Computer *computer, const char *id, size_t idlen);
+
 // A buffer with encoded values
 typedef struct nn_EncodedNetworkContents {
 	nn_Context *ctx;
@@ -2310,6 +2314,26 @@ typedef struct nn_TunnelRequest {
 typedef nn_Exit (nn_TunnelHandler)(nn_TunnelRequest *req);
 
 nn_Component *nn_createTunnel(nn_Universe *universe, const char *address, const nn_Tunnel *modem, void *state, nn_TunnelHandler *handler);
+
+typedef enum nn_InternetProtocol {
+	NN_INET_NONE = 0,
+	NN_INET_HTTP = 1<<0,
+	NN_INET_TCP = 1<<1,
+	NN_INET_UDP = 1<<2,
+	NN_INET_WEBSOCKET = 1<<3,
+	NN_INET_TLS = 1<<4,
+
+	NN_INET_ALL = NN_INET_HTTP | NN_INET_TCP | NN_INET_UDP | NN_INET_WEBSOCKET | NN_INET_TLS,
+} nn_InternetProtocol;
+
+typedef struct nn_InternetCard {
+	// bitwise OR multiple of them
+	unsigned char protocolsSupported;
+	// per-byte cost of a write
+	double transmissionEnergyCost;
+} nn_InternetCard;
+
+extern nn_InternetCard nn_defaultInternetCard;
 
 // Colors and palettes.
 // Do note that the 
