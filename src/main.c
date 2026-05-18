@@ -536,6 +536,10 @@ void ne_env(nn_EnvironmentRequest *req) {
 		printf("beep: %f Hz %fs %.02f%%\n", req->beep.frequency, req->beep.duration, req->beep.volume*100);
 		return;
 	}
+	if(req->action == NN_ENV_BEEPMORSE) {
+		printf("morse beep: %s, %f Hz %fs %.02f%%\n", req->morseBeep.pattern, req->morseBeep.frequency, req->morseBeep.beepDuration, req->morseBeep.volume*100);
+		return;
+	}
 	if(req->action == NN_ENV_DRAWENERGY) {
 		accumulatedEnergyCost += req->energy;
 		totalEnergyLoss += req->energy;

@@ -1430,6 +1430,16 @@ void nn_beepComputer(nn_Computer *computer, nn_Beep beep) {
 	computer->env.handler(&req);
 }
 
+void nn_beepComputerMorse(nn_Computer *computer, nn_MorseBeep beep) {
+	if(beep.beepDuration < 0) beep.beepDuration = 0;
+	nn_EnvironmentRequest req;
+	req.userdata = computer->env.userdata;
+	req.computer = computer;
+	req.action = NN_ENV_BEEPMORSE;
+	req.morseBeep = beep;
+	computer->env.handler(&req);
+}
+
 void nn_destroyComputer(nn_Computer *computer) {
 	nn_Context *ctx = &computer->universe->ctx;
 	nn_stopComputer(computer);

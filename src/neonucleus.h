@@ -393,10 +393,28 @@ typedef struct nn_Architecture {
 extern size_t nn_ramSizes[8];
 
 typedef struct nn_Beep {
+	// frequenc, in Hz
 	double frequency;
+	// duration, in seconds
 	double duration;
+	// 0 is mute, 1 is 100%
 	double volume;
 } nn_Beep;
+
+// Morse beep, like a normal beep except it follows a morse code pattern.
+// . is a short sound
+// - is a long sound, 2x in length
+// a space is a pause, 2x in length and dead silent.
+// Every sound, including actual pauses, have a 50ms pause between them.
+typedef struct nn_MorseBeep {
+	const char *pattern;
+	// frequency, in Hz
+	double frequency;
+	// duration of a ., in seconds
+	double beepDuration;
+	// 0 is mute, 1 is 100%
+	double volume;
+} nn_MorseBeep;
 
 typedef enum nn_EnvironmentAction {
 	NN_ENV_DRAWENERGY,
@@ -404,6 +422,7 @@ typedef enum nn_EnvironmentAction {
 	NN_ENV_POWEROFF,
 	NN_ENV_CRASHED,
 	NN_ENV_BEEP,
+	NN_ENV_BEEPMORSE,
 } nn_EnvironmentAction;
 
 typedef struct nn_EnvironmentRequest {
@@ -415,6 +434,8 @@ typedef struct nn_EnvironmentRequest {
 		double energy;
 		// for BEEP, information about the beep
 		nn_Beep beep;
+		// for BEEPMORSE, information about the beep
+		nn_MorseBeep morseBeep;
 	};
 } nn_EnvironmentRequest;
 
@@ -517,6 +538,7 @@ void nn_clearCommonDeviceInfo(nn_CommonDeviceInfo *info);
 bool nn_removeDeviceInfo(nn_Computer *computer, const char *addr);
 
 void nn_beepComputer(nn_Computer *computer, nn_Beep beep);
+void nn_beepComputerMorse(nn_Computer *computer, nn_MorseBeep beep);
 
 // get the userdata pointer
 void *nn_getComputerUserdata(nn_Computer *computer);

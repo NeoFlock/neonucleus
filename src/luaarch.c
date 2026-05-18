@@ -124,6 +124,27 @@ static void luaArch_nnToLua(luaArch *arch, lua_State *L, size_t nnIdx) {
 }
 
 static int luaArch_computer_beep(lua_State *L) {
+	if(lua_type(L, 1) == LUA_TSTRING) {
+		nn_MorseBeep beep = {.frequency = 1000, .beepDuration = 200, .volume = 1};
+		beep.pattern = lua_tostring(L, 1);
+		if(lua_isnumber(L, 2)) {
+			beep.frequency = lua_tonumber(L, 2);
+		}
+		if(lua_isnumber(L, 3)) {
+			beep.beepDuration = lua_tonumber(L, 3);
+		}
+		if(lua_isnumber(L, 4)) {
+			beep.volume = lua_tonumber(L, 4);
+		}
+		if(beep.frequency < 20) beep.frequency = 20;
+		if(beep.beepDuration < 0) beep.beepDuration = 0;
+		if(beep.volume < 0) beep.volume = 0;
+		if(beep.frequency > 20000) beep.frequency = 20000;
+		if(beep.beepDuration > 5) beep.beepDuration = 5;
+		if(beep.volume > 1) beep.volume = 1;
+		nn_beepComputerMorse(luaArch_from(L)->computer, beep);
+		return 0;
+	}
 	nn_Beep beep = {.frequency = 1000, .duration = 1, .volume = 1};
 	if(lua_isnumber(L, 1)) {
 		beep.frequency = lua_tonumber(L, 1);
