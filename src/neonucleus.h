@@ -456,8 +456,11 @@ typedef struct nn_Environment {
 // maxComponents and maxDevices determine how many components can be connected simultaneously to this computer, and how much device info can be
 // registered on this computer.
 nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char *address, size_t totalMemory, size_t maxComponents, size_t maxDevices);
+void nn_retainComputer(nn_Computer *computer);
+void nn_retainComputerN(nn_Computer *computer, size_t n);
 // Destroys the state, effectively shutting down the computer.
 void nn_destroyComputer(nn_Computer *computer);
+void nn_destroyComputerN(nn_Computer *computer, size_t n);
 void nn_lockComputer(nn_Computer *computer);
 void nn_unlockComputer(nn_Computer *computer);
 // stops the computer if an architecture state is already present,

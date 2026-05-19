@@ -500,6 +500,7 @@ typedef struct ne_memSand {
 	char *buf;
 	size_t used;
 	size_t cap;
+	size_t active;
 } ne_memSand;
 
 void *ne_sandbox_alloc(void *state, void *memory, size_t oldSize, size_t newSize) {
@@ -509,12 +510,16 @@ void *ne_sandbox_alloc(void *state, void *memory, size_t oldSize, size_t newSize
 	newSize = ne_alignAlloc(newSize, NN_ALLOC_ALIGN);
 
 	// never free
-	if(newSize == 0) return NULL;
+	if(newSize == 0) {
+		sand->active -= oldSize;
+		return NULL;
+	}
 	if(memory == NULL) {
 		if(sand->cap - sand->used < newSize) return NULL;
 		// alloc new
 		void *mem = sand->buf + sand->used;
 		sand->used += newSize;
+		sand->active += newSize;
 		return mem;
 	}
 	// realloc
@@ -522,6 +527,7 @@ void *ne_sandbox_alloc(void *state, void *memory, size_t oldSize, size_t newSize
 	if(sand->cap - sand->used < newSize) return NULL;
 	void *mem = sand->buf + sand->used;
 	sand->used += newSize;
+	sand->active += newSize;
 	memcpy(mem, memory, oldSize);
 	return mem;
 }
@@ -570,6 +576,7 @@ int main(int argc, char **argv) {
 
 	ne_memSand sand;
 	sand.buf = NULL;
+	sand.active = 0;
 	
 	if(sandboxMem) {
 		// 1 MiB pre-allocated to prevent erasing the free-list
@@ -704,7 +711,7 @@ int main(int argc, char **argv) {
     ncl_mountKeyboard(scrstate, "mainKB");
 
 	// we assume server basically
-	nn_Computer *c = nn_createComputer(u, NULL, NULL, ramTotal, nn_defaultComponentLimits[tier-1] * 4, 256);
+	nn_Computer * volatile c = nn_createComputer(u, NULL, NULL, ramTotal, nn_defaultComponentLimits[tier-1] * 4, 256);
 	nn_Environment cEnv = {
 		.userdata = NULL,
 		.handler = ne_env,
@@ -995,5 +1002,8 @@ cleanup:;
 	if(eepromPath != NULL) free(eepromCode);
 	CloseWindow();
 	free(sand.buf);
+	if(sand.buf != NULL) {
+		printf("Leaked: %zu bytes\n", sand.active);
+	}
 	return 0;
 }

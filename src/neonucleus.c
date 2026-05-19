@@ -1074,6 +1074,7 @@ struct nn_Computer {
 	nn_Universe *universe;
 	nn_Environment env;
 	nn_Lock *lock;
+	nn_refc_t refc;
 	void *userdata;
 	char *address;
 	char *tmpaddress;
@@ -1176,6 +1177,7 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->state = NN_BOOTUP;
 	c->universe = universe;
 	c->userdata = userdata;
+	c->refc = 1;
 
 	c->lock = nn_createLock(ctx);
 	if(c->lock == NULL) {
@@ -1231,6 +1233,14 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->errorBuffer[0] = '\0';
 	for(size_t i = 0; i < NN_MAX_USERDATA; i++) c->uservals[i].state = NULL;
 	return c;
+}
+
+void nn_retainComputer(nn_Computer *computer) {
+	nn_retainComputerN(computer, 1);
+}
+
+void nn_retainComputerN(nn_Computer *computer, size_t n) {
+	nn_incRef(&computer->refc, n);
 }
 
 void nn_lockComputer(nn_Computer *computer) {
@@ -1441,6 +1451,11 @@ void nn_beepComputerMorse(nn_Computer *computer, nn_MorseBeep beep) {
 }
 
 void nn_destroyComputer(nn_Computer *computer) {
+	nn_destroyComputerN(computer, 1);
+}
+
+void nn_destroyComputerN(nn_Computer *computer, size_t n) {
+	if(!nn_decRef(&computer->refc, n)) return;
 	nn_Context *ctx = &computer->universe->ctx;
 	nn_stopComputer(computer);
 
