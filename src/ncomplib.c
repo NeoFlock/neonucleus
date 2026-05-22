@@ -521,6 +521,7 @@ struct ncl_ScreenState {
 	nn_Context *ctx;
 	nn_Lock *lock;
 	nn_ScreenConfig conf;
+	size_t usage;
 	int width;
 	int height;
 	int viewportWidth;
@@ -2142,9 +2143,11 @@ static void ncl_setRealScreenPixel(ncl_ScreenState *state, int x, int y, ncl_Scr
 	y--;
 
 	state->pixels[x + y * state->conf.maxWidth] = pixel;
+	state->usage++;
 }
 
-static void ncl_recomputeScreen(const ncl_ScreenState *state) {
+static void ncl_recomputeScreen(ncl_ScreenState *state) {
+	state->usage++;
 	for(int y = 1; y <= state->height; y++) {
 		for(int x = 1; x <= state->width; x++) {
 			ncl_ScreenPixel *pixel = ncl_getRealScreenPixelPointer(state, x, y);
@@ -2313,6 +2316,7 @@ nn_Component *ncl_createScreen(nn_Universe *universe, const char *address, const
 	screen->viewportHeight = screen->height;
 	screen->keyboardCount = 0;
 	screen->brightness = 1;
+	screen->usage = 0;
 
 	ncl_resetScreen(screen);
 
@@ -2566,6 +2570,7 @@ static nn_Exit ncl_gpuHandler(nn_GPURequest *req) {
         scr->palette[idx] = req->palette.color;
         scr->resolvedPalette[idx] =
             nn_mapDepth(req->palette.color, scr->depth);
+		scr->usage++;
         ncl_unlockScreen(scr);
         return NN_OK;
     }
@@ -3519,6 +3524,7 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 	if(strcmp(ty, NCL_SCREEN) == 0) {
 		ncl_ScreenState *screen = state;
 		nn_lock(screen->ctx, screen->lock);
+		stat->usageCounter = screen->usage;
 		stat->screen.conf = &screen->conf;
 		stat->screen.depth = screen->depth;
 		stat->screen.flags = screen->flags;
