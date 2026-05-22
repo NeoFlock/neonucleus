@@ -637,10 +637,8 @@ int main(int argc, char **argv) {
 	char mainfspath[NN_MAX_PATH];
 	snprintf(mainfspath, NN_MAX_PATH, "data/%s", mainDir);
 	nn_Component *managedfs = ncl_createFilesystem(u, NULL, mainfspath, &nn_defaultFilesystems[tier-1], true);
-	//nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
-	nn_Component *tmpfs = ncl_createFilesystem(u, NULL, "/tmp", &nn_defaultFilesystems[3], false);
+	nn_Component *tmpfs = ncl_createTmpFS(u, NULL, &nn_defaultTmpFS, NCL_FILECOST_DEFAULT, false);
 	nn_Component *testingfs = ncl_createFilesystem(u, NULL, "aux", &nn_defaultFilesystems[3], false);
-	// until TmpFS works
 	nn_Component *debugfs = ncl_createTmpFS(u, NULL, &nn_defaultFilesystems[3], NCL_FILECOST_DEFAULT, false);
 
 	const char * const testDriveData = 

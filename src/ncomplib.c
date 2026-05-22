@@ -404,7 +404,7 @@ bool ncl_mkdir(ncl_VFS vfs, const char *path) {
 	return vfs.handler(&req);
 }
 
-static void ncl_splitParentName(const char *path, char parent[NN_MAX_PATH], char name[NN_MAX_PATH]) {
+void ncl_splitParentName(const char *path, char parent[NN_MAX_PATH], char name[NN_MAX_PATH]) {
 	char buf[NN_MAX_PATH];
 	// use snprintf instead of strncpy cuz NULL terminator
 	snprintf(buf, NN_MAX_PATH, "%s", path);
@@ -448,7 +448,6 @@ static bool ncl_copydir(ncl_VFS vfs, const char *from, const char *to) {
 		snprintf(subpath, NN_MAX_PATH, "%s%c%s", from, vfs.pathsep, name);
 		char subdest[NN_MAX_PATH];
 		snprintf(subdest, NN_MAX_PATH, "%s%c%s", to, vfs.pathsep, name);
-		printf("%s -> %s\n", subpath, subdest);
 		if(!ncl_copyto(vfs, subpath, subdest)) goto fail;
 	}
 
@@ -868,7 +867,7 @@ static nn_Exit ncl_fsHandler(nn_FSRequest *req) {
 			return NN_EBADCALL;
 		}
 		char path[NN_MAX_PATH];
-		ncl_fixPath(state, req->open.path, path);
+		ncl_fixPath(state, req->opendir, path);
 		void *dir = ncl_opendir(state->vfs, path);
 		if(dir == NULL) {
 			nn_unlock(ctx, state->lock);
@@ -1075,535 +1074,512 @@ nn_Component *ncl_createFilesystem(nn_Universe *universe, const char *address, c
 	return c;
 }
 
-#define NCL_INITFILECAP (8 * NN_KiB)
-#define NCL_INITDIRCAP 8
-
-#define NCL_MAXDIRSIZE 1024
-#define NCL_MAXFILESIZE (1 * NN_GiB)
-
 typedef struct ncl_TmpFile {
-	nn_Context *ctx;
+	size_t openHandles;
 	struct ncl_TmpFile *parent;
+	struct ncl_TmpFile *next;
 	bool isFile;
-	size_t size;
-	size_t cap;
-	size_t openFD;
 	union {
-		char *code;
-		struct ncl_TmpFile **files;
+		struct ncl_TmpFile *files;
+		struct {
+			char *data;
+			size_t datalen;
+		};
 	};
-	char name[NN_MAX_PATH];
+	char *name;
 } ncl_TmpFile;
 
-typedef struct ncl_TmpFileDesc {
-	ncl_TmpFile *f;
-	size_t off;
+size_t ncl_segmentLen(const char *text) {
+	size_t l = 0;
+	while(text[l]) {
+		if(text[l] == '/') break;
+		l++;
+	}
+	return l;
+}
+
+typedef struct ncl_TmpFildes {
+	ncl_TmpFile *file;
 	char mode;
-} ncl_TmpFileDesc;
-
-static ncl_TmpFile *ncl_allocTmpFile(nn_Context *ctx, const char *name, bool isFile) {
-	size_t cap = isFile ? NCL_INITFILECAP : NCL_INITDIRCAP;
-	ncl_TmpFile *f = nn_alloc(ctx, sizeof(*f));
-	if(f == NULL) return NULL;
-	snprintf(f->name, NN_MAX_PATH, "%s", name);
-	f->ctx = ctx;
-	f->parent = NULL;
-	f->isFile = isFile;
-	f->openFD = 0;
-	f->size = 0;
-	f->cap = cap;
-	if(isFile) {
-		char *code = nn_alloc(ctx, cap);
-		if(code == NULL) {
-			nn_free(ctx, f, sizeof(*f));
-			return NULL;
-		}
-		f->code = code;
-	} else {
-		ncl_TmpFile **files = nn_alloc(ctx, sizeof(ncl_TmpFile *) * cap);
-		if(files == NULL) {
-			nn_free(ctx, f, sizeof(*f));
-			return NULL;
-		}
-		f->files = files;
-	}
-	return f;
-}
-
-static void ncl_freeTmpFile(ncl_TmpFile *f) {
-	nn_Context *ctx = f->ctx;
-	if(f->isFile) {
-		nn_free(ctx, f->code, f->cap);
-	} else {
-		for(size_t i = 0; i < f->size; i++) {
-			ncl_freeTmpFile(f->files[i]);
-		}
-		nn_free(ctx, f->files, f->cap * sizeof(ncl_TmpFile *));
-	}
-	nn_free(ctx, f, sizeof(*f));
-}
-
-static bool ncl_removeTmpFile(ncl_TmpFile *dir, ncl_TmpFile *ent) {
-	size_t j = 0;
-	for(size_t i = 0; i < dir->size; i++) {
-		if(dir->files[i] != ent) {
-			dir->files[j] = dir->files[i];
-			j++;
-		}
-	}
-	bool removed = j < dir->size;
-	dir->size = j;
-	return removed;
-}
-
-static bool ncl_addTmpFile(ncl_TmpFile *dir, ncl_TmpFile *ent) {
-	nn_Context *ctx = dir->ctx;
-	if(dir->size == dir->cap) {
-		size_t newCap = dir->cap * 2;
-		if(newCap > NCL_MAXDIRSIZE) return false;
-		ncl_TmpFile **files = nn_realloc(ctx, dir->files, sizeof(ncl_TmpFile *) * dir->cap, sizeof(ncl_TmpFile *) * newCap);
-		if(files == NULL) return false;
-		dir->cap = newCap;
-		dir->files = files;
-	}
-	dir->files[dir->size] = ent;
-	dir->size++;
-	ent->parent = dir;
-	return true;
-}
-
-// ensures minimum file capacity
-static bool ncl_tmpEnsureCap(ncl_TmpFile *file, size_t minCap) {
-	if(!file->isFile) return false;
-	if(minCap > NCL_MAXFILESIZE) return false;
-	if(file->cap < minCap) {
-		size_t newCap = file->cap;
-		while(newCap < minCap) newCap *= 2;
-		if(newCap > NCL_MAXFILESIZE) return false;
-		char *code = nn_realloc(file->ctx, file->code, file->cap, newCap);
-		if(code == NULL) return false;
-		file->code = code;
-	}
-	return true;
-}
-
-static ncl_TmpFile *ncl_tmpGet(ncl_TmpFile *root, const char *path) {
-	if(root->isFile) return NULL;
-	char pathbuf[NN_MAX_PATH];
-	strncpy(pathbuf, path, NN_MAX_PATH-1);
-
-	if(pathbuf[0] == '\0') {
-		return root;
-	}
-	char *endOfParent = strchr(pathbuf, '/');
-	if(endOfParent == NULL) {
-		for(size_t i = 0; i < root->size; i++) {
-			if(strcmp(root->files[i]->name, pathbuf) == 0) return root->files[i];
-		}
-		return NULL;
-	}
-	*endOfParent = '\0';
-	const char *subpath = endOfParent + 1;
-	ncl_TmpFile *parent = ncl_tmpGet(root, pathbuf);
-	if(parent == NULL) return NULL;
-	return ncl_tmpGet(parent, subpath);
-}
-
-static size_t ncl_tmpSpaceUsedIn(ncl_TmpFile *f, size_t fileCost) {
-	if(f->isFile) return fileCost + f->size;
-	size_t spaceUsed = fileCost;
-	for(size_t i = 0; i < f->size; f++) {
-		spaceUsed += ncl_tmpSpaceUsedIn(f->files[i], fileCost);
-	}
-	return spaceUsed;
-}
+	union {
+		size_t offset;
+		ncl_TmpFile *curEnt;
+	};
+} ncl_TmpFildes;
 
 typedef struct ncl_TmpFS {
 	nn_Context *ctx;
 	nn_Lock *lock;
-	nn_Filesystem conf;
-	size_t usage;
 	size_t fileCost;
-	size_t spaceUsed;
 	bool isReadonly;
-	ncl_TmpFileDesc *fds[NN_MAX_OPENFILES];
+	ncl_TmpFildes fds[NN_MAX_OPENFILES];
+	size_t usage;
+	nn_Filesystem conf;
 	ncl_TmpFile *root;
-	char label[NN_MAX_LABEL];
+	size_t spaceUsed;
 	size_t labellen;
+	char label[NN_MAX_LABEL];
 } ncl_TmpFS;
 
-static size_t ncl_tmpSpaceUsedCached(ncl_TmpFS *tmpfs) {
-	if(tmpfs->spaceUsed == 0) {
-		tmpfs->spaceUsed = ncl_tmpSpaceUsedIn(tmpfs->root, tmpfs->fileCost);
-		if(tmpfs->spaceUsed > tmpfs->conf.spaceTotal) tmpfs->spaceUsed = tmpfs->conf.spaceTotal;
+ncl_TmpFile *ncl_tmpGet(ncl_TmpFile *root, const char *path) {
+	if(root->isFile) return NULL;
+	if(path[0] == '\0') return root;
+	ncl_TmpFile *iter = root->files;
+	size_t l = ncl_segmentLen(path);
+	while(iter) {
+		if(strncmp(iter->name, path, l) == 0 && iter->name[l] == '\0') {
+			// final one
+			if(path[l] == '\0') return iter;
+			return ncl_tmpGet(iter, path + l + 1);
+		}
+		iter = iter->next;
 	}
-	return tmpfs->spaceUsed;
+	return NULL;
 }
 
-static size_t ncl_tmpSpaceFree(ncl_TmpFS *tmpfs) {
-	return tmpfs->conf.spaceTotal - ncl_tmpSpaceUsedCached(tmpfs);
+ncl_TmpFile *ncl_tmpAllocFile(nn_Context *ctx, const char *name, bool isFile) {
+	ncl_TmpFile *f = nn_alloc(ctx, sizeof(*f));
+	if(f == NULL) return NULL;
+	f->name = nn_strdup(ctx, name);
+	if(f->name == NULL) {
+		nn_free(ctx, f, sizeof(*f));
+		return NULL;
+	}
+	f->isFile = isFile;
+	if(isFile) {
+		f->data = NULL;
+		f->datalen = 0;
+	} else {
+		f->files = NULL;
+	}
+	f->next = NULL;
+	f->openHandles = 0;
+	f->parent = NULL;
+	return f;
 }
 
-static bool ncl_tmpMkdir(ncl_TmpFile *root, const char *path) {
-	if(root->isFile) return false;
-	printf("tmpfs mkdir: %s\n", path);
-	char parent[NN_MAX_PATH];
-	char name[NN_MAX_PATH];
-	ncl_splitParentName(path, parent, name);
+void ncl_tmpFreeFile(nn_Context *ctx, ncl_TmpFile *f) {
+	if(f->isFile) {
+		nn_free(ctx, f->data, f->datalen);
+	} else {
+		ncl_TmpFile *iter = f->files;
+		while(iter) {
+			ncl_TmpFile *cur = iter;
+			iter = iter->next;
+			ncl_tmpFreeFile(ctx, cur);
+		}
+	}
+	nn_strfree(ctx, f->name);
+	nn_free(ctx, f, sizeof(*f));
+}
 
-	// non-recursive for now
-	ncl_TmpFile *dir = ncl_tmpGet(root, path);
-	if(dir == NULL) return false; // TODO: mkdir
-	if(dir->isFile) return false;
+size_t ncl_tmpSpaceUsedIn(ncl_TmpFS *fs, ncl_TmpFile *f) {
+	if(f->isFile) return fs->fileCost + f->datalen;
+	size_t space = fs->fileCost;
+	ncl_TmpFile *iter = f->files;
+	while(iter) {
+		space += ncl_tmpSpaceUsedIn(fs, iter);
+		iter = iter->next;
+	}
+	return space;
+}
 
-	ncl_TmpFile *f = ncl_allocTmpFile(root->ctx, name, false);
-	if(!ncl_addTmpFile(dir, f)) {
-		return false;
+size_t ncl_tmpSpaceUsed(ncl_TmpFS *fs) {
+	if(fs->spaceUsed == 0) fs->spaceUsed = ncl_tmpSpaceUsedIn(fs, fs->root);
+	return fs->spaceUsed;
+}
+
+int ncl_findTmpFildes(ncl_TmpFS *fs) {
+	for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
+		if(fs->fds[i].file == NULL) return i;
+	}
+	return -1;
+}
+
+// NULL on success
+const char *ncl_tmpMkdir(ncl_TmpFS *fs, ncl_TmpFile *root, const char *path) {
+	if(root->isFile) return "is a file";
+	if(path[0] == '\0') return NULL;
+	ncl_TmpFile *iter = root->files;
+	size_t l = ncl_segmentLen(path);
+	while(iter) {
+		if(strncmp(iter->name, path, l) == 0 && iter->name[l] == '\0') {
+			// final one
+			if(path[l] == '\0') return NULL;
+			return ncl_tmpMkdir(fs, iter, path + l + 1);
+		}
+		iter = iter->next;
+	}
+	if(fs->conf.spaceTotal - ncl_tmpSpaceUsed(fs) < fs->fileCost) {
+		return "out of space";
+	}
+	// shi, we gotta actually make shit
+	char dirname[NN_MAX_PATH];
+	memcpy(dirname, path, l);
+	dirname[l] = '\0';
+	ncl_TmpFile *dir = ncl_tmpAllocFile(fs->ctx, dirname, false);
+	if(dir == NULL) return "out of memory";
+	dir->parent = root;
+	dir->next = root->files;
+	root->files = dir;
+	fs->spaceUsed += fs->fileCost;
+	// final one
+	if(path[l] == '\0') return NULL;
+	return ncl_tmpMkdir(fs, dir, path + l + 1);
+}
+
+bool ncl_tmpCanRemove(ncl_TmpFile *f) {
+	if(f->openHandles > 0) return false;
+	if(!f->isFile) {
+		ncl_TmpFile *iter = f->files;
+		while(iter) {
+			if(!ncl_tmpCanRemove(iter)) return false;
+			iter = iter->next;
+		}
 	}
 	return true;
 }
 
+bool ncl_tmpRemoveEnt(ncl_TmpFile *dir, ncl_TmpFile *ent) {
+	ncl_TmpFile **pIter = &dir->files;
+	while(*pIter) {
+		if(*pIter == ent) {
+			*pIter = ent->next;
+			ent->next = NULL;
+			ent->parent = NULL;
+			return true;
+		}
+		pIter = &ent->next;
+	}
+	return false;
+}
+
+// TODO: check filedesc types, in case of a fuzzing attack
 static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 	nn_Context *ctx = req->ctx;
 	nn_Computer *C = req->computer;
 	ncl_TmpFS *tmpfs = req->state;
 	if(req->action == NN_FS_DROP) {
-		ncl_freeTmpFile(tmpfs->root);
-		for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
-			ncl_TmpFileDesc *desc = tmpfs->fds[i];
-			if(desc != NULL) {
-				nn_free(ctx, desc, sizeof(*desc));
-			}
-		}
+		ncl_tmpFreeFile(ctx, tmpfs->root);
 		nn_destroyLock(ctx, tmpfs->lock);
 		nn_free(ctx, tmpfs, sizeof(*tmpfs));
 		return NN_OK;
 	}
 	if(req->action == NN_FS_SPACEUSED) {
 		nn_lock(ctx, tmpfs->lock);
-		req->spaceUsed = ncl_tmpSpaceUsedCached(tmpfs);
+		req->spaceUsed = ncl_tmpSpaceUsed(tmpfs);
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_FS_GETLABEL) {
 		nn_lock(ctx, tmpfs->lock);
-		memcpy(req->getlabel.buf, tmpfs->label, tmpfs->labellen);
 		req->getlabel.len = tmpfs->labellen;
+		memcpy(req->getlabel.buf, tmpfs->label, tmpfs->labellen);
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_FS_SETLABEL) {
 		nn_lock(ctx, tmpfs->lock);
-		if(req->setlabel.len > NN_MAX_LABEL) req->setlabel.len = NN_MAX_LABEL;
-		memcpy(tmpfs->label, req->setlabel.buf, req->setlabel.len);
 		tmpfs->labellen = req->setlabel.len;
+		memcpy(tmpfs->label, req->setlabel.buf, tmpfs->labellen);
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
-	if(req->action == NN_FS_ISRO) {
+	if(req->action == NN_FS_OPENDIR) {
 		nn_lock(ctx, tmpfs->lock);
-		req->isReadonly = tmpfs->isReadonly;
-		nn_unlock(ctx, tmpfs->lock);
-		return NN_OK;
-	}
-
-	if(req->action == NN_FS_OPEN) {
-		nn_lock(ctx, tmpfs->lock);
-		char mode = req->open.mode[0];
-		if(mode != 'w' && mode != 'a') mode = 'r';
-		int fd = ncl_findFileDesc((void **)tmpfs->fds);
+		tmpfs->usage++;
+		int fd = ncl_findTmpFildes(tmpfs);
 		if(fd < 0) {
 			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "too many files open at once");
+			nn_setError(C, "too many file descriptors");
 			return NN_EBADCALL;
 		}
-		if(mode != 'r' && tmpfs->isReadonly) {
+		ncl_TmpFile *dir = ncl_tmpGet(tmpfs->root, req->opendir);
+		if(dir == NULL) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, req->opendir);
+			return NN_EBADCALL;
+		}
+		if(dir->isFile) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "not a directory");
+			return NN_EBADCALL;
+		}
+		dir->openHandles++;
+		tmpfs->fds[fd].file = dir;
+		tmpfs->fds[fd].mode = 'r';
+		tmpfs->fds[fd].curEnt = dir->files;
+		req->fd = fd;
+		nn_unlock(ctx, tmpfs->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_CLOSEDIR || req->action == NN_FS_CLOSE) {
+		int fd = req->fd;
+		if(fd < 0 || fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		nn_lock(ctx, tmpfs->lock);
+		if(tmpfs->fds[fd].file == NULL) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		tmpfs->fds[fd].file->openHandles--;
+		tmpfs->fds[fd].file = NULL;
+		nn_unlock(ctx, tmpfs->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_READDIR) {
+		int fd = req->fd;
+		if(fd < 0 || fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		nn_lock(ctx, tmpfs->lock);
+		ncl_TmpFildes *fildes = &tmpfs->fds[fd];
+		if(fildes->file == NULL) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		if(fildes->curEnt) {
+			if(fildes->curEnt->isFile) {
+				snprintf(req->readdir.buf, req->readdir.len, "%s", fildes->curEnt->name);
+			} else {
+				snprintf(req->readdir.buf, req->readdir.len, "%s/", fildes->curEnt->name);
+			}
+			req->readdir.len = strlen(req->readdir.buf);
+			fildes->curEnt = fildes->curEnt->next;
+		} else {
+			req->readdir.buf = NULL;
+		}
+		nn_unlock(ctx, tmpfs->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_STAT) {
+		nn_lock(ctx, tmpfs->lock);
+		tmpfs->usage++;
+		ncl_TmpFile *f = ncl_tmpGet(tmpfs->root, req->stat.path);
+		if(f) {
+			req->stat.isDirectory = !f->isFile;
+			req->stat.size = f->isFile ? f->datalen : 0;
+			// TODO: tmp mtime
+			req->stat.lastModified = 0;
+		} else {
+			req->stat.path = NULL;
+		}
+		nn_unlock(ctx, tmpfs->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_OPEN) {
+		nn_lock(ctx, tmpfs->lock);
+		tmpfs->usage++;
+		int fd = ncl_findTmpFildes(tmpfs);
+		if(fd < 0) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "too many file descriptors");
+			return NN_EBADCALL;
+		}
+		const char *mode = req->open.mode;
+		if(mode[0] != 'r' && tmpfs->isReadonly) {
 			nn_unlock(ctx, tmpfs->lock);
 			nn_setError(C, "is readonly");
 			return NN_EBADCALL;
 		}
 		ncl_TmpFile *f = ncl_tmpGet(tmpfs->root, req->open.path);
 		if(f == NULL) {
-			if(mode == 'r') {
+			if(mode[0] == 'r') {
 				nn_unlock(ctx, tmpfs->lock);
 				nn_setError(C, req->open.path);
 				return NN_EBADCALL;
 			}
-			if(ncl_tmpSpaceFree(tmpfs) < tmpfs->fileCost) {
+			if(ncl_tmpSpaceUsed(tmpfs) + tmpfs->fileCost > tmpfs->conf.spaceTotal) {
 				nn_unlock(ctx, tmpfs->lock);
 				nn_setError(C, "out of space");
 				return NN_EBADCALL;
 			}
+
 			char parent[NN_MAX_PATH];
 			char name[NN_MAX_PATH];
 			ncl_splitParentName(req->open.path, parent, name);
+
 			ncl_TmpFile *dir = ncl_tmpGet(tmpfs->root, parent);
 			if(dir == NULL) {
 				nn_unlock(ctx, tmpfs->lock);
-				nn_setError(C, req->open.path);
+				nn_setError(C, "no such directory");
 				return NN_EBADCALL;
 			}
 			if(dir->isFile) {
 				nn_unlock(ctx, tmpfs->lock);
-				nn_setError(C, "is a directory");
+				nn_setError(C, "not a directory");
 				return NN_EBADCALL;
 			}
-			f = ncl_allocTmpFile(ctx, name, true);
+
+			f = ncl_tmpAllocFile(ctx, name, true);
 			if(f == NULL) {
 				nn_unlock(ctx, tmpfs->lock);
 				return NN_ENOMEM;
 			}
-			if(!ncl_addTmpFile(dir, f)) {
-				nn_unlock(ctx, tmpfs->lock);
-				ncl_freeTmpFile(f);
-				nn_setError(C, "too many directory entries");
-				return NN_EBADCALL;
-			}
-			tmpfs->spaceUsed += tmpfs->fileCost;
+
+			f->next = dir->files;
+			f->parent = dir;
+			dir->files = f;
 		}
 		if(!f->isFile) {
 			nn_unlock(ctx, tmpfs->lock);
 			nn_setError(C, "is a directory");
 			return NN_EBADCALL;
 		}
-		if(mode == 'w') f->size = 0;
-		ncl_TmpFileDesc *desc = nn_alloc(tmpfs->ctx, sizeof(*desc));
-		if(desc == NULL) {
-			nn_unlock(ctx, tmpfs->lock);
-			return NN_ENOMEM;
+		if(mode[0] == 'w') {
+			tmpfs->spaceUsed -= f->datalen;
+			nn_free(ctx, f->data, f->datalen);
+			f->data = NULL;
+			f->datalen = 0;
 		}
-		desc->f = f;
-		desc->mode = mode;
-		desc->off = mode == 'a' ? f->size : 0;
-		tmpfs->fds[fd] = desc;
-		f->openFD++;
-		req->fd = fd;
-		nn_unlock(ctx, tmpfs->lock);
-		return NN_OK;
-	}
-	if(req->action == NN_FS_CLOSE || req->action == NN_FS_CLOSEDIR) {
-		nn_lock(ctx, tmpfs->lock);
-		ncl_TmpFileDesc *desc = ncl_getFile((void **)tmpfs->fds, req->fd);
-		if(desc == NULL) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "bad file descriptor");
-			return NN_EBADCALL;
+		if(mode[0] != 'r') {
+			// modify mtime here ig
 		}
-		desc->f->openFD--;
-		nn_free(ctx, desc, sizeof(*desc));
-		tmpfs->fds[req->fd] = NULL;
-		nn_unlock(ctx, tmpfs->lock);
-		return NN_OK;
-	}
-	if(req->action == NN_FS_READ) {
-		nn_lock(ctx, tmpfs->lock);
-		ncl_TmpFileDesc *desc = ncl_getFile((void **)tmpfs->fds, req->fd);
-		if(desc == NULL) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "bad file descriptor");
-			return NN_EBADCALL;
-		}
-		if(!desc->f->isFile) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "bad file descriptor");
-			return NN_EBADCALL;
-		}
-		size_t remaining = desc->f->size - desc->off;
-		if(remaining == 0) {
-			nn_unlock(ctx, tmpfs->lock);
-			req->read.buf = NULL;
-			return NN_OK;
-		}
-
-		if(req->read.len > remaining) req->read.len = remaining;
-		memcpy(req->read.buf, desc->f->code + desc->off, req->read.len);
-		desc->off += req->read.len;
+		f->openHandles++;
+		tmpfs->fds[fd].file = f;
+		tmpfs->fds[fd].mode = mode[0];
+		tmpfs->fds[fd].offset = mode[0] == 'a' ? f->datalen : 0;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_FS_WRITE) {
+		int fd = req->fd;
+		if(fd < 0 || fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
 		nn_lock(ctx, tmpfs->lock);
-		if(ncl_tmpSpaceFree(tmpfs) < req->write.len) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "out of space");
-			return NN_EBADCALL;
-		}
-		ncl_TmpFileDesc *desc = ncl_getFile((void **)tmpfs->fds, req->fd);
-		if(desc == NULL) {
+		tmpfs->usage++;
+		if(tmpfs->fds[fd].file == NULL) {
 			nn_unlock(ctx, tmpfs->lock);
 			nn_setError(C, "bad file descriptor");
 			return NN_EBADCALL;
 		}
-		if(!desc->f->isFile) {
+		ncl_TmpFildes *fildes = &tmpfs->fds[fd];
+		size_t capNeeded = fildes->offset + req->write.len;
+		if(capNeeded > fildes->file->datalen) {
+			char *data = nn_realloc(ctx, fildes->file->data, fildes->file->datalen, capNeeded);
+			if(data == NULL) {
+				nn_unlock(ctx, tmpfs->lock);
+				return NN_ENOMEM;
+			}
+			fildes->file->data = data;
+			fildes->file->datalen = capNeeded;
+		}
+		memcpy(fildes->file->data + fildes->offset, req->write.buf, req->write.len);
+		fildes->offset += req->write.len;
+		nn_unlock(ctx, tmpfs->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_READ) {
+		int fd = req->fd;
+		if(fd < 0 || fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
+		nn_lock(ctx, tmpfs->lock);
+		tmpfs->usage++;
+		if(tmpfs->fds[fd].file == NULL) {
 			nn_unlock(ctx, tmpfs->lock);
 			nn_setError(C, "bad file descriptor");
 			return NN_EBADCALL;
 		}
-		size_t minSizeNeeded = desc->off + req->write.len;
-		if(!ncl_tmpEnsureCap(desc->f, minSizeNeeded)) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "file too big");
-			return NN_EBADCALL;
+		ncl_TmpFildes *fildes = &tmpfs->fds[fd];
+		size_t size = fildes->file->datalen;
+		if(fildes->offset >= size) {
+			req->read.buf = NULL;
+		} else {
+			size_t read = req->read.len;
+			if(read+fildes->offset > size) read = size - fildes->offset;
+			memcpy(req->read.buf, fildes->file->data + fildes->offset, read);
+			req->read.len = read;
+			fildes->offset += read;
 		}
-		memcpy(desc->f->code + desc->off, req->write.buf, req->write.len);
-		if(desc->f->size < minSizeNeeded) desc->f->size = minSizeNeeded;
-		desc->off = minSizeNeeded;
-		tmpfs->spaceUsed = 0;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_FS_SEEK) {
+		int fd = req->fd;
+		if(fd < 0 || fd >= NN_MAX_OPENFILES) {
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
 		nn_lock(ctx, tmpfs->lock);
-		ncl_TmpFileDesc *desc = ncl_getFile((void **)tmpfs->fds, req->fd);
-		if(desc == NULL) {
+		tmpfs->usage++;
+		if(tmpfs->fds[fd].file == NULL) {
 			nn_unlock(ctx, tmpfs->lock);
 			nn_setError(C, "bad file descriptor");
 			return NN_EBADCALL;
 		}
-		if(!desc->f->isFile) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "bad file descriptor");
-			return NN_EBADCALL;
-		}
-		intptr_t newOff = desc->off;
-		size_t size = desc->f->size;
-
-		switch(req->seek.whence) {
+		ncl_TmpFildes *fildes = &tmpfs->fds[fd];
+		int cur = fildes->offset;
+		int off = req->seek.off;
+		size_t size = fildes->file->datalen;
+		nn_FSWhence whence = req->seek.whence;
+		switch(whence) {
 		case NN_SEEK_SET:
-			newOff = req->seek.off;
+			cur = off;
 			break;
 		case NN_SEEK_CUR:
-			newOff += req->seek.off;
+			cur += off;
 			break;
 		case NN_SEEK_END:
-			newOff = size - req->seek.off;
+			cur = size - off;
 			break;
 		}
-
-		if(newOff < 0) newOff = 0;
-		if(newOff > size) newOff = size;
-		desc->off = newOff;
-		nn_unlock(ctx, tmpfs->lock);
-		return NN_OK;
-	}
-	
-	if(req->action == NN_FS_OPENDIR) {
-		nn_lock(ctx, tmpfs->lock);
-		int fd = ncl_findFileDesc((void **)tmpfs->fds);
-		if(fd < 0) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "too many files open at once");
-			return NN_EBADCALL;
-		}
-		ncl_TmpFile *f = ncl_tmpGet(tmpfs->root, req->opendir);
-		if(f == NULL) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, req->open.path);
-			return NN_EBADCALL;
-		}
-		if(f->isFile) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "not a directory");
-			return NN_EBADCALL;
-		}
-		ncl_TmpFileDesc *desc = nn_alloc(tmpfs->ctx, sizeof(*desc));
-		if(desc == NULL) {
-			nn_unlock(ctx, tmpfs->lock);
-			return NN_ENOMEM;
-		}
-		desc->f = f;
-		desc->mode = 'd';
-		desc->off = 0;
-		tmpfs->fds[fd] = desc;
-		f->openFD++;
-		req->fd = fd;
-		nn_unlock(ctx, tmpfs->lock);
-		return NN_OK;
-	}
-	if(req->action == NN_FS_READDIR) {
-		nn_lock(ctx, tmpfs->lock);
-		ncl_TmpFileDesc *desc = ncl_getFile((void **)tmpfs->fds, req->fd);
-		if(desc == NULL) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "bad file descriptor");
-			return NN_EBADCALL;
-		}
-		if(desc->f->isFile) {
-			nn_unlock(ctx, tmpfs->lock);
-			nn_setError(C, "bad file descriptor");
-			return NN_EBADCALL;
-		}
-		if(desc->off == desc->f->size) {
-			nn_unlock(ctx, tmpfs->lock);
-			req->readdir.buf = NULL;
-			return NN_OK;
-		}
-
-		ncl_TmpFile *ent = desc->f->files[desc->off];
-		if(ent->isFile) {
-			snprintf(req->readdir.buf, req->readdir.len, "%s", ent->name);
-		} else {
-			snprintf(req->readdir.buf, req->readdir.len, "%s/", ent->name);
-		}
-
-		req->readdir.len = strlen(req->readdir.buf);
-		desc->off++;
-		nn_unlock(ctx, tmpfs->lock);
-		return NN_OK;
-	}
-	
-	if(req->action == NN_FS_STAT) {
-		nn_lock(ctx, tmpfs->lock);
-		ncl_TmpFile *f = ncl_tmpGet(tmpfs->root, req->stat.path);
-		if(f == NULL) {
-			nn_unlock(ctx, tmpfs->lock);
-			req->stat.path = NULL;
-			return NN_OK;
-		}
-		req->stat.isDirectory = !f->isFile;
-		req->stat.size = f->isFile ? f->size : 0;
-		// TODO: give nn_Context a way to get UNIX timestamp
-		req->stat.lastModified = 0;
+		if(cur < 0) cur = 0;
+		if(cur > size) cur = size;
+        fildes->offset = cur;
+		req->seek.off = cur;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
 	if(req->action == NN_FS_MKDIR) {
 		nn_lock(ctx, tmpfs->lock);
-		ncl_tmpMkdir(tmpfs->root, req->mkdir);
+		tmpfs->usage++;
+		const char *err = ncl_tmpMkdir(tmpfs, tmpfs->root, req->mkdir);
 		nn_unlock(ctx, tmpfs->lock);
-		return NN_OK;
+		if(err != NULL) nn_setError(C, err);
+		return err == NULL ? NN_OK : NN_EBADCALL;
 	}
-
 	if(req->action == NN_FS_RENAME) {
+		if(req->rename.from[0] == '\0') {
+			nn_setError(C, "root is forbidden");
+			return NN_EBADCALL;
+		}
+		if(req->rename.to != NULL && req->rename.to[0] == '\0') {
+			nn_setError(C, "root is forbidden");
+			return NN_EBADCALL;
+		}
 		nn_lock(ctx, tmpfs->lock);
-		const char *fromPath = req->rename.from;
-		const char *toPath = req->rename.to;
-
-		if(toPath == NULL) {
-			ncl_TmpFile *f = ncl_tmpGet(tmpfs->root, fromPath);
-			if(f == NULL) {
+		tmpfs->usage++;
+		if(req->rename.to == NULL) {
+			ncl_TmpFile *ripBro = ncl_tmpGet(tmpfs->root, req->rename.from);
+			if(ripBro == NULL) {
 				nn_unlock(ctx, tmpfs->lock);
-				nn_setError(C, "no such file or directory");
+				nn_setError(C, req->rename.from);
 				return NN_EBADCALL;
 			}
-			if(f->parent == NULL) {
+			if(!ncl_tmpCanRemove(ripBro)) {
 				nn_unlock(ctx, tmpfs->lock);
-				nn_setError(C, "root is forbidden");
+				nn_setError(C, "contents are pinned");
 				return NN_EBADCALL;
 			}
-			if(f->openFD > 0) {
+			if(!ncl_tmpRemoveEnt(ripBro->parent, ripBro)) {
 				nn_unlock(ctx, tmpfs->lock);
-				nn_setError(C, "entry is in use");
+				nn_setError(C, "horrendously corrupted state, gg");
 				return NN_EBADCALL;
 			}
-			ncl_removeTmpFile(f->parent, f);
-			nn_unlock(ctx, tmpfs->lock);
-			ncl_freeTmpFile(f);
-			return NN_OK;
+			tmpfs->spaceUsed -= ncl_tmpSpaceUsedIn(tmpfs, ripBro);
+			ncl_tmpFreeFile(ctx, ripBro);
 		}
 		nn_unlock(ctx, tmpfs->lock);
-		nn_setError(C, "rename is not implemented yet");
-		return NN_EBADCALL;
+		return NN_OK;
 	}
 	if(C) nn_setError(C, "tmpfs: not implemented yet");
 	return NN_EBADCALL;
@@ -1620,8 +1596,9 @@ nn_Component *ncl_createTmpFS(nn_Universe *universe, const char *address, const 
 		nn_free(ctx, state, sizeof(*state));
 		return NULL;
 	}
-	state->root = ncl_allocTmpFile(ctx, "", false);
+	state->root = ncl_tmpAllocFile(ctx, "", false);
 	if(state->root == NULL) {
+		nn_destroyLock(ctx, state->lock);
 		nn_free(ctx, state, sizeof(*state));
 		return NULL;
 	}
@@ -1632,11 +1609,11 @@ nn_Component *ncl_createTmpFS(nn_Universe *universe, const char *address, const 
 	state->labellen = 0;
 	state->spaceUsed = 0;
 	for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
-		state->fds[i] = NULL;
+		state->fds[i].file = NULL;
 	}
 	nn_Component *c = nn_createFilesystem(universe, address, fs, state, ncl_tmpfsHandler);
 	if(c == NULL) {
-		ncl_freeTmpFile(state->root);
+		ncl_tmpFreeFile(ctx, state->root);
 		nn_destroyLock(ctx, state->lock);
 		nn_free(ctx, state, sizeof(*state));
 		return NULL;
