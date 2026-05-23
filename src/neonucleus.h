@@ -2360,6 +2360,39 @@ typedef struct nn_InternetCard {
 
 extern nn_InternetCard nn_defaultInternetCard;
 
+typedef struct nn_InternetConnection {
+	nn_InternetProtocol protocol;
+	void *state;
+} nn_InternetConnection;
+
+typedef struct nn_HTTPHeader {
+	const char *name;
+	const char *value;
+} nn_HTTPHeader;
+
+typedef struct nn_InternetRequest {
+    nn_Context *ctx;
+    nn_Computer *computer;
+    void *state;
+    const nn_Tunnel *tunnel;
+	const char *localAddress;
+	nn_InternetConnection *connection;
+	union {
+		// does a socket connection, for any of the supported protocols
+		struct {
+			// URL of connection
+			const char *url;
+			// port. Useless for HTTP connections, as they should use 80 for HTTP and 443 for HTTPS
+			unsigned short port;
+			// HTTP specific
+			size_t postdatalen;
+			const char *postdata;
+			const nn_HTTPHeader *headers;
+			size_t headerlen;
+		} connect;
+	};
+} nn_InternetRequest;
+
 // Colors and palettes.
 // Do note that the 
 
