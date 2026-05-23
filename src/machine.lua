@@ -136,9 +136,9 @@ local function realInvoke(address, method, ...)
 		if computer.isIdle() then sysyield() end -- machine idle
 	end
 
-	if os.getenv("NN_INVDBG") and component.type(address) == os.getenv("NN_INVDBG") then
+	if component.type(address) == os.getenv("NN_INVDBG") or string.find(os.getenv("NN_METDBG") or "", method, nil, true) then
 		print("invoked", address, method, ...)
-		print("got", table.unpack(t))
+		print(string.format("got %d values", #t), table.unpack(t))
 	end
 
 	for i=1,#t do t[i] = sandboxValue(t[i]) end

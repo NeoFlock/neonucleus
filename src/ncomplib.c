@@ -1250,7 +1250,7 @@ bool ncl_tmpRemoveEnt(ncl_TmpFile *dir, ncl_TmpFile *ent) {
 			ent->parent = NULL;
 			return true;
 		}
-		pIter = &ent->next;
+		pIter = &(*pIter)->next;
 	}
 	return false;
 }
@@ -1328,6 +1328,7 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 		}
 		tmpfs->fds[fd].file->openHandles--;
 		tmpfs->fds[fd].file = NULL;
+		tmpfs->fds[fd].offset = 0;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
@@ -1370,6 +1371,12 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 		} else {
 			req->stat.path = NULL;
 		}
+		nn_unlock(ctx, tmpfs->lock);
+		return NN_OK;
+	}
+	if(req->action == NN_FS_ISRO) {
+		nn_lock(ctx, tmpfs->lock);
+		req->isReadonly = tmpfs->isReadonly;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
@@ -1445,6 +1452,7 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 		tmpfs->fds[fd].file = f;
 		tmpfs->fds[fd].mode = mode[0];
 		tmpfs->fds[fd].offset = mode[0] == 'a' ? f->datalen : 0;
+		req->fd = fd;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
@@ -1462,6 +1470,11 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 			return NN_EBADCALL;
 		}
 		ncl_TmpFildes *fildes = &tmpfs->fds[fd];
+		if(fildes->mode == 'r') {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
 		size_t capNeeded = fildes->offset + req->write.len;
 		if(capNeeded > fildes->file->datalen) {
 			char *data = nn_realloc(ctx, fildes->file->data, fildes->file->datalen, capNeeded);
@@ -1491,6 +1504,11 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 			return NN_EBADCALL;
 		}
 		ncl_TmpFildes *fildes = &tmpfs->fds[fd];
+		if(fildes->mode != 'r') {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
 		size_t size = fildes->file->datalen;
 		if(fildes->offset >= size) {
 			req->read.buf = NULL;
@@ -1501,6 +1519,7 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 			req->read.len = read;
 			fildes->offset += read;
 		}
+		tmpfs->spaceUsed = 0;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}
@@ -1518,6 +1537,11 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 			return NN_EBADCALL;
 		}
 		ncl_TmpFildes *fildes = &tmpfs->fds[fd];
+		if(fildes->mode == 'a') {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "bad file descriptor");
+			return NN_EBADCALL;
+		}
 		int cur = fildes->offset;
 		int off = req->seek.off;
 		size_t size = fildes->file->datalen;
@@ -1578,7 +1602,59 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 			}
 			tmpfs->spaceUsed -= ncl_tmpSpaceUsedIn(tmpfs, ripBro);
 			ncl_tmpFreeFile(ctx, ripBro);
+			nn_unlock(ctx, tmpfs->lock);
+			return NN_OK;
 		}
+		// we gotta actually rename shit
+		if(ncl_isIllegalCopy(req->rename.from, req->rename.to)) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "illegal copy operation");
+			return NN_EBADCALL;
+		}
+		char destParent[NN_MAX_PATH], destName[NN_MAX_PATH];
+		ncl_splitParentName(req->rename.to, destParent, destName);
+		ncl_TmpFile *src = ncl_tmpGet(tmpfs->root, req->rename.from);
+		if(src == NULL) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "no such directory");
+			return NN_EBADCALL;
+		}
+		ncl_TmpFile *destDir = ncl_tmpGet(tmpfs->root, destParent);
+		if(destDir == NULL) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "no such directory");
+			return NN_EBADCALL;
+		}
+		if(destDir->isFile) {
+			nn_unlock(ctx, tmpfs->lock);
+			nn_setError(C, "not a directory");
+			return NN_EBADCALL;
+		}
+
+		{ // remove existing dest
+			ncl_TmpFile *existing = ncl_tmpGet(destDir, destName);
+			if(existing != NULL) {
+				if(!ncl_tmpCanRemove(existing)) {
+					nn_unlock(ctx, tmpfs->lock);
+					nn_setError(C, "resource busy");
+					return NN_EBADCALL;
+				}
+				ncl_tmpRemoveEnt(destDir, existing);
+				tmpfs->spaceUsed -= ncl_tmpSpaceUsedIn(tmpfs, existing);
+				ncl_tmpFreeFile(ctx, existing);
+			}
+		}
+
+		char *newName = nn_strdup(ctx, destName);
+		if(newName == NULL) return NN_ENOMEM;
+
+		// transfer shi over
+		ncl_tmpRemoveEnt(src->parent, src);
+		src->next = destDir->files;
+		destDir->files = src;
+		nn_strfree(ctx, src->name);
+		src->name = newName;
+
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;
 	}

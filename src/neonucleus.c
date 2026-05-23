@@ -3047,6 +3047,7 @@ const nn_Filesystem nn_defaultTmpFS = NN_INIT(nn_Filesystem) {
 	.readsPerTick = 15,
 	.writesPerTick = 6,
 	.dataEnergyCost = 0.1 / NN_MiB,
+	.maxReadSize = 2048,
 };
 
 const nn_Drive nn_defaultDrives[4] = {
