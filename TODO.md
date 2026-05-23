@@ -1,15 +1,3 @@
-# To improve the API
-
-- finish tmpfs (rework the whole thing)
-
-# To re-evaluate
-
-- Make the hashmap growing/shrinking to save on memory.
-- Exposing the internal hashmap implementation.
-- Having a copy of the context stored directly in requests instead of having to use getComputerContext, as it simplifies the APIs and allows them
-to be made more portable.
-- Exposing more internal functions that may be useful to the user to prevent pointless rewriting and duplicate machine code.
-
 # Vanilla components needed
 
 Not everything OC has (as a few of them are really MC-centered) but most of it.
@@ -44,7 +32,7 @@ Not everything OC has (as a few of them are really MC-centered) but most of it.
 - `iron_noteblock` component
 - `colorful_lamp` component
 
-# To make it good (after API is stable)
+# To make it good
 
 - make more stuff const if it can be. Gotta help out the optimizer
 - put a bunch of internal-only functions as fastcall
@@ -226,3 +214,11 @@ TODO: interface
 ## OLED/IPU
 
 TODO: interface
+
+# To re-evaluate
+
+- Make the hashmap growing/shrinking to save on memory.
+- Exposing the internal hashmap implementation.
+- Having a copy of the context stored directly in requests instead of having to use getComputerContext, as it simplifies the APIs and allows them
+to be made more portable.
+- Exposing more internal functions that may be useful to the user to prevent pointless rewriting and duplicate machine code.
