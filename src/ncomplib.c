@@ -1485,7 +1485,8 @@ static nn_Exit ncl_tmpfsHandler(nn_FSRequest *req) {
 			fildes->file->data = data;
 			fildes->file->datalen = capNeeded;
 		}
-		memcpy(fildes->file->data + fildes->offset, req->write.buf, req->write.len);
+		// ubsan is acting weird
+		if(fildes->file->data != NULL) memcpy(fildes->file->data + fildes->offset, req->write.buf, req->write.len);
 		fildes->offset += req->write.len;
 		nn_unlock(ctx, tmpfs->lock);
 		return NN_OK;

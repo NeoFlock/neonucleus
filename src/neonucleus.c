@@ -4499,6 +4499,7 @@ static nn_Exit nn_fsHandler(nn_ComponentRequest *req) {
 	nn_Context *ctx = req->ctx;
 	nn_FSState *state = req->classState;
 	nn_FSRequest freq;
+	freq.action = NN_FS_DROP;
 	freq.ctx = req->ctx;
 	freq.computer = req->computer;
 	freq.state = req->state;
@@ -7429,5 +7430,274 @@ nn_Component *nn_createTunnel(nn_Universe *universe, const char *address, const 
 
 nn_InternetCard nn_defaultInternetCard = {
 	.protocolsSupported = NN_INET_ALL,
+	.maxReadSize = 64 * NN_KiB,
 	.transmissionEnergyCost = 0,
 };
+
+typedef enum nn_InternetNum {
+	NN_INETNUM_MAXREADSIZE,
+
+	// is*Enabled
+	NN_INETNUM_ISHTTP,
+	NN_INETNUM_ISTCP,
+	NN_INETNUM_ISTLS,
+	NN_INETNUM_ISUDP,
+	NN_INETNUM_ISWEBSOCK,
+
+	// TCP/TLS connection
+	NN_INETNUM_CONNECT,
+	// WebSocket/UDP connection
+	NN_INETNUM_CHANNEL,
+	// HTTP/HTTPS request
+	NN_INETNUM_REQUEST,
+
+	NN_INETNUM_COUNT,
+} nn_InternetNum;
+
+typedef struct nn_InternetState {
+    nn_Context *ctx;
+    nn_InternetCard inet;
+    nn_InternetHandler *handler;
+} nn_InternetState;
+
+static nn_Exit nn_inetCloseConn(nn_InternetRequest req, nn_InternetHandler *handler, nn_InternetConnection *conn) {
+	if(conn == NULL) return NN_OK;
+	if(conn->state != NULL) {
+		req.connection = conn;
+		req.action = NN_INTERNET_CLOSE;
+		nn_Exit e = handler(&req);
+		if(e) return e;
+	}
+	conn->state = NULL;
+	return NN_OK;
+}
+
+// Pushes a userdata that makes the connection, to save on brain power.
+static nn_Exit nn_inetMakeConn(nn_InternetRequest req, nn_InternetHandler *handler, nn_InternetProtocol proto) {
+	if(req.action != NN_INTERNET_CONNECT) return NN_EBADSTATE;
+	nn_Context *ctx = req.ctx;
+
+	nn_InternetConnection *conn = NULL;
+	nn_Exit e = NN_OK;
+
+	conn = nn_alloc(ctx, sizeof(*conn));
+	if(conn == NULL) {
+		e = NN_ENOMEM;
+		goto fail;
+	}
+
+	conn->protocol = proto;
+	conn->port = req.connect.port;
+	conn->state = NULL;
+	nn_randomUUID(ctx, conn->id);
+
+	req.connection = conn;
+	e = handler(&req);
+	if(e) goto fail;
+
+	int idx = nn_allocUserdata(req.computer, conn, req.localAddress);
+	if(idx < 0) {
+		e = NN_ELIMIT;
+		goto fail;
+	}
+
+	e = nn_pushuserdata(req.computer, idx);
+	if(e) goto fail;
+
+	return NN_OK;
+fail:
+	nn_inetCloseConn(req, handler, conn);
+	nn_free(ctx, conn, sizeof(*conn));
+	return e;
+}
+
+static nn_Exit nn_inetHandler(nn_ComponentRequest *req) {
+	nn_Context *ctx = req->ctx;
+	nn_InternetState *state = req->classState;
+	nn_Computer *C = req->computer;
+	nn_Exit e;
+	
+	if(req->action == NN_COMP_CHECKMETHOD) return NN_OK;
+
+	nn_InternetRequest ireq;
+	ireq.ctx = ctx;
+	ireq.computer = C;
+	ireq.state = req->state;
+	ireq.inet = &state->inet;
+	ireq.localAddress = req->compAddress;
+	ireq.connection = NULL;
+
+	if(req->action == NN_COMP_DROP) {
+		ireq.action = NN_INTERNET_DROP;
+		state->handler(&ireq);
+		nn_free(ctx, state, sizeof(*state));
+		return NN_OK;
+	}
+
+	if(req->action == NN_COMP_USERDATA) {
+		nn_UserdataRequest *ureq = req->user;
+		nn_InternetConnection *conn = ureq->state;
+
+		if(conn->state == NULL) return NN_EBADSTATE;
+
+		if(ureq->action == NN_USER_DROP) {
+			nn_inetCloseConn(ireq, state->handler, conn);
+			nn_free(ctx, conn, sizeof(*conn));
+			return NN_OK;
+		}
+
+		if(ureq->action == NN_USER_GETMETHOD) {
+			size_t idx = ureq->getmethod.idx;
+			nn_Method *method = ureq->getmethod.method;
+
+			if(idx == 0) {
+				method->name = "finishConnect";
+				method->doc = "function(): boolean - Returns whether the connection finished. Can also return an error if the connection failed, or no error if still pending";
+				method->flags = NN_DIRECT;
+			} else if(idx == 1) {
+				method->name = "id";
+				method->doc = "function(): string - Returns the id of the connection";
+				method->flags = NN_DIRECT;
+			} else if(idx == 2) {
+				method->name = "close";
+				method->doc = "function() - Closes the connection";
+				method->flags = NN_DIRECT;
+			} else if(idx == 3) {
+				method->name = "read";
+				method->doc = "function(n?: number): string? - Reads data from the connection. Returns the data, or nil if EoF";
+				method->flags = NN_DIRECT;
+			} else if(idx == 4) {
+				method->name = conn->protocol == NN_INET_HTTP ? NULL : "write";
+				method->doc = "function(data: string): integer - Writes data to the connection. Returns how much data was successfully written";
+				method->flags = NN_DIRECT;
+			} else {
+				ureq->getmethod.method = NULL;
+			}
+			return NN_OK;
+		}
+
+		if(ureq->action == NN_USER_INVOKE) {
+			const char *method = ureq->invoke.method;
+
+			if(nn_strcmp(method, "id") == 0) {
+				ureq->invoke.returnCount = 1;
+				return nn_pushlstring(C, conn->id, 36);
+			}
+			if(nn_strcmp(method, "close") == 0) {
+				e = nn_inetCloseConn(ireq, state->handler, conn);
+				if(e) return e;
+				ureq->invoke.returnCount = 1;
+				return nn_pushbool(C, true);
+			}
+		}
+
+		if(C) nn_setError(C, "internet: not implemented yet");
+		return NN_EBADCALL;
+	}
+	
+	nn_InternetNum method = req->methodIdx;
+
+	if(method == NN_INETNUM_MAXREADSIZE) {
+		req->returnCount = 1;
+		return nn_pushinteger(C, state->inet.maxReadSize);
+	}
+	if(method == NN_INETNUM_ISHTTP) {
+		req->returnCount = 1;
+		return nn_pushbool(C, (state->inet.protocolsSupported & NN_INET_HTTP) != 0);
+	}
+	if(method == NN_INETNUM_ISTCP) {
+		req->returnCount = 1;
+		return nn_pushbool(C, (state->inet.protocolsSupported & NN_INET_TCP) != 0);
+	}
+	if(method == NN_INETNUM_ISTLS) {
+		req->returnCount = 1;
+		return nn_pushbool(C, (state->inet.protocolsSupported & NN_INET_TLS) != 0);
+	}
+	if(method == NN_INETNUM_ISUDP) {
+		req->returnCount = 1;
+		return nn_pushbool(C, (state->inet.protocolsSupported & NN_INET_UDP) != 0);
+	}
+	if(method == NN_INETNUM_ISWEBSOCK) {
+		req->returnCount = 1;
+		return nn_pushbool(C, (state->inet.protocolsSupported & NN_INET_WEBSOCKET) != 0);
+	}
+
+	if(method == NN_INETNUM_REQUEST) {
+		if((state->inet.protocolsSupported & NN_INET_HTTP) == 0) {
+			nn_setError(C, "protocol disabled");
+			return NN_EBADCALL;
+		}
+
+		if(nn_checkstring(C, 0, "bad argument #1 (string expected")) return NN_EBADCALL;
+		e = nn_defaultstring(C, 1, "");
+		if(e) return e;
+		if(nn_checkstring(C, 1, "bad argument #2 (string expected")) return NN_EBADCALL;
+		e = nn_defaulttable(C, 2);
+		if(e) return e;
+		if(nn_checktable(C, 2, "bad argument #3 (table expected)")) return NN_EBADCALL;
+
+		ireq.action = NN_INTERNET_CONNECT;
+		ireq.connect.url = nn_tostring(C, 0);
+		ireq.connect.http.postdata = nn_tolstring(C, 1, &ireq.connect.http.postdatalen);
+		size_t headerlen = 0;
+		e = nn_dumptable(C, 2, &headerlen);
+		if(e) return e;
+		ireq.connect.http.headerlen = headerlen;
+		nn_HTTPHeader *headers = nn_alloc(ctx, sizeof(nn_HTTPHeader) * headerlen);
+		if(headers == NULL) return NN_ENOMEM;
+
+		for(size_t i = 3; i < 3 + headerlen * 2; i += 2) {
+			if(!nn_isstring(C, i) || !nn_isstring(C, i+1)) {
+				nn_free(ctx, headers, sizeof(nn_HTTPHeader) * headerlen);
+				nn_setError(C, "malformed headers");
+				return NN_EBADCALL;
+			}
+			headers[i].name = nn_tostring(C, i);
+			headers[i].value = nn_tostring(C, i+1);
+		}
+
+		req->returnCount = 1;
+		e = nn_inetMakeConn(ireq, state->handler, NN_INET_HTTP);
+		nn_free(ctx, headers, sizeof(nn_HTTPHeader) * headerlen);
+		return e;
+	}
+
+	if(C) nn_setError(C, "internet: not implemented yet");
+	return NN_EBADCALL;
+}
+
+nn_Component *nn_createInternet(nn_Universe *universe, const char *address, const nn_InternetCard *inet, void *state, nn_InternetHandler *handler) {
+    nn_Component *c = nn_createComponent(
+        universe, address, "internet");
+    if(c == NULL) return NULL;
+
+    const nn_Method methods[NN_INETNUM_COUNT] = {
+		[NN_INETNUM_MAXREADSIZE] = {"maxReadSize", "function(): integer - Returns the maximum size of a read", NN_DIRECT},
+		[NN_INETNUM_ISHTTP] = {"isHttpEnabled", "function(): boolean - Returns whether HTTP/HTTPS support is enabled", NN_DIRECT},
+		[NN_INETNUM_ISTCP] = {"isTcpEnabled", "function(): boolean - Returns whether TCP support is enabled", NN_DIRECT},
+		[NN_INETNUM_ISTLS] = {"isTlsEnabled", "function(): boolean - Returns whether TLS support is enabled", NN_DIRECT},
+		[NN_INETNUM_ISWEBSOCK] = {"isWebsocketEnabled", "function(): boolean - Returns whether WebSocket / WSS support is enabled", NN_DIRECT},
+		[NN_INETNUM_ISUDP] = {"isUdpEnabled", "function(): boolean - Returns whether UDP support is enabled", NN_DIRECT},
+		[NN_INETNUM_CONNECT] = {"connect", "function(address: string, port: number = -1, protocol: string = 'tcp'): userdata - Opens a socket connection and returns a handle to it. Valid protocols are tcp and tls", NN_INDIRECT},
+		[NN_INETNUM_CHANNEL] = {"channel", "function(address: string, port: number = -1, protocol: string = 'websocket', subprotocols?: string[]): userdata - Opens a packet channel and reutrns a handle to it. Valid protocols are websocket and udp", NN_INDIRECT},
+		[NN_INETNUM_REQUEST] = {"request", "function(url: string, portData?: string, headers?: table): userdata - Sends an HTTP/HTTPS requests, returns a handle to it", NN_INDIRECT},
+    };
+
+    nn_Exit e = nn_setComponentMethodsArray(
+        c, methods, NN_INETNUM_COUNT);
+    if(e) { nn_dropComponent(c); return NULL; }
+
+    nn_Context *ctx = &universe->ctx;
+    nn_InternetState *cls = nn_alloc(ctx, sizeof(*cls));
+    if(cls == NULL) {
+        nn_dropComponent(c);
+        return NULL;
+    }
+    cls->ctx = ctx;
+    cls->inet = *inet;
+    cls->handler = handler;
+    nn_setComponentState(c, state);
+    nn_setComponentClassState(c, cls);
+    nn_setComponentHandler(c, nn_inetHandler);
+    return c;
+}

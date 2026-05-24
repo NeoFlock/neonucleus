@@ -556,6 +556,25 @@ void ne_env(nn_EnvironmentRequest *req) {
 	}
 }
 
+nn_Exit ne_inetBullshit(nn_InternetRequest *req) {
+	// welcome to hell
+	nn_Computer *C = req->computer;
+
+	// TODO: make this shi connect to the real internet
+	// preferrably use libcurl, openssl and a basic blocking socket layer
+
+	if(req->action == NN_INTERNET_CONNECT) {
+		req->connection->state = ne_inetBullshit;
+		return NN_OK;
+	}
+
+	if(req->action == NN_INTERNET_CLOSE) {
+		return NN_OK;
+	}
+
+	if(C) nn_setError(C, "inet bullshit: not supported");
+	return NN_EBADCALL;
+}
 
 int main(int argc, char **argv) {
 	const char *player = getenv("USER");
@@ -610,6 +629,7 @@ int main(int argc, char **argv) {
 	nn_Component *dataCard = nn_createDataCard(u, NULL, &nn_defaultDataCards[2], NULL, ne_dataBullshit);
 	nn_Component *modem = nn_createModem(u, NULL, &nn_defaultWirelessModems[1], NULL, ne_modemBullshit);
 	nn_Component *tunnel = nn_createTunnel(u, NULL, &nn_defaultTunnel, NULL, ne_tunnelBullshit);
+	nn_Component *inet = nn_createInternet(u, NULL, &nn_defaultInternetCard, NULL, ne_inetBullshit);
 
 	char *eepromCode = (char *)minBIOS;
 	size_t eepromSize = strlen(minBIOS);
@@ -755,6 +775,7 @@ int main(int argc, char **argv) {
 	nn_mountComponent(c, modem, 7, false);
 	nn_mountComponent(c, tunnel, 8, false);
 	nn_mountComponent(c, debugfs, 9, false);
+	nn_mountComponent(c, inet, 10, false);
 	int ltx = 0, lty = 0;
 	double scrollBuf = 0;
 	double tickTime = 0;
@@ -994,6 +1015,7 @@ cleanup:;
 	nn_dropComponent(modem);
 	nn_dropComponent(tunnel);
 	nn_dropComponent(debugfs);
+	nn_dropComponent(inet);
 	// rip the universe
 	nn_destroyUniverse(u);
 	ncl_destroyGlyphCache(gc);

@@ -2354,6 +2354,7 @@ typedef enum nn_InternetProtocol {
 typedef struct nn_InternetCard {
 	// bitwise OR multiple of them
 	unsigned char protocolsSupported;
+	unsigned int maxReadSize;
 	// per-byte cost of a write
 	double transmissionEnergyCost;
 } nn_InternetCard;
@@ -2362,7 +2363,9 @@ extern nn_InternetCard nn_defaultInternetCard;
 
 typedef struct nn_InternetConnection {
 	nn_InternetProtocol protocol;
+	int port;
 	void *state;
+	nn_uuid id;
 } nn_InternetConnection;
 
 typedef struct nn_HTTPHeader {
@@ -2370,13 +2373,38 @@ typedef struct nn_HTTPHeader {
 	const char *value;
 } nn_HTTPHeader;
 
+typedef enum nn_InternetAction {
+	NN_INTERNET_DROP,
+
+	// start a connection, remember to check connection->protocol to know which type of connection to establish
+	NN_INTERNET_CONNECT,
+
+	// Ensure a connection is established, error if not.
+	// It is assumed this operation will return whether it is currently connected,
+	// and should be called repeatedly until it works
+	NN_INTERNET_FINISHCONNECT,
+
+	// close a connection
+	NN_INTERNET_CLOSE,
+
+	// read from a connection. Set read.buf to NULL to mark EoF. read.len is the capacity, but also set how much was read in it.
+	NN_INTERNET_READ,
+
+	// write to a connection. HTTP connections do not have this method
+	NN_INTERNET_WRITE,
+
+	// get an HTTP response. Should push the response code, message (ie. OK for 200) and table
+	NN_INTERNET_RESPONSE,
+} nn_INternetAction;
+
 typedef struct nn_InternetRequest {
     nn_Context *ctx;
     nn_Computer *computer;
     void *state;
-    const nn_Tunnel *tunnel;
+    const nn_InternetCard *inet;
 	const char *localAddress;
 	nn_InternetConnection *connection;
+	nn_INternetAction action;
 	union {
 		// does a socket connection, for any of the supported protocols
 		struct {
@@ -2384,14 +2412,35 @@ typedef struct nn_InternetRequest {
 			const char *url;
 			// port. Useless for HTTP connections, as they should use 80 for HTTP and 443 for HTTPS
 			unsigned short port;
-			// HTTP specific
-			size_t postdatalen;
-			const char *postdata;
-			const nn_HTTPHeader *headers;
-			size_t headerlen;
+			union {
+				struct {
+					// HTTP specific
+					size_t postdatalen;
+					const char *postdata;
+					const nn_HTTPHeader *headers;
+					size_t headerlen;
+				} http;
+				struct {
+					const char * const * subprotocols;
+					size_t subprotocolcount;
+				} websockets;
+			};
 		} connect;
+		struct {
+			const char *buf;
+			size_t len;
+		} write;
+		struct {
+			char *buf;
+			size_t len;
+		} read;
+		bool isConnected;
 	};
 } nn_InternetRequest;
+
+typedef nn_Exit (nn_InternetHandler)(nn_InternetRequest *req);
+
+nn_Component *nn_createInternet(nn_Universe *universe, const char *address, const nn_InternetCard *inet, void *state, nn_InternetHandler *handler);
 
 // Colors and palettes.
 // Do note that the 
