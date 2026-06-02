@@ -17,9 +17,8 @@ fn addEngineSources(b: *std.Build, opts: LibBuildOpts) *std.Build.Module {
         .strip = if (opts.optimize == .Debug) false else true,
         .unwind_tables = if (opts.optimize == .Debug) null else .none,
         .pic = true,
-        .sanitize_c = if(strict) .full else null,
+        .sanitize_c = if (strict) .full else null,
     });
-
 
     dataMod.addCSourceFiles(.{
         .files = &[_][]const u8{
@@ -62,7 +61,7 @@ fn compileRaylib(b: *std.Build, os: std.Target.Os.Tag, buildOpts: LibBuildOpts, 
 
     // passing it breaks it for some reason?
     // TODO: make it not break
-    const raylib = b.addSystemCommand(&.{ "zig", "build"});
+    const raylib = b.addSystemCommand(&.{ "zig", "build" });
     raylib.setCwd(b.path("foreign/raylib/"));
     raylib.stdio = .inherit;
 
@@ -89,11 +88,7 @@ fn compileTheRightLua(b: *std.Build, target: std.Build.ResolvedTarget, version: 
     // its a static library because COFF is a pile of shit
     const c = b.addLibrary(.{
         .name = "lua",
-        .root_module = b.addModule("luamod", .{
-            .link_libc = true,
-            .optimize = .ReleaseFast,
-            .target = target,
-        }),
+        .root_module = b.addModule("luamod", .{ .link_libc = true, .optimize = .ReleaseFast, .target = target, .pic = true }),
         .linkage = .static,
     });
 
