@@ -258,35 +258,29 @@ typedef struct ncl_ComponentStat {
 	// specific properties
 	union {
 		struct {
-			const nn_EEPROM *conf;
 			size_t codeUsed;
 			size_t dataUsed;
 		} eeprom;
 		struct {
-			const nn_Filesystem *conf;
 			size_t spaceUsed;
 			size_t realDiskUsage;
 			size_t filesOpen;
 			const char *path;
 		} fs;
 		struct {
-			const nn_Drive *conf;
 			size_t lastSector;
 		} drive;
 		struct {
-			const nn_NandFlash *conf;
 			size_t currentWriteCount;
 			double wearlevel;
 		} flash;
 		struct {
-			const nn_GPU *conf;
 			size_t vramFree;
 			size_t bufferCount;
 			// can be NULL if there is none
 			const char *boundScreen;
 		} gpu;
 		struct {
-			const nn_ScreenConfig *conf;
 			ncl_ScreenState *state;
 			ncl_ScreenFlags flags;
 			int viewportWidth;

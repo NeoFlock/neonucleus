@@ -3547,7 +3547,6 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		memcpy(stat->label, fs->label, stat->labellen);
 		stat->fs.spaceUsed = ncl_fsGetUsage(fs);
 		stat->fs.realDiskUsage = ncl_fsGetRealUsage(fs);
-		stat->fs.conf = &fs->conf;
 		stat->fs.path = fs->path;
 		stat->fs.filesOpen = 0;
 		for(size_t i = 0; i < NN_MAX_OPENFILES; i++) {
@@ -3564,7 +3563,6 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		stat->labellen = drv->labellen;
 		memcpy(stat->label, drv->label, stat->labellen);
 		stat->drive.lastSector = drv->lastSector;
-		stat->drive.conf = &drv->conf;
 		nn_unlock(drv->ctx, drv->lock);
 		return;
 	}
@@ -3581,7 +3579,6 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		size_t sectorCount = drv->conf.capacity / drv->conf.sectorSize;
 		if(maxWrite > 0 && sectorCount > 0) wearlevel = drv->writeCount * 100.0 / sectorCount / maxWrite;
 		stat->flash.wearlevel = wearlevel;
-		stat->flash.conf = &drv->conf;
 		nn_unlock(drv->ctx, drv->lock);
 		return;
 	}
@@ -3592,7 +3589,6 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		stat->usageCounter = ee->usage;
 		stat->labellen = ee->labellen;
 		memcpy(stat->label, ee->label, stat->labellen);
-		stat->eeprom.conf = &ee->conf;
 		stat->eeprom.codeUsed = ee->codelen;
 		stat->eeprom.dataUsed = ee->datalen;
 		nn_unlock(ee->ctx, ee->lock);
@@ -3602,7 +3598,6 @@ void ncl_statComponent(nn_Component *component, ncl_ComponentStat *stat) {
 		ncl_ScreenState *screen = state;
 		nn_lock(screen->ctx, screen->lock);
 		stat->usageCounter = screen->usage;
-		stat->screen.conf = &screen->conf;
 		stat->screen.depth = screen->depth;
 		stat->screen.flags = screen->flags;
 		stat->screen.keyboardCount = screen->keyboardCount;
