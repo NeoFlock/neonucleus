@@ -354,6 +354,10 @@ typedef enum nn_ArchitectureAction {
 	NN_ARCH_DESERIALIZE,
 	// serialize to an encoded state, pushed it as a string
 	NN_ARCH_SERIALIZE,
+	// information about usage, for GC languages to know when it is safe to reclaim references.
+	// computer and localState are both NULL when these are emitted.
+	NN_ARCH_RETAIN,
+	NN_ARCH_DROP,
 } nn_ArchitectureAction;
 
 typedef struct nn_ArchitectureRequest {
@@ -423,6 +427,9 @@ typedef enum nn_EnvironmentAction {
 	NN_ENV_CRASHED,
 	NN_ENV_BEEP,
 	NN_ENV_BEEPMORSE,
+	// information about usage, for GC languages to know when it is safe to reclaim references
+	NN_ENV_RETAIN,
+	NN_ENV_DROP,
 } nn_EnvironmentAction;
 
 typedef struct nn_EnvironmentRequest {
@@ -473,6 +480,8 @@ void nn_forceCrashComputer(nn_Computer *computer, const char *s);
 // returns whether an architecture state is present
 bool nn_isComputerOn(nn_Computer *computer);
 void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env);
+void nn_retainComputerEnvironment(nn_Environment env);
+void nn_dropComputerEnvironment(nn_Environment env);
 
 void nn_setDirectCost(nn_Computer *computer, double directCost);
 double nn_getDirectCost(nn_Computer *computer);
@@ -601,6 +610,12 @@ bool nn_hasUser(nn_Computer *computer, const char *user);
 void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch);
 // Gets the current architecture.
 nn_Architecture nn_getArchitecture(nn_Computer *computer);
+// Notify the architecture it is being retained. This is to help GC'd languages that provide architectures know
+// when the garbage collector can safely reclaim the memory again.
+void nn_retainArchitecture(nn_Architecture arch);
+// Notify the architecture it is being dropped. This is to help GC'd languages that provide architectures know
+// when the garbage collector can safely reclaim the memory again.
+void nn_dropArchitecture(nn_Architecture arch);
 // Sets the computer's desired architecture.
 // The desired architecture indicates, when the computer state is CHARCH, what the new architecture should be.
 // This is set even if it is not in the supported architecture list, *you must check if it is in that list first.*

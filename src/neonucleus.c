@@ -1229,6 +1229,8 @@ nn_Computer *nn_createComputer(nn_Universe *universe, void *userdata, const char
 	c->signalCount = 0;
 	c->userCount = 0;
 	c->idleTimestamp = 0;
+	c->arch.handler = NULL;
+	c->desiredArch.handler = NULL;
 	// set to empty string
 	c->errorBuffer[0] = '\0';
 	for(size_t i = 0; i < NN_MAX_USERDATA; i++) c->uservals[i].state = NULL;
@@ -1314,7 +1316,27 @@ bool nn_isComputerOn(nn_Computer *computer) {
 }
 
 void nn_setComputerEnvironment(nn_Computer *computer, nn_Environment env) {
+	nn_retainComputerEnvironment(env);
+	nn_dropComputerEnvironment(computer->env);
 	computer->env = env;
+}
+
+void nn_retainComputerEnvironment(nn_Environment env) {
+	if(env.handler == NULL) return;
+	nn_EnvironmentRequest req;
+	req.userdata = env.userdata;
+	req.computer = NULL;
+	req.action = NN_ENV_RETAIN;
+	env.handler(&req);
+}
+
+void nn_dropComputerEnvironment(nn_Environment env) {
+	if(env.handler == NULL) return;
+	nn_EnvironmentRequest req;
+	req.userdata = env.userdata;
+	req.computer = NULL;
+	req.action = NN_ENV_DROP;
+	env.handler(&req);
 }
 
 void nn_setDirectCost(nn_Computer *computer, double directCost) {
@@ -1465,6 +1487,12 @@ void nn_destroyComputerN(nn_Computer *computer, size_t n) {
 	for(size_t i = 0; i < computer->userCount; i++) {
 		nn_strfree(ctx, computer->users[i]);
 	}
+	
+	nn_dropArchitecture(computer->arch);
+	for(size_t i = 0; i < computer->archCount; i++) {
+		nn_dropArchitecture(computer->archs[i]);
+	}
+	nn_dropComputerEnvironment(computer->env);
 
 	for(size_t i = 0; i < NN_MAX_USERDATA; i++) nn_freeUserdata(computer, i);
 
@@ -1571,6 +1599,8 @@ bool nn_hasUser(nn_Computer *computer, const char *user) {
 }
 
 void nn_setArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
+	nn_retainArchitecture(*arch);
+	nn_dropArchitecture(computer->arch);
 	computer->arch = *arch;
 }
 
@@ -1578,7 +1608,29 @@ nn_Architecture nn_getArchitecture(nn_Computer *computer) {
 	return computer->arch;
 }
 
+void nn_retainArchitecture(nn_Architecture arch) {
+	if(arch.handler == NULL) return;
+	nn_ArchitectureRequest req;
+	req.computer = NULL;
+	req.action = NN_ARCH_RETAIN;
+	req.globalState = arch.state;
+	req.localState = NULL;
+	arch.handler(&req);
+}
+
+void nn_dropArchitecture(nn_Architecture arch) {
+	if(arch.handler == NULL) return;
+	nn_ArchitectureRequest req;
+	req.computer = NULL;
+	req.action = NN_ARCH_DROP;
+	req.globalState = arch.state;
+	req.localState = NULL;
+	arch.handler(&req);
+}
+
 void nn_setDesiredArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
+	nn_retainArchitecture(*arch);
+	nn_dropArchitecture(computer->desiredArch);
 	computer->desiredArch = *arch;
 }
 
@@ -1588,6 +1640,7 @@ nn_Architecture nn_getDesiredArchitecture(nn_Computer *computer) {
 
 nn_Exit nn_addSupportedArchitecture(nn_Computer *computer, const nn_Architecture *arch) {
 	if(computer->archCount == NN_MAX_ARCHITECTURES) return NN_ELIMIT;
+	nn_retainArchitecture(*arch);
 	computer->archs[computer->archCount++] = *arch;
 	return NN_OK;
 }

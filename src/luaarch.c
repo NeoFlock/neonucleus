@@ -792,7 +792,7 @@ static void luaArch_loadEnv(lua_State *L) {
 static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 	nn_Computer *computer = req->computer;
 	luaArch *arch = req->localState;
-	nn_Context *ctx = nn_getComputerContext(computer);
+	nn_Context *ctx = computer == NULL ? NULL : nn_getComputerContext(computer);
 	// the memory scale, used to give Lua extra memory in 64-bit systems
 	// due to it also using more memory.
 	double memScale = sizeof(void *) > 4 ? 1.8 : 1;
@@ -856,6 +856,10 @@ static nn_Exit luaArch_handler(nn_ArchitectureRequest *req) {
 		return nn_pushstring(computer, "lua stuff");
 	case NN_ARCH_DESERIALIZE:
 		// do nothing
+		return NN_OK;
+	case NN_ARCH_RETAIN:
+		return NN_OK;
+	case NN_ARCH_DROP:
 		return NN_OK;
 	}
 	return NN_OK;
